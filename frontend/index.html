@@ -1,0 +1,2831 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TCS BAnCS API Cookbook</title>
+    
+    <!-- Tailwind CSS for shadcn/ui compatibility -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    
+    <!-- Prism.js for code highlighting -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-javascript.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-json.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-bash.min.js"></script>
+    
+    <!-- Marked.js for Markdown parsing -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    
+    <style>
+        /* Claude-inspired color scheme with shadcn/ui design patterns */
+        :root {
+            /* Claude's color palette */
+            --claude-bg: #faf9f7;
+            --claude-surface: #ffffff;
+            --claude-border: #e5e3df;
+            --claude-text: #2d2d2d;
+            --claude-text-secondary: #6f6f6f;
+            --claude-accent: #d97757;
+            --claude-accent-hover: #c56650;
+            --claude-purple: #9b87f5;
+            --claude-purple-dark: #7c63d8;
+            --claude-green: #22c55e;
+            --claude-red: #ef4444;
+            --claude-blue: #3b82f6;
+            --claude-yellow: #eab308;
+            
+            /* Shadows */
+            --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+            --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+            
+            /* Radius - shadcn/ui style */
+            --radius: 0.5rem;
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
+            background: var(--claude-bg);
+            color: var(--claude-text);
+            line-height: 1.6;
+            min-height: 100vh;
+        }
+        
+        /* Scrollbar styling */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        
+        ::-webkit-scrollbar-track {
+            background: var(--claude-bg);
+        }
+        
+        ::-webkit-scrollbar-thumb {
+            background: var(--claude-border);
+            border-radius: var(--radius);
+        }
+        
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--claude-text-secondary);
+        }
+        
+        /* shadcn/ui inspired components */
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0.5rem 1rem;
+            font-size: 0.875rem;
+            font-weight: 500;
+            border-radius: var(--radius);
+            transition: all 0.15s ease;
+            cursor: pointer;
+            border: 1px solid transparent;
+            gap: 0.5rem;
+            font-family: 'Segoe UI', system-ui, sans-serif;
+        }
+        
+        .btn-primary {
+            background: var(--claude-accent);
+            color: white;
+        }
+        
+        .btn-primary:hover:not(:disabled) {
+            background: var(--claude-accent-hover);
+        }
+        
+        .btn-secondary {
+            background: var(--claude-surface);
+            color: var(--claude-text);
+            border-color: var(--claude-border);
+        }
+        
+        .btn-secondary:hover:not(:disabled) {
+            background: var(--claude-bg);
+        }
+        
+        .btn-ghost {
+            background: transparent;
+            color: var(--claude-text);
+        }
+        
+        .btn-ghost:hover:not(:disabled) {
+            background: var(--claude-bg);
+        }
+        
+        .btn-danger {
+            background: var(--claude-red);
+            color: white;
+        }
+        
+        .btn-danger:hover:not(:disabled) {
+            background: #dc2626;
+        }
+        
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        .btn-sm {
+            padding: 0.25rem 0.5rem;
+            font-size: 0.75rem;
+        }
+        
+        /* Card component */
+        .card {
+            background: var(--claude-surface);
+            border: 1px solid var(--claude-border);
+            border-radius: var(--radius);
+            padding: 1.5rem;
+            box-shadow: var(--shadow-sm);
+        }
+        
+        /* Badge component */
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 0.25rem 0.625rem;
+            font-size: 0.75rem;
+            font-weight: 500;
+            border-radius: calc(var(--radius) * 0.75);
+            background: var(--claude-bg);
+            color: var(--claude-text-secondary);
+            border: 1px solid var(--claude-border);
+        }
+        
+        .badge-success {
+            background: rgba(34, 197, 94, 0.1);
+            color: var(--claude-green);
+            border-color: rgba(34, 197, 94, 0.2);
+        }
+        
+        .badge-error {
+            background: rgba(239, 68, 68, 0.1);
+            color: var(--claude-red);
+            border-color: rgba(239, 68, 68, 0.2);
+        }
+        
+        .badge-warning {
+            background: rgba(234, 179, 8, 0.1);
+            color: var(--claude-yellow);
+            border-color: rgba(234, 179, 8, 0.2);
+        }
+        
+        .badge-info {
+            background: rgba(59, 130, 246, 0.1);
+            color: var(--claude-blue);
+            border-color: rgba(59, 130, 246, 0.2);
+        }
+        
+        /* Header */
+        .header {
+            background: var(--claude-surface);
+            border-bottom: 1px solid var(--claude-border);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            backdrop-filter: blur(8px);
+            background: rgba(255, 255, 255, 0.95);
+        }
+        
+        .header-content {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 1rem 1.5rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: var(--claude-text);
+        }
+        
+        .logo-icon {
+            width: 32px;
+            height: 32px;
+            background: var(--claude-accent);
+            border-radius: var(--radius);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 0.875rem;
+            font-weight: 700;
+        }
+        
+        .status-container {
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+        }
+        
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.375rem 0.75rem;
+            background: var(--claude-bg);
+            border-radius: calc(var(--radius) * 0.75);
+            font-size: 0.875rem;
+        }
+        
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--claude-text-secondary);
+            transition: all 0.3s ease;
+        }
+        
+        .status-dot.online {
+            background: var(--claude-green);
+            box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.2);
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+        }
+        
+        /* Message content styles */
+        .message-content {
+            line-height: 1.6;
+        }
+
+        .message-content h1,
+        .message-content h2,
+        .message-content h3,
+        .message-content h4 {
+            margin-top: 1rem;
+            margin-bottom: 0.5rem;
+            font-weight: 600;
+        }
+
+        .message-content strong {
+            font-weight: 600;
+            color: #333;
+        }
+
+        .message-content pre {
+            background-color: #1e1e1e !important;
+            padding: 1rem !important;
+            border-radius: 0.5rem !important;
+            overflow-x: auto !important;
+            margin: 0.5rem 0 !important;
+        }
+
+        .message-content code {
+            font-family: 'Cascadia Code', 'Fira Code', 'Courier New', monospace;
+        }
+
+        .message-content pre code {
+            color: #f8f8f2 !important;
+            background: transparent !important;
+            padding: 0 !important;
+        }
+
+        .message-content ul li,
+        .message-content ol li {
+            margin: 0.25rem 0;
+        }
+
+        .message-confidence,
+        .message-source {
+            margin-top: 0.5rem;
+            padding-top: 0.5rem;
+            border-top: 1px solid #e0e0e0;
+        }
+
+        /* Knowledge Base Search Styles */
+        .knowledge-result {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 0.75rem 1rem;
+            border-radius: var(--radius);
+            margin: 0.5rem 0;
+            cursor: pointer;
+            transition: transform 0.2s ease;
+        }
+
+        .knowledge-result:hover {
+            transform: translateX(5px);
+        }
+
+        .knowledge-search-bar {
+            background: var(--claude-surface);
+            border-top: 1px solid var(--claude-border);
+            padding: 0.5rem 1rem;
+        }
+
+        .kb-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.25rem;
+            padding: 0.125rem 0.5rem;
+            background: rgba(102, 126, 234, 0.1);
+            color: #667eea;
+            border-radius: calc(var(--radius) * 0.5);
+            font-size: 0.75rem;
+            font-weight: 500;
+        }
+
+        /* Layout */
+        .app-container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 1.5rem;
+            display: flex;
+            gap: 1.5rem;
+            min-height: calc(100vh - 80px);
+        }
+        
+        /* Sidebar */
+        .sidebar {
+            width: 280px;
+            flex-shrink: 0;
+        }
+        
+        .sidebar-section {
+            background: var(--claude-surface);
+            border: 1px solid var(--claude-border);
+            border-radius: var(--radius);
+            padding: 1rem;
+            margin-bottom: 1rem;
+        }
+        
+        .sidebar-title {
+            font-size: 0.875rem;
+            font-weight: 600;
+            color: var(--claude-text-secondary);
+            margin-bottom: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.025em;
+        }
+        
+        .sidebar-item {
+            display: flex;
+            align-items: center;
+            gap: 0.625rem;
+            padding: 0.5rem 0.75rem;
+            margin: 0.25rem 0;
+            border-radius: calc(var(--radius) * 0.75);
+            cursor: pointer;
+            transition: all 0.15s ease;
+            font-size: 0.875rem;
+            color: var(--claude-text);
+        }
+        
+        .sidebar-item:hover {
+            background: var(--claude-bg);
+        }
+        
+        .sidebar-item.active {
+            background: rgba(217, 119, 87, 0.1);
+            color: var(--claude-accent);
+        }
+        
+        .method-badge {
+            padding: 0.125rem 0.375rem;
+            border-radius: calc(var(--radius) * 0.5);
+            font-size: 0.625rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            white-space: nowrap;
+        }
+        
+        .method-get { background: var(--claude-blue); color: white; }
+        .method-post { background: var(--claude-green); color: white; }
+        .method-put { background: var(--claude-yellow); color: white; }
+        .method-delete { background: var(--claude-red); color: white; }
+        .method-patch { background: var(--claude-purple); color: white; }
+        
+        /* Main content */
+        .main-content {
+            flex: 1;
+            min-width: 0;
+        }
+        
+        /* Tabs */
+        .tabs-container {
+            background: var(--claude-surface);
+            border: 1px solid var(--claude-border);
+            border-radius: var(--radius);
+            padding: 0.25rem;
+            margin-bottom: 1.5rem;
+            display: flex;
+            gap: 0.25rem;
+        }
+        
+        .tab {
+            flex: 1;
+            padding: 0.625rem 1rem;
+            background: transparent;
+            border: none;
+            border-radius: calc(var(--radius) * 0.75);
+            font-size: 0.875rem;
+            font-weight: 500;
+            color: var(--claude-text-secondary);
+            cursor: pointer;
+            transition: all 0.15s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            font-family: 'Segoe UI', system-ui, sans-serif;
+        }
+        
+        .tab:hover {
+            color: var(--claude-text);
+        }
+        
+        .tab.active {
+            background: var(--claude-bg);
+            color: var(--claude-text);
+            box-shadow: var(--shadow-sm);
+        }
+        
+        /* Chat interface */
+        .chat-container {
+            background: var(--claude-surface);
+            border: 1px solid var(--claude-border);
+            border-radius: var(--radius);
+            height: calc(100vh - 240px);
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 1.5rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+        
+        .message {
+            max-width: 80%;
+            animation: messageSlide 0.3s ease;
+        }
+        
+        @keyframes messageSlide {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        .message.user {
+            align-self: flex-end;
+        }
+        
+        .message.assistant {
+            align-self: flex-start;
+        }
+        
+        .message-content {
+            padding: 0.75rem 1rem;
+            border-radius: var(--radius);
+            font-size: 0.9375rem;
+            line-height: 1.6;
+        }
+        
+        .message.user .message-content {
+            background: var(--claude-accent);
+            color: white;
+        }
+        
+        .message.assistant .message-content {
+            background: var(--claude-bg);
+            color: var(--claude-text);
+            border: 1px solid var(--claude-border);
+        }
+        
+        .message-label {
+            font-size: 0.75rem;
+            color: var(--claude-text-secondary);
+            margin-bottom: 0.25rem;
+            font-weight: 500;
+        }
+        
+        /* Chat input */
+        .chat-input-container {
+            padding: 1rem;
+            border-top: 1px solid var(--claude-border);
+            background: var(--claude-bg);
+        }
+        
+        .chat-input-wrapper {
+            display: flex;
+            gap: 0.75rem;
+        }
+        
+        .chat-input {
+            flex: 1;
+            padding: 0.625rem 1rem;
+            background: var(--claude-surface);
+            border: 1px solid var(--claude-border);
+            border-radius: var(--radius);
+            font-size: 0.9375rem;
+            transition: all 0.15s ease;
+            resize: none;
+            font-family: 'Segoe UI', system-ui, sans-serif;
+        }
+        
+        .chat-input:focus {
+            outline: none;
+            border-color: var(--claude-accent);
+            box-shadow: 0 0 0 3px rgba(217, 119, 87, 0.1);
+        }
+        
+        /* Code blocks */
+        .code-block {
+            background: #1e1e1e;
+            border-radius: var(--radius);
+            padding: 1rem;
+            margin: 0.75rem 0;
+            overflow-x: auto;
+            position: relative;
+        }
+        
+        .code-block pre {
+            margin: 0;
+            font-size: 0.875rem;
+        }
+        
+        .code-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.5rem 1rem;
+            background: #2d2d2d;
+            border-radius: var(--radius) var(--radius) 0 0;
+            margin: -1rem -1rem 0.75rem -1rem;
+            font-size: 0.75rem;
+            color: #a0a0a0;
+        }
+        
+        .copy-button {
+            padding: 0.25rem 0.5rem;
+            background: transparent;
+            border: 1px solid #444;
+            border-radius: calc(var(--radius) * 0.5);
+            color: #a0a0a0;
+            font-size: 0.75rem;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+        
+        .copy-button:hover {
+            background: #3d3d3d;
+            color: white;
+        }
+        
+        .copy-button.copied {
+            background: var(--claude-green);
+            color: white;
+            border-color: var(--claude-green);
+        }
+        
+        /* Loading states */
+        .loading-spinner {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid var(--claude-border);
+            border-radius: 50%;
+            border-top-color: var(--claude-accent);
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        .typing-indicator {
+            display: flex;
+            gap: 0.25rem;
+            padding: 0.75rem 1rem;
+            background: var(--claude-bg);
+            border-radius: var(--radius);
+            width: fit-content;
+        }
+        
+        .typing-dot {
+            width: 8px;
+            height: 8px;
+            background: var(--claude-text-secondary);
+            border-radius: 50%;
+            animation: typing 1.4s infinite;
+        }
+        
+        .typing-dot:nth-child(2) { animation-delay: 0.2s; }
+        .typing-dot:nth-child(3) { animation-delay: 0.4s; }
+        
+        @keyframes typing {
+            0%, 60%, 100% { 
+                transform: translateY(0);
+                opacity: 0.6;
+            }
+            30% { 
+                transform: translateY(-10px);
+                opacity: 1;
+            }
+        }
+        
+        /* Recipe cards */
+        .recipe-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 1rem;
+        }
+        
+        .recipe-card {
+            background: var(--claude-surface);
+            border: 1px solid var(--claude-border);
+            border-radius: var(--radius);
+            padding: 1.25rem;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+        
+        .recipe-card:hover {
+            box-shadow: var(--shadow-md);
+            transform: translateY(-2px);
+        }
+        
+        .recipe-icon {
+            font-size: 2rem;
+            margin-bottom: 0.75rem;
+        }
+        
+        .recipe-title {
+            font-size: 1rem;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+            color: var(--claude-text);
+        }
+        
+        .recipe-description {
+            font-size: 0.875rem;
+            color: var(--claude-text-secondary);
+            line-height: 1.5;
+            margin-bottom: 0.75rem;
+        }
+        
+        .recipe-tags {
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+        }
+        
+        .recipe-tag {
+            padding: 0.25rem 0.5rem;
+            background: var(--claude-bg);
+            border-radius: calc(var(--radius) * 0.5);
+            font-size: 0.75rem;
+            color: var(--claude-text-secondary);
+        }
+        
+        /* Enhanced Playground */
+        .playground-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+            height: calc(100vh - 240px);
+        }
+        
+        .playground-section {
+            background: var(--claude-surface);
+            border: 1px solid var(--claude-border);
+            border-radius: var(--radius);
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .playground-header {
+            padding: 1rem;
+            border-bottom: 1px solid var(--claude-border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .playground-title {
+            font-size: 0.875rem;
+            font-weight: 600;
+            color: var(--claude-text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.025em;
+        }
+        
+        .playground-content {
+            flex: 1;
+            overflow: auto;
+            padding: 1rem;
+        }
+        
+        .playground-controls {
+            display: flex;
+            gap: 0.5rem;
+        }
+        
+        .request-type-toggle {
+            display: flex;
+            gap: 0.25rem;
+            padding: 0.25rem;
+            background: var(--claude-bg);
+            border-radius: calc(var(--radius) * 0.75);
+        }
+        
+        .request-type-btn {
+            padding: 0.375rem 0.75rem;
+            font-size: 0.75rem;
+            background: transparent;
+            border: none;
+            border-radius: calc(var(--radius) * 0.5);
+            cursor: pointer;
+            transition: all 0.15s ease;
+            color: var(--claude-text-secondary);
+            font-family: 'Segoe UI', system-ui, sans-serif;
+        }
+        
+        .request-type-btn.active {
+            background: var(--claude-surface);
+            color: var(--claude-text);
+            box-shadow: var(--shadow-sm);
+        }
+        
+        .form-group {
+            margin-bottom: 1rem;
+        }
+        
+        .form-label {
+            display: block;
+            font-size: 0.875rem;
+            font-weight: 500;
+            color: var(--claude-text-secondary);
+            margin-bottom: 0.375rem;
+        }
+        
+        .form-input {
+            width: 100%;
+            padding: 0.5rem 0.75rem;
+            background: var(--claude-surface);
+            border: 1px solid var(--claude-border);
+            border-radius: calc(var(--radius) * 0.75);
+            font-size: 0.875rem;
+            transition: all 0.15s ease;
+            font-family: 'Segoe UI', system-ui, sans-serif;
+        }
+        
+        .form-input:focus {
+            outline: none;
+            border-color: var(--claude-accent);
+            box-shadow: 0 0 0 3px rgba(217, 119, 87, 0.1);
+        }
+        
+        .form-textarea {
+            min-height: 150px;
+            resize: vertical;
+            font-family: 'Cascadia Code', 'Monaco', 'Courier New', monospace;
+            font-size: 0.8125rem;
+        }
+        
+        .form-select {
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%236f6f6f' d='M6 9L2 5h8z'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 0.75rem center;
+            padding-right: 2rem;
+        }
+        
+        .headers-editor {
+            margin-top: 1rem;
+        }
+        
+        .header-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr auto;
+            gap: 0.5rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .header-row input {
+            padding: 0.375rem 0.5rem;
+            font-size: 0.8125rem;
+        }
+        
+        .btn-icon {
+            width: 32px;
+            height: 32px;
+            padding: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .response-metadata {
+            padding: 0.75rem;
+            background: var(--claude-bg);
+            border-bottom: 1px solid var(--claude-border);
+            font-size: 0.875rem;
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+        }
+        
+        .status-code {
+            font-weight: 600;
+            padding: 0.25rem 0.5rem;
+            border-radius: calc(var(--radius) * 0.5);
+        }
+        
+        .status-code.success { background: rgba(34, 197, 94, 0.1); color: var(--claude-green); }
+        .status-code.redirect { background: rgba(234, 179, 8, 0.1); color: var(--claude-yellow); }
+        .status-code.client-error { background: rgba(239, 68, 68, 0.1); color: var(--claude-red); }
+        .status-code.server-error { background: rgba(239, 68, 68, 0.2); color: var(--claude-red); }
+        
+        .response-tabs {
+            display: flex;
+            gap: 0.25rem;
+            padding: 0.5rem;
+            border-bottom: 1px solid var(--claude-border);
+        }
+        
+        .response-tab {
+            padding: 0.375rem 0.75rem;
+            font-size: 0.75rem;
+            background: transparent;
+            border: none;
+            border-radius: calc(var(--radius) * 0.5);
+            cursor: pointer;
+            color: var(--claude-text-secondary);
+            transition: all 0.15s ease;
+            font-family: 'Segoe UI', system-ui, sans-serif;
+        }
+        
+        .response-tab.active {
+            background: var(--claude-bg);
+            color: var(--claude-text);
+        }
+        
+        .history-item {
+            padding: 0.75rem;
+            border-bottom: 1px solid var(--claude-border);
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+        
+        .history-item:hover {
+            background: var(--claude-bg);
+        }
+        
+        .history-item-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.25rem;
+        }
+        
+        .history-item-method {
+            font-weight: 600;
+            font-size: 0.75rem;
+        }
+        
+        .history-item-url {
+            font-size: 0.8125rem;
+            color: var(--claude-text-secondary);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        
+        .history-item-time {
+            font-size: 0.75rem;
+            color: var(--claude-text-secondary);
+        }
+        
+        /* Responsive design */
+        @media (max-width: 1024px) {
+            .sidebar {
+                display: none;
+            }
+            
+            .app-container {
+                padding: 1rem;
+            }
+            
+            .recipe-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .playground-container {
+                grid-template-columns: 1fr;
+                height: auto;
+            }
+            
+            .playground-section {
+                height: 400px;
+            }
+        }
+        
+        /* Related APIs section styling */
+        .message-content h2:has-text("Related API"),
+        .message-content h3:has-text("Related API"),
+        .message-content strong:has-text("Related API") {
+            color: var(--claude-accent);
+            margin-top: 1.5rem;
+            margin-bottom: 0.75rem;
+            border-top: 1px solid var(--claude-border);
+            padding-top: 1rem;
+        }
+
+        /* Style for API endpoint listings */
+        .message-content ol li strong,
+        .message-content ul li strong {
+            color: var(--claude-purple);
+            font-weight: 600;
+        }
+
+        .message-content code {
+            font-size: 0.85em;
+        }
+        
+        /* Utility classes */
+        .hidden { display: none !important; }
+        .text-muted { color: var(--claude-text-secondary); }
+        .text-small { font-size: 0.875rem; }
+        .text-xs { font-size: 0.75rem; }
+        .font-mono { font-family: 'Cascadia Code', 'Monaco', 'Courier New', monospace; }
+        .mt-1 { margin-top: 0.25rem; }
+        .mt-2 { margin-top: 0.5rem; }
+        .mt-3 { margin-top: 0.75rem; }
+        .mt-4 { margin-top: 1rem; }
+        .mb-1 { margin-bottom: 0.25rem; }
+        .mb-2 { margin-bottom: 0.5rem; }
+        .mb-3 { margin-bottom: 0.75rem; }
+        .mb-4 { margin-bottom: 1rem; }
+        .ml-2 { margin-left: 0.5rem; }
+        .flex { display: flex; }
+        .items-center { align-items: center; }
+        .justify-between { justify-content: space-between; }
+        .gap-2 { gap: 0.5rem; }
+        .gap-3 { gap: 0.75rem; }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="header-content">
+            <div class="logo">
+                <div class="logo-icon">API</div>
+                <span>TCS BAnCS API Cookbook</span>
+            </div>
+            <div class="status-container">
+                <div class="status-indicator">
+                    <span class="status-dot" id="apiStatus"></span>
+                    <span id="apiStatusText">Checking API...</span>
+                </div>
+                <div class="status-indicator">
+                    <span class="status-dot" id="mcpStatus"></span>
+                    <span id="mcpStatusText">MCP: Unknown</span>
+                </div>
+                <button class="btn btn-ghost" onclick="showSettings()">
+                    <i data-lucide="settings" style="width: 16px; height: 16px;"></i>
+                </button>
+            </div>
+        </div>
+    </header>
+    
+    <!-- Main Application -->
+    <div class="app-container">
+        <!-- Sidebar -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-section">
+                <div class="sidebar-title">Quick Actions</div>
+                <div class="sidebar-item" onclick="sendQuickMessage('Show me all available APIs')">
+                    <i data-lucide="list" style="width: 16px; height: 16px;"></i>
+                    <span>List All APIs</span>
+                </div>
+                <div class="sidebar-item" onclick="sendQuickMessage('How do I authenticate?')">
+                    <i data-lucide="key" style="width: 16px; height: 16px;"></i>
+                    <span>Authentication</span>
+                </div>
+                <div class="sidebar-item" onclick="sendQuickMessage('Show me a Python example')">
+                    <i data-lucide="code-2" style="width: 16px; height: 16px;"></i>
+                    <span>Python Example</span>
+                </div>
+                <div class="sidebar-item" onclick="searchKnowledgeBase()">
+                    <i data-lucide="search" style="width: 16px; height: 16px;"></i>
+                    <span>Search Knowledge</span>
+                </div>
+                <div class="sidebar-item" onclick="sendQuickMessage('What MCP tools are available?')">
+                    <i data-lucide="wrench" style="width: 16px; height: 16px;"></i>
+                    <span>MCP Tools</span>
+                </div>
+            </div>
+            
+            <div class="sidebar-section">
+                <div class="sidebar-title">API Endpoints</div>
+                <div id="endpointList">
+                    <div class="typing-indicator">
+                        <div class="typing-dot"></div>
+                        <div class="typing-dot"></div>
+                        <div class="typing-dot"></div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="sidebar-section">
+                <div class="sidebar-title">Resources</div>
+                <div class="sidebar-item" onclick="fetchOpenAPISpec()">
+                    <i data-lucide="file-text" style="width: 16px; height: 16px;"></i>
+                    <span>OpenAPI Spec</span>
+                </div>
+                <div class="sidebar-item" onclick="exportPostmanCollection()">
+                    <i data-lucide="download" style="width: 16px; height: 16px;"></i>
+                    <span>Export Postman</span>
+                </div>
+                <div class="sidebar-item" onclick="showMCPTools()">
+                    <i data-lucide="tool" style="width: 16px; height: 16px;"></i>
+                    <span>MCP Tools</span>
+                </div>
+            </div>
+        </aside>
+        
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Tabs -->
+            <div class="tabs-container">
+                <button class="tab active" onclick="switchTab('chat', this)">
+                    <i data-lucide="message-circle" style="width: 16px; height: 16px;"></i>
+                    <span>Chat</span>
+                </button>
+                <button class="tab" onclick="switchTab('cookbook', this)">
+                    <i data-lucide="book-open" style="width: 16px; height: 16px;"></i>
+                    <span>Cookbook</span>
+                </button>
+                <button class="tab" onclick="switchTab('playground', this)">
+                    <i data-lucide="play" style="width: 16px; height: 16px;"></i>
+                    <span>Playground</span>
+                </button>
+                <button class="tab" onclick="switchTab('mcp', this)">
+                    <i data-lucide="cpu" style="width: 16px; height: 16px;"></i>
+                    <span>MCP Tools</span>
+                </button>
+                <button class="tab" onclick="switchTab('history', this)">
+                    <i data-lucide="clock" style="width: 16px; height: 16px;"></i>
+                    <span>History</span>
+                </button>
+            </div>
+            
+            <!-- Chat Tab -->
+            <div id="chatTab" class="tab-content">
+                <div class="chat-container">
+                    <div class="chat-messages" id="chatMessages">
+                        <div class="message assistant">
+                            <div class="message-label">API Assistant</div>
+                            <div class="message-content">
+                                Hello! I'm your TCS BAnCS API assistant. I can help you with:
+                                <ul style="margin-top: 0.5rem; margin-left: 1.5rem;">
+                                    <li>API endpoint documentation</li>
+                                    <li>Code examples in multiple languages</li>
+                                    <li>Authentication and security</li>
+                                    <li>Knowledge base search</li>
+                                    <li>MCP tools integration</li>
+                                    <li>Troubleshooting and best practices</li>
+                                </ul>
+                                What would you like to know?
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Knowledge Base Search Bar -->
+                    <div class="knowledge-search-bar">
+                        <div style="display: flex; gap: 0.5rem; align-items: center;">
+                            <i data-lucide="search" style="width: 16px; height: 16px; color: var(--claude-text-secondary);"></i>
+                            <input 
+                                type="text" 
+                                id="knowledgeSearchInput" 
+                                class="form-input" 
+                                placeholder="Quick search knowledge base... (Ctrl+K)" 
+                                style="flex: 1; padding: 0.375rem 0.75rem; font-size: 0.875rem;"
+                                onkeydown="handleKnowledgeSearchKeydown(event)"
+                            >
+                            <button class="btn btn-secondary btn-sm" onclick="performKnowledgeSearch()">
+                                Search KB
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div class="chat-input-container">
+                        <div class="chat-input-wrapper">
+                            <textarea 
+                                class="chat-input"
+                                id="messageInput"
+                                placeholder="Ask about APIs, authentication, code examples..."
+                                rows="1"
+                                onkeydown="handleInputKeydown(event)"
+                                oninput="autoResizeTextarea(this)"
+                            ></textarea>
+                            <button class="btn btn-primary" id="sendButton" onclick="sendMessage()">
+                                <i data-lucide="send" style="width: 16px; height: 16px;"></i>
+                                Send
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Cookbook Tab -->
+            <div id="cookbookTab" class="tab-content hidden">
+                <div class="recipe-grid" id="recipeGrid">
+                    <!-- Recipes will be loaded here -->
+                </div>
+            </div>
+            
+            <!-- Enhanced Playground Tab -->
+            <div id="playgroundTab" class="tab-content hidden">
+                <div class="playground-container">
+                    <!-- Request Section -->
+                    <div class="playground-section">
+                        <div class="playground-header">
+                            <div class="playground-title">Request</div>
+                            <div class="playground-controls">
+                                <div class="request-type-toggle">
+                                    <button class="request-type-btn active" onclick="setRequestType('api', this)">API</button>
+                                    <button class="request-type-btn" onclick="setRequestType('mcp', this)">MCP Tool</button>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="playground-content">
+                            <!-- API Request Form -->
+                            <div id="apiRequestForm">
+                                <div class="form-group">
+                                    <label class="form-label">Method</label>
+                                    <select id="playgroundMethod" class="form-input form-select">
+                                        <option value="GET">GET</option>
+                                        <option value="POST">POST</option>
+                                        <option value="PUT">PUT</option>
+                                        <option value="PATCH">PATCH</option>
+                                        <option value="DELETE">DELETE</option>
+                                    </select>
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label class="form-label">URL</label>
+                                    <input type="text" id="playgroundUrl" class="form-input" 
+                                           placeholder="https://demoapps.tcsbancs.com/Core/accountManagement/account/balance">
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label class="form-label">Headers</label>
+                                    <div id="headersEditor">
+                                        <div class="header-row">
+                                            <input type="text" class="form-input" placeholder="Key" value="entity">
+                                            <input type="text" class="form-input" placeholder="Value" value="GPRDTTSTOU">
+                                            <button class="btn btn-ghost btn-icon" onclick="removeHeader(this)">
+                                                <i data-lucide="x" style="width: 16px; height: 16px;"></i>
+                                            </button>
+                                        </div>
+                                        <div class="header-row">
+                                            <input type="text" class="form-input" placeholder="Key" value="userId">
+                                            <input type="text" class="form-input" placeholder="Value" value="1">
+                                            <button class="btn btn-ghost btn-icon" onclick="removeHeader(this)">
+                                                <i data-lucide="x" style="width: 16px; height: 16px;"></i>
+                                            </button>
+                                        </div>
+                                        <div class="header-row">
+                                            <input type="text" class="form-input" placeholder="Key" value="languageCode">
+                                            <input type="text" class="form-input" placeholder="Value" value="1">
+                                            <button class="btn btn-ghost btn-icon" onclick="removeHeader(this)">
+                                                <i data-lucide="x" style="width: 16px; height: 16px;"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <button class="btn btn-secondary btn-sm mt-2" onclick="addHeader()">
+                                        <i data-lucide="plus" style="width: 14px; height: 14px;"></i>
+                                        Add Header
+                                    </button>
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label class="form-label">Body (JSON)</label>
+                                    <textarea id="playgroundBody" class="form-input form-textarea" 
+                                              placeholder='{"key": "value"}'></textarea>
+                                </div>
+                            </div>
+                            
+                            <!-- MCP Tool Form -->
+                            <div id="mcpToolForm" class="hidden">
+                                <div class="form-group">
+                                    <label class="form-label">Tool Name</label>
+                                    <select id="mcpToolSelect" class="form-input form-select" onchange="updateMCPToolParams()">
+                                        <option value="">Select a tool...</option>
+                                    </select>
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label class="form-label">Parameters (JSON)</label>
+                                    <textarea id="mcpToolParams" class="form-input form-textarea" 
+                                              placeholder='{"param1": "value1"}'></textarea>
+                                </div>
+                            </div>
+                            
+                            <div class="flex gap-2 mt-4">
+                                <button class="btn btn-primary" onclick="executePlaygroundRequest()">
+                                    <i data-lucide="play" style="width: 16px; height: 16px;"></i>
+                                    Execute
+                                </button>
+                                <button class="btn btn-secondary" onclick="clearPlayground()">
+                                    <i data-lucide="trash-2" style="width: 16px; height: 16px;"></i>
+                                    Clear
+                                </button>
+                                <button class="btn btn-secondary" onclick="saveToHistory()">
+                                    <i data-lucide="save" style="width: 16px; height: 16px;"></i>
+                                    Save
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Response Section -->
+                    <div class="playground-section">
+                        <div class="playground-header">
+                            <div class="playground-title">Response</div>
+                            <div class="playground-controls">
+                                <button class="btn btn-ghost btn-sm" onclick="copyResponse()">
+                                    <i data-lucide="copy" style="width: 14px; height: 14px;"></i>
+                                    Copy
+                                </button>
+                                <button class="btn btn-ghost btn-sm" onclick="downloadResponse()">
+                                    <i data-lucide="download" style="width: 14px; height: 14px;"></i>
+                                    Export
+                                </button>
+                            </div>
+                        </div>
+                        <div id="playgroundResponse">
+                            <div class="response-metadata hidden" id="responseMetadata">
+                                <span class="status-code" id="statusCode">200</span>
+                                <span class="text-muted">Time: <span id="responseTime">0ms</span></span>
+                                <span class="text-muted">Size: <span id="responseSize">0B</span></span>
+                            </div>
+                            <div class="response-tabs hidden" id="responseTabs">
+                                <button class="response-tab active" onclick="switchResponseTab('body', this)">Body</button>
+                                <button class="response-tab" onclick="switchResponseTab('headers', this)">Headers</button>
+                                <button class="response-tab" onclick="switchResponseTab('raw', this)">Raw</button>
+                            </div>
+                            <div class="playground-content" id="responseContent">
+                                <div class="text-muted">Execute a request to see the response here</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- MCP Tools Tab -->
+            <div id="mcpTab" class="tab-content hidden">
+                <div class="card">
+                    <h3 class="mb-3">Available MCP Tools</h3>
+                    <div id="mcpToolsList">
+                        <div class="typing-indicator">
+                            <div class="typing-dot"></div>
+                            <div class="typing-dot"></div>
+                            <div class="typing-dot"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- History Tab -->
+            <div id="historyTab" class="tab-content hidden">
+                <div class="card">
+                    <div class="flex justify-between items-center mb-3">
+                        <h3>Request History</h3>
+                        <button class="btn btn-danger btn-sm" onclick="clearHistory()">
+                            <i data-lucide="trash-2" style="width: 14px; height: 14px;"></i>
+                            Clear All
+                        </button>
+                    </div>
+                    <div id="historyList">
+                        <div class="text-muted">No history yet</div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+    
+    <script>
+        // Configuration
+        const config = {
+            apiBaseUrl: window.location.origin,
+            wsProtocol: window.location.protocol === 'https:' ? 'wss:' : 'ws:',
+            maxRetries: 3,
+            retryDelay: 1000
+        };
+        
+        // State management
+        const state = {
+            conversationContext: [],
+            endpoints: [],
+            mcpTools: [],
+            ws: null,
+            isConnected: false,
+            playgroundType: 'api',
+            playgroundHistory: [],
+            currentResponse: null
+        };
+        
+        // Initialize application
+        async function init() {
+            try {
+                // Initialize Lucide icons
+                lucide.createIcons();
+                
+                // Load saved history
+                loadHistoryFromStorage();
+                
+                // Check API status
+                await checkStatus();
+                
+                // Load initial data
+                await Promise.all([
+                    loadEndpoints(),
+                    loadCookbookRecipes(),
+                    loadMCPTools()
+                ]);
+                
+                // Setup WebSocket connection
+                setupWebSocket();
+                
+                // Set up periodic health checks
+                setInterval(checkStatus, 30000);
+                
+                // Set up keyboard shortcuts
+                setupKeyboardShortcuts();
+                
+            } catch (error) {
+                console.error('Initialization error:', error);
+                showNotification('Failed to initialize application', 'error');
+            }
+        }
+        
+        // Check API and MCP status
+        async function checkStatus() {
+            try {
+                const response = await fetchWithRetry('/health');
+                const data = await response.json();
+                
+                // Update API status
+                const apiStatusDot = document.getElementById('apiStatus');
+                const apiStatusText = document.getElementById('apiStatusText');
+                
+                if (data.status === 'healthy' || data.status === 'degraded') {
+                    apiStatusDot.classList.add('online');
+                    apiStatusText.textContent = data.status === 'degraded' ? 'API: Degraded' : 'API: Online';
+                } else {
+                    apiStatusDot.classList.remove('online');
+                    apiStatusText.textContent = 'API: Offline';
+                }
+                
+                // Update MCP status
+                const mcpStatusDot = document.getElementById('mcpStatus');
+                const mcpStatusText = document.getElementById('mcpStatusText');
+                
+                if (data.services?.mcp === 'running') {
+                    mcpStatusDot.classList.add('online');
+                    mcpStatusText.textContent = 'MCP: Running';
+                } else if (data.services?.mcp === 'fallback') {
+                    mcpStatusDot.classList.remove('online');
+                    mcpStatusText.textContent = 'MCP: Fallback';
+                } else if (data.services?.mcp === 'disabled') {
+                    mcpStatusDot.classList.remove('online');
+                    mcpStatusText.textContent = 'MCP: Disabled';
+                } else {
+                    mcpStatusDot.classList.remove('online');
+                    mcpStatusText.textContent = 'MCP: Unknown';
+                }
+                
+                return data;
+            } catch (error) {
+                console.error('Status check failed:', error);
+                document.getElementById('apiStatusText').textContent = 'API: Offline';
+                document.getElementById('mcpStatusText').textContent = 'MCP: Unknown';
+                throw error;
+            }
+        }
+        
+        // Load API endpoints
+        async function loadEndpoints() {
+            try {
+                const response = await fetchWithRetry('/api/endpoints');
+                const endpoints = await response.json();
+                state.endpoints = endpoints;
+                displayEndpoints(endpoints);
+            } catch (error) {
+                console.error('Failed to load endpoints:', error);
+                displayEndpoints([]);
+            }
+        }
+        
+        // Display endpoints in sidebar
+        function displayEndpoints(endpoints) {
+            const container = document.getElementById('endpointList');
+            
+            if (!endpoints || endpoints.length === 0) {
+                container.innerHTML = '<div class="text-muted text-small">No endpoints available</div>';
+                return;
+            }
+            
+            container.innerHTML = endpoints.map(endpoint => `
+                <div class="sidebar-item" onclick="askAboutEndpoint('${endpoint.name}')">
+                    <span class="method-badge method-${endpoint.method.toLowerCase()}">${endpoint.method}</span>
+                    <span class="text-small">${endpoint.name}</span>
+                </div>
+            `).join('');
+        }
+        
+        // Load cookbook recipes
+        async function loadCookbookRecipes() {
+            try {
+                const response = await fetchWithRetry('/api/cookbook');
+                const recipes = await response.json();
+                displayRecipes(recipes);
+            } catch (error) {
+                console.error('Failed to load recipes:', error);
+            }
+        }
+        
+        // Display cookbook recipes
+        function displayRecipes(recipes) {
+            const container = document.getElementById('recipeGrid');
+            
+            if (!recipes || recipes.length === 0) {
+                container.innerHTML = '<div class="card">No recipes available</div>';
+                return;
+            }
+            
+            container.innerHTML = recipes.map(recipe => `
+                <div class="recipe-card" onclick="loadRecipe('${recipe.id}')">
+                    <div class="recipe-icon">${recipe.icon || '📚'}</div>
+                    <h3 class="recipe-title">${recipe.title}</h3>
+                    <p class="recipe-description">${recipe.description}</p>
+                    <div class="recipe-tags">
+                        ${recipe.tags?.map(tag => `<span class="recipe-tag">${tag}</span>`).join('') || ''}
+                    </div>
+                </div>
+            `).join('');
+        }
+        
+        // Load MCP tools
+        async function loadMCPTools() {
+            try {
+                const response = await fetchWithRetry('/api/mcp/tools');
+                const data = await response.json();
+                
+                if (!data.error) {
+                    state.mcpTools = data.tools || [];
+                    displayMCPTools(data.tools);
+                    populateMCPToolSelect(data.tools);
+                }
+            } catch (error) {
+                console.error('Failed to load MCP tools:', error);
+            }
+        }
+        
+        // Display MCP tools
+        function displayMCPTools(tools) {
+            const container = document.getElementById('mcpToolsList');
+            
+            if (!tools || tools.length === 0) {
+                container.innerHTML = '<div class="text-muted">No MCP tools available</div>';
+                return;
+            }
+            
+            container.innerHTML = tools.map(tool => `
+                <div class="card mb-3">
+                    <div class="mb-2">
+                        <span class="method-badge method-${tool.method.toLowerCase()}">${tool.method}</span>
+                        <strong class="ml-2">${tool.name}</strong>
+                    </div>
+                    <p class="text-muted text-small mb-2">${tool.description}</p>
+                    <code class="text-small font-mono">${tool.path}</code>
+                    <button class="btn btn-secondary mt-3" onclick="testMCPTool('${tool.name}')">
+                        <i data-lucide="play" style="width: 14px; height: 14px;"></i>
+                        Test Tool
+                    </button>
+                </div>
+            `).join('');
+            
+            // Re-initialize Lucide icons
+            lucide.createIcons();
+        }
+        
+        // Populate MCP tool select
+        function populateMCPToolSelect(tools) {
+            const select = document.getElementById('mcpToolSelect');
+            if (!select) return;
+            
+            select.innerHTML = '<option value="">Select a tool...</option>';
+            
+            if (tools && tools.length > 0) {
+                tools.forEach(tool => {
+                    const option = document.createElement('option');
+                    option.value = tool.name;
+                    option.textContent = tool.name;
+                    select.appendChild(option);
+                });
+            }
+        }
+        
+        // Setup WebSocket connection
+        function setupWebSocket() {
+            const wsUrl = `${config.wsProtocol}//${window.location.host}/ws/chat`;
+            
+            try {
+                state.ws = new WebSocket(wsUrl);
+                
+                state.ws.onopen = () => {
+                    state.isConnected = true;
+                    console.log('WebSocket connected');
+                };
+                
+                state.ws.onmessage = (event) => {
+                    const data = JSON.parse(event.data);
+                    handleWebSocketMessage(data);
+                };
+                
+                state.ws.onerror = (error) => {
+                    console.error('WebSocket error:', error);
+                };
+                
+                state.ws.onclose = () => {
+                    state.isConnected = false;
+                    console.log('WebSocket disconnected');
+                    // Attempt to reconnect after 5 seconds
+                    setTimeout(setupWebSocket, 5000);
+                };
+            } catch (error) {
+                console.error('Failed to setup WebSocket:', error);
+            }
+        }
+        
+        // Debug function to check response structure
+        function debugResponse(data) {
+            console.group('📊 Response Debug');
+            console.log('Full response:', data);
+            if (data.related_apis) {
+                console.log('Related APIs found:', data.related_apis.length);
+                console.table(data.related_apis);
+            }
+            if (data.sections) {
+                console.log('Sections found:', data.sections.length);
+                data.sections.forEach((section, i) => {
+                    console.log(`Section ${i}: ${section.type} - ${section.title}`);
+                    if (section.type === 'related_apis' && section.content) {
+                        console.log('Related APIs in section:', section.content);
+                    }
+                });
+            }
+            console.groupEnd();
+        }
+        
+        // Handle WebSocket messages
+        function handleWebSocketMessage(data) {
+            console.log('WebSocket received:', data);
+            
+            // Debug the response structure
+            debugResponse(data);
+            
+            if (data.type === 'ping') {
+                // Keep-alive ping
+                return;
+            }
+            
+            hideTypingIndicator();
+            
+            if (data.response) {
+                addMessage(data.response, 'assistant', data);
+            } else if (data.error) {
+                addMessage(`Error: ${data.error}`, 'assistant');
+            }
+        }
+        
+        // Knowledge Base Search Functions
+        async function searchKnowledgeBase(query = null) {
+            // If no query provided, prompt the user
+            if (!query) {
+                const searchQuery = prompt('What would you like to search in the knowledge base?');
+                if (!searchQuery) return;
+                query = searchQuery;
+            }
+            
+            // Add user message to chat
+            addMessage(`Searching knowledge base for: "${query}"`, 'user');
+            
+            // Show typing indicator
+            showTypingIndicator();
+            
+            try {
+                const response = await fetchWithRetry('/api/knowledge/search', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ 
+                        query: query,
+                        limit: 5  // Return top 5 results
+                    })
+                });
+                
+                if (response.ok) {
+                    const results = await response.json();
+                    hideTypingIndicator();
+                    displayKnowledgeSearchResults(results, query);
+                } else {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+            } catch (error) {
+                console.error('Knowledge base search failed:', error);
+                hideTypingIndicator();
+                addMessage('Failed to search knowledge base. Please try again.', 'assistant');
+           }
+       }
+
+       function displayKnowledgeSearchResults(results, query) {
+           let messageContent = '';
+           
+           if (results.results && results.results.length > 0) {
+               messageContent = `📚 **Knowledge Base Search Results for "${query}":**\n\n`;
+               
+               results.results.forEach((result, index) => {
+                   messageContent += `**${index + 1}. ${result.title || result.endpoint_name || 'Result ' + (index + 1)}**\n`;
+                   
+                   // Add confidence score if available
+                   if (result.score || result.confidence) {
+                       const score = (result.score || result.confidence) * 100;
+                       messageContent += `   📊 Relevance: ${score.toFixed(1)}%\n`;
+                   }
+                   
+                   // Add description
+                   if (result.description) {
+                       messageContent += `   ${result.description}\n`;
+                   }
+                   
+                   // Add endpoint details if available
+                   if (result.method && result.path) {
+                       messageContent += `   \`${result.method} ${result.path}\`\n`;
+                   }
+                   
+                   // Add content snippet if available
+                   if (result.content) {
+                       const snippet = result.content.substring(0, 200);
+                       messageContent += `   _${snippet}${result.content.length > 200 ? '...' : ''}_\n`;
+                   }
+                   
+                   messageContent += '\n';
+               });
+               
+               // Add suggestions
+               messageContent += '💡 **Next Steps:**\n';
+               messageContent += '• Click on an endpoint in the sidebar to learn more\n';
+               messageContent += '• Ask for code examples for any of these endpoints\n';
+               messageContent += '• Try a more specific search query for better results';
+               
+           } else {
+               messageContent = `No results found in knowledge base for "${query}".\n\n`;
+               messageContent += '**Try:**\n';
+               messageContent += '• Using different keywords\n';
+               messageContent += '• Searching for API endpoint names\n';
+               messageContent += '• Asking about authentication or code examples';
+           }
+           
+           addMessage(messageContent, 'assistant', {
+               metadata: { source: 'KNOWLEDGE_BASE' }
+           });
+       }
+
+       // Handle knowledge search input
+       function handleKnowledgeSearchKeydown(event) {
+           if (event.key === 'Enter') {
+               event.preventDefault();
+               performKnowledgeSearch();
+           }
+       }
+
+       function performKnowledgeSearch() {
+           const input = document.getElementById('knowledgeSearchInput');
+           const query = input.value.trim();
+           
+           if (query) {
+               searchKnowledgeBase(query);
+               input.value = '';
+           }
+       }
+
+       // Setup keyboard shortcuts
+       function setupKeyboardShortcuts() {
+           document.addEventListener('keydown', function(event) {
+               // Ctrl+K or Cmd+K for knowledge search
+               if ((event.ctrlKey || event.metaKey) && event.key === 'k') {
+                   event.preventDefault();
+                   const input = document.getElementById('knowledgeSearchInput');
+                   if (input) {
+                       input.focus();
+                   } else {
+                       searchKnowledgeBase();
+                   }
+               }
+           });
+       }
+       
+       // Send message
+       async function sendMessage() {
+           const input = document.getElementById('messageInput');
+           const message = input.value.trim();
+           
+           if (!message) return;
+           
+           // Add user message to chat
+           addMessage(message, 'user');
+           
+           // Clear input
+           input.value = '';
+           autoResizeTextarea(input);
+           
+           // Check if this is a knowledge base query
+           const knowledgeKeywords = ['search knowledge', 'find in knowledge', 'knowledge base', 'search for apis'];
+           const isKnowledgeQuery = knowledgeKeywords.some(keyword => 
+               message.toLowerCase().includes(keyword)
+           );
+           
+           if (isKnowledgeQuery) {
+               // Extract search term
+               let searchTerm = message.toLowerCase();
+               knowledgeKeywords.forEach(keyword => {
+                   searchTerm = searchTerm.replace(keyword, '').trim();
+               });
+               searchTerm = searchTerm.replace(/[^\w\s]/g, '').trim();
+               
+               if (searchTerm) {
+                   await searchKnowledgeBase(searchTerm);
+                   return;
+               }
+           }
+           
+           // Disable send button
+           const sendButton = document.getElementById('sendButton');
+           sendButton.disabled = true;
+           
+           // Show typing indicator
+           showTypingIndicator();
+           
+           try {
+               // Prepare context (always as array)
+               const context = Array.isArray(state.conversationContext) ? state.conversationContext : [];
+               
+               // Try WebSocket first
+               if (state.isConnected && state.ws && state.ws.readyState === WebSocket.OPEN) {
+                   state.ws.send(JSON.stringify({
+                       message: message,
+                       context: context
+                   }));
+               } else {
+                   // Fallback to HTTP
+                   const response = await fetchWithRetry('/api/chat', {
+                       method: 'POST',
+                       headers: {
+                           'Content-Type': 'application/json',
+                       },
+                       body: JSON.stringify({
+                           message: message,
+                           context: context
+                       })
+                   });
+                   
+                   if (response.ok) {
+                       const data = await response.json();
+                       
+                       // Add to conversation context
+                       state.conversationContext.push(
+                           { role: 'user', content: message },
+                           { role: 'assistant', content: data.response }
+                       );
+                       
+                       // Keep context size manageable
+                       if (state.conversationContext.length > 20) {
+                           state.conversationContext = state.conversationContext.slice(-20);
+                       }
+                       
+                       // Remove typing indicator and add response
+                       hideTypingIndicator();
+                       addMessage(data.response, 'assistant', data);
+                   } else {
+                       throw new Error(`HTTP ${response.status}`);
+                   }
+               }
+           } catch (error) {
+               console.error('Error sending message:', error);
+               hideTypingIndicator();
+               addMessage('Sorry, I encountered an error. Please try again.', 'assistant');
+           } finally {
+               sendButton.disabled = false;
+           }
+       }
+       
+       // Send quick message
+       function sendQuickMessage(message) {
+           const input = document.getElementById('messageInput');
+           input.value = message;
+           sendMessage();
+       }
+       
+       // Add message to chat
+       function addMessage(content, type, metadata = {}) {
+           const messagesContainer = document.getElementById('chatMessages');
+           const messageDiv = document.createElement('div');
+           messageDiv.className = `message ${type}`;
+           
+           const labelDiv = document.createElement('div');
+           labelDiv.className = 'message-label';
+           labelDiv.textContent = type === 'user' ? 'You' : 'API Assistant';
+           
+           const contentDiv = document.createElement('div');
+           contentDiv.className = 'message-content';
+           
+           // Process the content to fix HTML entities and render markdown
+           if (content) {
+               // First, unescape HTML entities
+               const textarea = document.createElement('textarea');
+               textarea.innerHTML = content;
+               let unescapedContent = textarea.value;
+               
+               // Configure marked options for better rendering
+               marked.setOptions({
+                   breaks: true,  // Add this to respect line breaks
+                   gfm: true,     // GitHub flavored markdown
+                   headerIds: false,
+                   mangle: false
+               });
+               
+               // Parse markdown to HTML
+               const parsedHTML = marked.parse(unescapedContent);
+               
+               // Set the HTML content
+               contentDiv.innerHTML = parsedHTML;
+               
+               // Style all strong tags (bold text)
+               contentDiv.querySelectorAll('strong').forEach(strong => {
+                   strong.style.fontWeight = '600';
+                   strong.style.color = '#2d2d2d';
+               });
+               
+               // Style emoji sections
+               contentDiv.querySelectorAll('h2, h3').forEach(heading => {
+                   if (heading.textContent.includes('🔗') || heading.textContent.includes('💡')) {
+                       heading.style.marginTop = '1.5rem';
+                       heading.style.marginBottom = '0.75rem';
+                       heading.style.fontSize = '1.1rem';
+                       heading.style.fontWeight = '600';
+                   }
+               });
+               
+               // Add custom styling for code blocks
+               contentDiv.querySelectorAll('pre').forEach(pre => {
+                   pre.style.backgroundColor = '#1e1e1e';
+                   pre.style.padding = '1rem';
+                   pre.style.borderRadius = '0.5rem';
+                   pre.style.overflow = 'auto';
+                   pre.style.marginTop = '0.5rem';
+                   pre.style.marginBottom = '0.5rem';
+               });
+               
+               // Style inline code
+               contentDiv.querySelectorAll('code').forEach(code => {
+                   if (!code.parentElement || code.parentElement.tagName !== 'PRE') {
+                       code.style.backgroundColor = '#f0f0f0';
+                       code.style.padding = '2px 6px';
+                       code.style.borderRadius = '3px';
+                       code.style.fontSize = '0.9em';
+                       code.style.color = '#e83e8c';
+                       code.style.fontFamily = "'Cascadia Code', 'Fira Code', 'Courier New', monospace";
+                   }
+               });
+               
+               // Style lists with better spacing
+               contentDiv.querySelectorAll('ul, ol').forEach(list => {
+                   list.style.marginLeft = '1.5rem';
+                   list.style.marginTop = '0.5rem';
+                   list.style.marginBottom = '0.5rem';
+                   list.style.lineHeight = '1.8';
+               });
+               
+               contentDiv.querySelectorAll('li').forEach(li => {
+                   li.style.marginBottom = '0.5rem';
+               });
+               
+               // Apply syntax highlighting to code blocks using PRISM
+               contentDiv.querySelectorAll('pre code').forEach((block) => {
+                   // Remove any HTML entities in code blocks
+                   block.textContent = block.textContent.replace(/&#39;/g, "'")
+                                                       .replace(/&quot;/g, '"')
+                                                       .replace(/&lt;/g, '<')
+                                                       .replace(/&gt;/g, '>')
+                                                       .replace(/&amp;/g, '&');
+                   
+                   // Add Prism language class if not present
+                   if (!block.className.includes('language-')) {
+                       // Try to detect language from the code block
+                       const langMatch = block.parentElement.textContent.match(/^```(\w+)/);
+                       if (langMatch) {
+                           block.className = `language-${langMatch[1]}`;
+                       } else {
+                           block.className = 'language-python'; // Default to Python
+                       }
+                   }
+                   
+                   // Use Prism to highlight
+                   if (typeof Prism !== 'undefined') {
+                       Prism.highlightElement(block);
+                   }
+               });
+           } else {
+               contentDiv.textContent = 'Error: Empty response';
+           }
+           
+           // Add confidence indicator if available
+           if (metadata.confidence !== undefined && metadata.confidence > 0) {
+               const confidenceDiv = document.createElement('div');
+               confidenceDiv.className = 'message-confidence';
+               const confidencePercent = (metadata.confidence * 100).toFixed(0);
+               confidenceDiv.innerHTML = `
+                   <span style="color: #666; font-size: 0.85em;">
+                       Confidence: ${confidencePercent}%
+                       <span style="display: inline-block; width: 100px; height: 4px; background: #e0e0e0; border-radius: 2px; margin-left: 8px; vertical-align: middle;">
+                           <span style="display: block; width: ${confidencePercent}%; height: 100%; background: #4CAF50; border-radius: 2px;"></span>
+                       </span>
+                   </span>
+               `;
+               contentDiv.appendChild(confidenceDiv);
+           }
+           
+           // Add source indicator if available
+           if (metadata.metadata && metadata.metadata.source) {
+               const sourceDiv = document.createElement('div');
+               sourceDiv.className = 'message-source';
+               const source = metadata.metadata.source;
+               const sourceColors = {
+                   'BERT': '#4CAF50',
+                   'FALLBACK': '#FF9800',
+                   'HARDCODED': '#f44336',
+                   'MCP': '#2196F3',
+                   'KNOWLEDGE_BASE': '#9b87f5'
+               };
+               sourceDiv.innerHTML = `
+                   <span style="font-size: 0.85em; color: ${sourceColors[source] || '#666'};">
+                       <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: ${sourceColors[source] || '#666'}; margin-right: 4px;"></span>
+                       Source: ${source}
+                   </span>
+               `;
+               sourceDiv.style.marginTop = '8px';
+               contentDiv.appendChild(sourceDiv);
+           }
+           
+           messageDiv.appendChild(labelDiv);
+           messageDiv.appendChild(contentDiv);
+           messagesContainer.appendChild(messageDiv);
+           
+           // Scroll to bottom
+           messagesContainer.scrollTop = messagesContainer.scrollHeight;
+       }
+       
+       // Copy code to clipboard
+       async function copyCode(id) {
+           const codeElement = document.getElementById(id);
+           const code = codeElement.textContent;
+           const button = codeElement.parentElement.querySelector('.copy-button');
+           
+           try {
+               await navigator.clipboard.writeText(code);
+               button.textContent = 'Copied!';
+               button.classList.add('copied');
+               setTimeout(() => {
+                   button.textContent = 'Copy';
+                   button.classList.remove('copied');
+               }, 2000);
+               showNotification('Code copied to clipboard!', 'success');
+           } catch (error) {
+               console.error('Failed to copy code:', error);
+               showNotification('Failed to copy code', 'error');
+           }
+       }
+       
+       // Show typing indicator
+       function showTypingIndicator() {
+           const messagesContainer = document.getElementById('chatMessages');
+           if (document.getElementById('typingIndicator')) return;
+           
+           const indicator = document.createElement('div');
+           indicator.className = 'message assistant';
+           indicator.id = 'typingIndicator';
+           indicator.innerHTML = `
+               <div class="typing-indicator">
+                   <div class="typing-dot"></div>
+                   <div class="typing-dot"></div>
+                   <div class="typing-dot"></div>
+               </div>
+           `;
+           messagesContainer.appendChild(indicator);
+           messagesContainer.scrollTop = messagesContainer.scrollHeight;
+       }
+       
+       // Hide typing indicator
+       function hideTypingIndicator() {
+           const indicator = document.getElementById('typingIndicator');
+           if (indicator) {
+               indicator.remove();
+           }
+       }
+       
+       // Switch tabs
+       function switchTab(tabName, tabElement) {
+           // Update tab buttons
+           document.querySelectorAll('.tab').forEach(tab => {
+               tab.classList.remove('active');
+           });
+           if (tabElement) {
+               tabElement.classList.add('active');
+           }
+           
+           // Update tab content
+           document.querySelectorAll('.tab-content').forEach(content => {
+               content.classList.add('hidden');
+           });
+           document.getElementById(`${tabName}Tab`).classList.remove('hidden');
+           
+           // Load tab-specific content if needed
+           if (tabName === 'cookbook' && !document.getElementById('recipeGrid').innerHTML) {
+               loadCookbookRecipes();
+           } else if (tabName === 'mcp' && !state.mcpTools.length) {
+               loadMCPTools();
+           } else if (tabName === 'history') {
+               displayHistory();
+           }
+       }
+       
+       // Playground functions
+       function setRequestType(type, button) {
+           state.playgroundType = type;
+           
+           // Update buttons
+           document.querySelectorAll('.request-type-btn').forEach(btn => {
+               btn.classList.remove('active');
+           });
+           button.classList.add('active');
+           
+           // Show/hide forms
+           if (type === 'api') {
+               document.getElementById('apiRequestForm').classList.remove('hidden');
+               document.getElementById('mcpToolForm').classList.add('hidden');
+           } else {
+               document.getElementById('apiRequestForm').classList.add('hidden');
+               document.getElementById('mcpToolForm').classList.remove('hidden');
+           }
+       }
+       
+       function addHeader() {
+           const headersEditor = document.getElementById('headersEditor');
+           const headerRow = document.createElement('div');
+           headerRow.className = 'header-row';
+           headerRow.innerHTML = `
+               <input type="text" class="form-input" placeholder="Key">
+               <input type="text" class="form-input" placeholder="Value">
+               <button class="btn btn-ghost btn-icon" onclick="removeHeader(this)">
+                   <i data-lucide="x" style="width: 16px; height: 16px;"></i>
+               </button>
+           `;
+           headersEditor.appendChild(headerRow);
+           lucide.createIcons();
+       }
+       
+       function removeHeader(button) {
+           button.closest('.header-row').remove();
+       }
+       
+       function getHeaders() {
+           const headers = {};
+           document.querySelectorAll('#headersEditor .header-row').forEach(row => {
+               const inputs = row.querySelectorAll('input');
+               const key = inputs[0].value.trim();
+               const value = inputs[1].value.trim();
+               if (key) {
+                   headers[key] = value;
+               }
+           });
+           return headers;
+       }
+       
+       async function executePlaygroundRequest() {
+           const startTime = Date.now();
+           
+           try {
+               let result;
+               
+               if (state.playgroundType === 'api') {
+                   // API Request
+                   const method = document.getElementById('playgroundMethod').value;
+                   const url = document.getElementById('playgroundUrl').value;
+                   const headers = getHeaders();
+                   const bodyText = document.getElementById('playgroundBody').value;
+                   
+                   if (!url) {
+                       showNotification('Please enter a URL', 'error');
+                       return;
+                   }
+                   
+                   // Show loading
+                   showResponseLoading();
+                   
+                   const requestData = {
+                       type: 'api',
+                       method: method,
+                       url: url,
+                       headers: headers,
+                       use_auth: true
+                   };
+                   
+                   if (method !== 'GET' && bodyText) {
+                       try {
+                           requestData.body = JSON.parse(bodyText);
+                       } catch {
+                           requestData.body = bodyText;
+                       }
+                   }
+                   
+                   const response = await fetchWithRetry('/api/playground/execute', {
+                       method: 'POST',
+                       headers: {
+                           'Content-Type': 'application/json',
+                       },
+                       body: JSON.stringify(requestData)
+                   });
+                   
+                   result = await response.json();
+                   
+               } else {
+                   // MCP Tool Request
+                   const toolName = document.getElementById('mcpToolSelect').value;
+                   const paramsText = document.getElementById('mcpToolParams').value;
+                   
+                   if (!toolName) {
+                       showNotification('Please select a tool', 'error');
+                       return;
+                   }
+                   
+                   // Show loading
+                   showResponseLoading();
+                   
+                   let params = {};
+                   if (paramsText) {
+                       try {
+                           params = JSON.parse(paramsText);
+                       } catch (e) {
+                           showNotification('Invalid JSON in parameters', 'error');
+                           return;
+                       }
+                   }
+                   
+                   const response = await fetchWithRetry('/api/playground/execute', {
+                       method: 'POST',
+                       headers: {
+                           'Content-Type': 'application/json',
+                       },
+                       body: JSON.stringify({
+                           type: 'mcp',
+                           tool_name: toolName,
+                           tool_params: params
+                       })
+                   });
+                   
+                   result = await response.json();
+               }
+               
+               // Display response
+               displayPlaygroundResponse(result);
+               
+               // Add to history
+               addToHistory({
+                   type: state.playgroundType,
+                   request: state.playgroundType === 'api' ? {
+                       method: document.getElementById('playgroundMethod').value,
+                       url: document.getElementById('playgroundUrl').value,
+                       headers: getHeaders(),
+                       body: document.getElementById('playgroundBody').value
+                   } : {
+                       tool: document.getElementById('mcpToolSelect').value,
+                       params: document.getElementById('mcpToolParams').value
+                   },
+                   response: result,
+                   timestamp: new Date().toISOString(),
+                   duration: Date.now() - startTime
+               });
+               
+           } catch (error) {
+               console.error('Playground execution error:', error);
+               displayPlaygroundError(error);
+           }
+       }
+       
+       function showResponseLoading() {
+           const responseContent = document.getElementById('responseContent');
+           responseContent.innerHTML = '<div class="loading-spinner"></div> Executing request...';
+           
+           // Hide metadata and tabs initially
+           document.getElementById('responseMetadata').classList.add('hidden');
+           document.getElementById('responseTabs').classList.add('hidden');
+       }
+       
+       function displayPlaygroundResponse(result) {
+           const responseContent = document.getElementById('responseContent');
+           const responseMetadata = document.getElementById('responseMetadata');
+           const responseTabs = document.getElementById('responseTabs');
+           
+           // Store current response
+           state.currentResponse = result;
+           
+           // Show metadata
+           responseMetadata.classList.remove('hidden');
+           responseTabs.classList.remove('hidden');
+           
+           // Update metadata
+           if (result.success) {
+               const response = result.result;
+               if (response?.status_code) {
+                   const statusCode = document.getElementById('statusCode');
+                   statusCode.textContent = response.status_code;
+                   
+                   // Style based on status code
+                   statusCode.className = 'status-code';
+                   if (response.status_code >= 200 && response.status_code < 300) {
+                       statusCode.classList.add('success');
+                   } else if (response.status_code >= 300 && response.status_code < 400) {
+                       statusCode.classList.add('redirect');
+                   } else if (response.status_code >= 400 && response.status_code < 500) {
+                       statusCode.classList.add('client-error');
+                   } else {
+                       statusCode.classList.add('server-error');
+                   }
+               }
+               
+               document.getElementById('responseTime').textContent = `${result.duration_ms || 0}ms`;
+               
+               // Calculate size
+               const size = JSON.stringify(response?.body || response).length;
+               document.getElementById('responseSize').textContent = formatBytes(size);
+               
+               // Display body
+               responseContent.innerHTML = createCodeBlockHTML(
+                   JSON.stringify(response?.body || response, null, 2),
+                   'json'
+               );
+           } else {
+               // Error response
+               const statusCode = document.getElementById('statusCode');
+               statusCode.textContent = 'Error';
+               statusCode.className = 'status-code client-error';
+               
+               document.getElementById('responseTime').textContent = `${result.duration_ms || 0}ms`;
+               document.getElementById('responseSize').textContent = '0B';
+               
+               responseContent.innerHTML = `
+                   <div class="badge badge-error mb-2">${result.error_type || 'Error'}</div>
+                   <pre class="text-small">${escapeHtml(result.error)}</pre>
+                   ${result.traceback ? `<details class="mt-2"><summary>Stack Trace</summary><pre class="text-xs">${escapeHtml(result.traceback)}</pre></details>` : ''}
+               `;
+           }
+           
+           // Re-highlight code
+           if (typeof Prism !== 'undefined') {
+               Prism.highlightAll();
+           }
+       }
+       
+       function displayPlaygroundError(error) {
+           const responseContent = document.getElementById('responseContent');
+           responseContent.innerHTML = `
+               <div class="badge badge-error">Error</div>
+               <pre class="mt-2">${escapeHtml(error.message || error)}</pre>
+           `;
+       }
+       
+       function switchResponseTab(tab, button) {
+           // Update tab buttons
+           document.querySelectorAll('.response-tab').forEach(btn => {
+               btn.classList.remove('active');
+           });
+           button.classList.add('active');
+           
+           const responseContent = document.getElementById('responseContent');
+           
+           if (!state.currentResponse) return;
+           
+           if (tab === 'body') {
+               const body = state.currentResponse.result?.body || state.currentResponse.result;
+               responseContent.innerHTML = createCodeBlockHTML(
+                   JSON.stringify(body, null, 2),
+                   'json'
+               );
+           } else if (tab === 'headers') {
+               const headers = state.currentResponse.result?.headers || {};
+               responseContent.innerHTML = createCodeBlockHTML(
+                   JSON.stringify(headers, null, 2),
+                   'json'
+               );
+           } else if (tab === 'raw') {
+               responseContent.innerHTML = createCodeBlockHTML(
+                   JSON.stringify(state.currentResponse, null, 2),
+                   'json'
+               );
+           }
+           
+           // Re-highlight code
+           if (typeof Prism !== 'undefined') {
+               Prism.highlightAll();
+           }
+       }
+       
+       function clearPlayground() {
+           if (state.playgroundType === 'api') {
+               document.getElementById('playgroundMethod').value = 'GET';
+               document.getElementById('playgroundUrl').value = '';
+               document.getElementById('playgroundBody').value = '';
+               
+               // Reset headers to defaults
+               document.getElementById('headersEditor').innerHTML = `
+                   <div class="header-row">
+                       <input type="text" class="form-input" placeholder="Key" value="entity">
+                       <input type="text" class="form-input" placeholder="Value" value="GPRDTTSTOU">
+                       <button class="btn btn-ghost btn-icon" onclick="removeHeader(this)">
+                           <i data-lucide="x" style="width: 16px; height: 16px;"></i>
+                       </button>
+                   </div>
+                   <div class="header-row">
+                       <input type="text" class="form-input" placeholder="Key" value="userId">
+                       <input type="text" class="form-input" placeholder="Value" value="1">
+                       <button class="btn btn-ghost btn-icon" onclick="removeHeader(this)">
+                           <i data-lucide="x" style="width: 16px; height: 16px;"></i>
+                       </button>
+                   </div>
+                   <div class="header-row">
+                       <input type="text" class="form-input" placeholder="Key" value="languageCode">
+                       <input type="text" class="form-input" placeholder="Value" value="1">
+                       <button class="btn btn-ghost btn-icon" onclick="removeHeader(this)">
+                           <i data-lucide="x" style="width: 16px; height: 16px;"></i>
+                       </button>
+                   </div>
+               `;
+           } else {
+               document.getElementById('mcpToolSelect').value = '';
+               document.getElementById('mcpToolParams').value = '';
+           }
+           
+           // Clear response
+           document.getElementById('responseContent').innerHTML = '<div class="text-muted">Execute a request to see the response here</div>';
+           document.getElementById('responseMetadata').classList.add('hidden');
+           document.getElementById('responseTabs').classList.add('hidden');
+           state.currentResponse = null;
+           
+           lucide.createIcons();
+       }
+       
+       function saveToHistory() {
+           if (!state.currentResponse) {
+               showNotification('No request to save', 'warning');
+               return;
+           }
+           
+           showNotification('Request saved to history', 'success');
+       }
+       
+       function copyResponse() {
+           if (!state.currentResponse) {
+               showNotification('No response to copy', 'warning');
+               return;
+           }
+           
+           const text = JSON.stringify(state.currentResponse.result || state.currentResponse, null, 2);
+           navigator.clipboard.writeText(text).then(() => {
+               showNotification('Response copied to clipboard', 'success');
+           });
+       }
+       
+       function downloadResponse() {
+           if (!state.currentResponse) {
+               showNotification('No response to download', 'warning');
+               return;
+           }
+           
+           const data = JSON.stringify(state.currentResponse.result || state.currentResponse, null, 2);
+           const blob = new Blob([data], { type: 'application/json' });
+           const url = URL.createObjectURL(blob);
+           const a = document.createElement('a');
+           a.href = url;
+           a.download = `response-${Date.now()}.json`;
+           document.body.appendChild(a);
+           a.click();
+           document.body.removeChild(a);
+           URL.revokeObjectURL(url);
+           
+           showNotification('Response downloaded', 'success');
+       }
+       
+       function updateMCPToolParams() {
+           const toolName = document.getElementById('mcpToolSelect').value;
+           const tool = state.mcpTools.find(t => t.name === toolName);
+           
+           if (tool) {
+               // Set example parameters based on tool
+               const exampleParams = {};
+               
+               // Common BAnCS tool examples
+               if (toolName.includes('account_balance')) {
+                   exampleParams.accountReference = '101000000101814';
+               } else if (toolName.includes('customer')) {
+                   exampleParams.customerId = '146025';
+               } else if (toolName.includes('loan')) {
+                   exampleParams.loanReference = '999000000109598';
+               }
+               
+               document.getElementById('mcpToolParams').value = JSON.stringify(exampleParams, null, 2);
+           }
+       }
+       
+       // History functions
+       function addToHistory(item) {
+           state.playgroundHistory.unshift(item);
+           
+           // Keep only last 50 items
+           if (state.playgroundHistory.length > 50) {
+               state.playgroundHistory = state.playgroundHistory.slice(0, 50);
+           }
+           
+           // Save to localStorage
+           saveHistoryToStorage();
+           
+           // Update display if history tab is active
+           if (!document.getElementById('historyTab').classList.contains('hidden')) {
+               displayHistory();
+           }
+       }
+       
+       function displayHistory() {
+           const container = document.getElementById('historyList');
+           
+           if (state.playgroundHistory.length === 0) {
+               container.innerHTML = '<div class="text-muted">No history yet</div>';
+               return;
+           }
+           
+           container.innerHTML = state.playgroundHistory.map((item, index) => {
+               const time = new Date(item.timestamp).toLocaleTimeString();
+               const date = new Date(item.timestamp).toLocaleDateString();
+               
+               if (item.type === 'api') {
+                   return `
+                       <div class="history-item" onclick="loadHistoryItem(${index})">
+                           <div class="history-item-header">
+                               <div>
+                                   <span class="method-badge method-${item.request.method.toLowerCase()}">${item.request.method}</span>
+                                   <span class="history-item-method ml-2">${item.response?.success ? '✓' : '✗'}</span>
+                               </div>
+                               <span class="history-item-time">${time}</span>
+                           </div>
+                           <div class="history-item-url">${item.request.url}</div>
+                           <div class="text-xs text-muted">${date} • ${item.duration}ms</div>
+                       </div>
+                   `;
+               } else {
+                   return `
+                       <div class="history-item" onclick="loadHistoryItem(${index})">
+                           <div class="history-item-header">
+                               <div>
+                                   <span class="badge badge-info">MCP</span>
+                                   <span class="history-item-method ml-2">${item.response?.success ? '✓' : '✗'}</span>
+                               </div>
+                               <span class="history-item-time">${time}</span>
+                           </div>
+                           <div class="history-item-url">${item.request.tool}</div>
+                           <div class="text-xs text-muted">${date} • ${item.duration}ms</div>
+                       </div>
+                   `;
+               }
+           }).join('');
+       }
+       
+       function loadHistoryItem(index) {
+           const item = state.playgroundHistory[index];
+           if (!item) return;
+           
+           // Switch to playground tab
+           switchTab('playground', document.querySelector('.tab:nth-child(3)'));
+           
+           // Set request type
+           if (item.type === 'api') {
+               setRequestType('api', document.querySelector('.request-type-btn'));
+               
+               // Populate fields
+               document.getElementById('playgroundMethod').value = item.request.method;
+               document.getElementById('playgroundUrl').value = item.request.url;
+               document.getElementById('playgroundBody').value = item.request.body || '';
+               
+               // Set headers
+               const headersEditor = document.getElementById('headersEditor');
+               headersEditor.innerHTML = '';
+               
+               Object.entries(item.request.headers || {}).forEach(([key, value]) => {
+                   const row = document.createElement('div');
+                   row.className = 'header-row';
+                   row.innerHTML = `
+                       <input type="text" class="form-input" placeholder="Key" value="${escapeHtml(key)}">
+                       <input type="text" class="form-input" placeholder="Value" value="${escapeHtml(value)}">
+                       <button class="btn btn-ghost btn-icon" onclick="removeHeader(this)">
+                           <i data-lucide="x" style="width: 16px; height: 16px;"></i>
+                       </button>
+                   `;
+                   headersEditor.appendChild(row);
+               });
+           } else {
+               setRequestType('mcp', document.querySelector('.request-type-btn:nth-child(2)'));
+               
+               // Populate fields
+               document.getElementById('mcpToolSelect').value = item.request.tool;
+               document.getElementById('mcpToolParams').value = item.request.params || '';
+           }
+           
+           // Display response
+           displayPlaygroundResponse(item.response);
+           
+           lucide.createIcons();
+           showNotification('Loaded from history', 'success');
+       }
+       
+       function clearHistory() {
+           if (confirm('Are you sure you want to clear all history?')) {
+               state.playgroundHistory = [];
+               saveHistoryToStorage();
+               displayHistory();
+               showNotification('History cleared', 'success');
+           }
+       }
+       
+       function saveHistoryToStorage() {
+           try {
+               localStorage.setItem('playgroundHistory', JSON.stringify(state.playgroundHistory));
+           } catch (e) {
+               console.error('Failed to save history:', e);
+           }
+       }
+       
+       function loadHistoryFromStorage() {
+           try {
+               const saved = localStorage.getItem('playgroundHistory');
+               if (saved) {
+                   state.playgroundHistory = JSON.parse(saved);
+               }
+           } catch (e) {
+               console.error('Failed to load history:', e);
+           }
+       }
+       
+       // Other functions
+       function askAboutEndpoint(endpointName) {
+           switchTab('chat', document.querySelector('.tab'));
+           sendQuickMessage(`Tell me about the ${endpointName} endpoint with examples`);
+       }
+       
+       async function loadRecipe(recipeId) {
+           try {
+               const response = await fetchWithRetry(`/api/cookbook/${recipeId}`);
+               const recipe = await response.json();
+               
+               // Switch to chat and ask about recipe
+               switchTab('chat', document.querySelector('.tab'));
+               sendQuickMessage(`Show me the ${recipe.title} recipe with code examples`);
+           } catch (error) {
+               console.error('Failed to load recipe:', error);
+               showNotification('Failed to load recipe', 'error');
+           }
+       }
+       
+       function testMCPTool(toolName) {
+           // Switch to playground and set up MCP tool test
+           switchTab('playground', document.querySelector('.tab:nth-child(3)'));
+           setRequestType('mcp', document.querySelector('.request-type-btn:nth-child(2)'));
+           document.getElementById('mcpToolSelect').value = toolName;
+           updateMCPToolParams();
+           showNotification('Ready to test MCP tool', 'success');
+       }
+       
+       async function fetchOpenAPISpec() {
+           try {
+               const response = await fetchWithRetry('/api/openapi?version=3.0');
+               const spec = await response.json();
+               
+               // Switch to chat and show spec
+               switchTab('chat', document.querySelector('.tab'));
+               addMessage('Here\'s the OpenAPI specification:', 'assistant');
+               
+               const messageDiv = document.createElement('div');
+               messageDiv.className = 'message assistant';
+               messageDiv.innerHTML = createCodeBlockHTML(
+                   JSON.stringify(spec, null, 2),
+                   'json'
+               );
+               document.getElementById('chatMessages').appendChild(messageDiv);
+               
+               // Re-highlight
+               if (typeof Prism !== 'undefined') {
+                   Prism.highlightAll();
+               }
+               
+           } catch (error) {
+               console.error('Failed to fetch OpenAPI spec:', error);
+               showNotification('Failed to fetch OpenAPI specification', 'error');
+           }
+       }
+       
+       async function exportPostmanCollection() {
+           try {
+               const response = await fetchWithRetry('/api/hoppscotch/collection');
+               const collection = await response.json();
+               
+               const blob = new Blob([JSON.stringify(collection, null, 2)], { type: 'application/json' });
+               const url = URL.createObjectURL(blob);
+               const a = document.createElement('a');
+               a.href = url;
+               a.download = 'tcs-bancs-api-collection.json';
+               document.body.appendChild(a);
+               a.click();
+               document.body.removeChild(a);
+               URL.revokeObjectURL(url);
+               
+               showNotification('Collection exported successfully', 'success');
+           } catch (error) {
+               console.error('Failed to export collection:', error);
+               showNotification('Failed to export collection', 'error');
+           }
+       }
+       
+       function showMCPTools() {
+           switchTab('mcp', document.querySelector('.tab:nth-child(4)'));
+       }
+       
+       function showSettings() {
+           // Placeholder for settings modal
+           showNotification('Settings panel coming soon!', 'info');
+       }
+       
+       // Utility functions
+       async function fetchWithRetry(url, options = {}, retries = config.maxRetries) {
+           for (let i = 0; i < retries; i++) {
+               try {
+                   const response = await fetch(config.apiBaseUrl + url, options);
+                   if (!response.ok && i < retries - 1) {
+                       await new Promise(resolve => setTimeout(resolve, config.retryDelay));
+                       continue;
+                   }
+                   return response;
+               } catch (error) {
+                   if (i === retries - 1) throw error;
+                   await new Promise(resolve => setTimeout(resolve, config.retryDelay));
+               }
+           }
+       }
+       
+       function showNotification(message, type = 'info') {
+           const notification = document.createElement('div');
+           notification.className = `badge badge-${type}`;
+           notification.style.cssText = `
+               position: fixed;
+               top: 20px;
+               right: 20px;
+               padding: 12px 20px;
+               z-index: 1000;
+               animation: slideIn 0.3s ease;
+           `;
+           notification.textContent = message;
+           
+           document.body.appendChild(notification);
+           
+           setTimeout(() => {
+               notification.style.animation = 'slideOut 0.3s ease';
+               setTimeout(() => notification.remove(), 300);
+           }, 3000);
+       }
+       
+       function escapeHtml(text) {
+           const map = {
+               '&': '&amp;',
+               '<': '&lt;',
+               '>': '&gt;',
+               '"': '&quot;',
+               "'": '&#039;'
+           };
+           return String(text).replace(/[&<>"']/g, m => map[m]);
+       }
+       
+       function createCodeBlockHTML(code, language = 'json') {
+           const id = 'code-' + Date.now();
+           return `
+               <div class="code-block">
+                   <div class="code-header">
+                       <span>${language.toUpperCase()}</span>
+                       <button class="copy-button" onclick="copyCode('${id}')">Copy</button>
+                   </div>
+                   <pre><code id="${id}" class="language-${language}">${escapeHtml(code)}</code></pre>
+               </div>
+           `;
+       }
+       
+       function autoResizeTextarea(textarea) {
+           textarea.style.height = 'auto';
+           textarea.style.height = Math.min(textarea.scrollHeight, 200) + 'px';
+       }
+       
+       function handleInputKeydown(event) {
+           if (event.key === 'Enter' && !event.shiftKey) {
+               event.preventDefault();
+               sendMessage();
+           }
+       }
+       
+       function formatBytes(bytes) {
+           if (bytes === 0) return '0B';
+           const k = 1024;
+           const sizes = ['B', 'KB', 'MB', 'GB'];
+           const i = Math.floor(Math.log(bytes) / Math.log(k));
+           return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + sizes[i];
+       }
+       
+       // Add animations
+       const style = document.createElement('style');
+       style.textContent = `
+           @keyframes slideIn {
+               from {
+                   opacity: 0;
+                   transform: translateX(100%);
+               }
+               to {
+                   opacity: 1;
+                   transform: translateX(0);
+               }
+           }
+           
+           @keyframes slideOut {
+               from {
+                   opacity: 1;
+                   transform: translateX(0);
+               }
+               to {
+                   opacity: 0;
+                   transform: translateX(100%);
+               }
+           }
+       `;
+       document.head.appendChild(style);
+       
+       // Initialize on DOM ready
+       if (document.readyState === 'loading') {
+           document.addEventListener('DOMContentLoaded', init);
+       } else {
+           init();
+       }
+   </script>
+</body>
+</html>
