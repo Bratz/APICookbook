@@ -1,0 +1,1017 @@
+{
+	"info": {
+		"_postman_id": "3c525d80-3101-4af7-90e7-4b46d10d113e",
+		"name": "AWSBancs Collection",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "GetAccountBlockList",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "accountReference",
+						"value": "101000000101814",
+						"type": "default"
+					},
+					{
+						"key": "entity",
+						"value": "GPRDTTSTOU",
+						"type": "default"
+					},
+					{
+						"key": "languageCode",
+						"value": "1",
+						"type": "default"
+					},
+					{
+						"key": "userId",
+						"value": "1",
+						"type": "default"
+					}
+				],
+				"url": {
+					"raw": "https://demoapps.tcsbancs.com/Core/accountManagement/account/blockList/101000000101814?pageNum=1&pageSize=22",
+					"protocol": "https",
+					"host": [
+						"demoapps",
+						"tcsbancs",
+						"com"
+					],
+					"path": [
+						"Core",
+						"accountManagement",
+						"account",
+						"blockList",
+						"101000000101814"
+					],
+					"query": [
+						{
+							"key": "pageNum",
+							"value": "1"
+						},
+						{
+							"key": "pageSize",
+							"value": "22"
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "GetAccountBalance",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "accountReference",
+						"value": "101000000101814",
+						"type": "default"
+					},
+					{
+						"key": "entity",
+						"value": "GPRDTTSTOU",
+						"type": "default"
+					},
+					{
+						"key": "languageCode",
+						"value": "1",
+						"type": "default"
+					},
+					{
+						"key": "userId",
+						"value": "1",
+						"type": "default"
+					}
+				],
+				"url": {
+					"raw": "https://demoapps.tcsbancs.com/Core/accountManagement/account/balanceDetails/101000000101814",
+					"protocol": "https",
+					"host": [
+						"demoapps",
+						"tcsbancs",
+						"com"
+					],
+					"path": [
+						"Core",
+						"accountManagement",
+						"account",
+						"balanceDetails",
+						"101000000101814"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "GetAccountDetailsbyAccount",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "accountReference",
+						"value": "101000000104016",
+						"type": "default"
+					},
+					{
+						"key": "entity",
+						"value": "GPRDTTSTOU",
+						"type": "default"
+					},
+					{
+						"key": "languageCode",
+						"value": "1",
+						"type": "default"
+					},
+					{
+						"key": "userId",
+						"value": "1",
+						"type": "default"
+					}
+				],
+				"url": {
+					"raw": "https://demoapps.tcsbancs.com/Core/accountManagement/account/details/101000000104016",
+					"protocol": "https",
+					"host": [
+						"demoapps",
+						"tcsbancs",
+						"com"
+					],
+					"path": [
+						"Core",
+						"accountManagement",
+						"account",
+						"details",
+						"101000000104016"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "GetAccountTransactions",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "accountReference",
+						"value": "101000000101814",
+						"type": "default"
+					},
+					{
+						"key": "entity",
+						"value": "GPRDTTSTOU",
+						"type": "default"
+					},
+					{
+						"key": "languageCode",
+						"value": "1",
+						"type": "default"
+					},
+					{
+						"key": "userId",
+						"value": "1",
+						"type": "default"
+					}
+				],
+				"url": {
+					"raw": "https://demoapps.tcsbancs.com/Core/accountManagement/account/transactionHistory/101000000101814?pageNum=1&pageSize=22",
+					"protocol": "https",
+					"host": [
+						"demoapps",
+						"tcsbancs",
+						"com"
+					],
+					"path": [
+						"Core",
+						"accountManagement",
+						"account",
+						"transactionHistory",
+						"101000000101814"
+					],
+					"query": [
+						{
+							"key": "pageNum",
+							"value": "1"
+						},
+						{
+							"key": "pageSize",
+							"value": "22"
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "GetAccountListByCustomerID",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "entity",
+						"value": "GPRDTTSTOU",
+						"type": "default"
+					},
+					{
+						"key": "languageCode",
+						"value": "1",
+						"type": "default"
+					},
+					{
+						"key": "userId",
+						"value": "1",
+						"type": "default"
+					}
+				],
+				"url": {
+					"raw": "https://demoapps.tcsbancs.com/Core/accountManagement/account/list?BalanceRequired=1&CustomerID=146025&pageNum=1&pageSize=22",
+					"protocol": "https",
+					"host": [
+						"demoapps",
+						"tcsbancs",
+						"com"
+					],
+					"path": [
+						"Core",
+						"accountManagement",
+						"account",
+						"list"
+					],
+					"query": [
+						{
+							"key": "BalanceRequired",
+							"value": "1"
+						},
+						{
+							"key": "CustomerID",
+							"value": "146025"
+						},
+						{
+							"key": "pageNum",
+							"value": "1"
+						},
+						{
+							"key": "pageSize",
+							"value": "22"
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "GetLoanDetails",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "languageCode",
+						"value": "1",
+						"type": "default"
+					},
+					{
+						"key": "entity",
+						"value": "GPRDTTSTOU",
+						"type": "default"
+					},
+					{
+						"key": "userId",
+						"value": "1",
+						"type": "default"
+					}
+				],
+				"url": {
+					"raw": "https://demoapps.tcsbancs.com/Core/loans/loan/detailsIB/{loanReference}?loanReference=999000000109598",
+					"protocol": "https",
+					"host": [
+						"demoapps",
+						"tcsbancs",
+						"com"
+					],
+					"path": [
+						"Core",
+						"loans",
+						"loan",
+						"detailsIB",
+						"{loanReference}"
+					],
+					"query": [
+						{
+							"key": "loanReference",
+							"value": "999000000109598"
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "GetCollateralDetails",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "collateralReference",
+						"value": "10049",
+						"type": "default"
+					},
+					{
+						"key": "entity",
+						"value": "GPRDTTSTOU",
+						"type": "default"
+					},
+					{
+						"key": "languageCode",
+						"value": "1",
+						"type": "default"
+					},
+					{
+						"key": "userId",
+						"value": "1",
+						"type": "default"
+					}
+				],
+				"url": {
+					"raw": "https://demoapps.tcsbancs.com/Core/loans/collateral/realestate/10049",
+					"protocol": "https",
+					"host": [
+						"demoapps",
+						"tcsbancs",
+						"com"
+					],
+					"path": [
+						"Core",
+						"loans",
+						"collateral",
+						"realestate",
+						"10049"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "GetLoanAccountsListByCustomerID",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "customerReference",
+						"value": "145999",
+						"type": "default"
+					},
+					{
+						"key": "entity",
+						"value": "GPRDTTSTOU",
+						"type": "default"
+					},
+					{
+						"key": "languageCode",
+						"value": "1",
+						"type": "default"
+					},
+					{
+						"key": "userId",
+						"value": "1",
+						"type": "default"
+					}
+				],
+				"url": {
+					"raw": "https://demoapps.tcsbancs.com/Core/loans/accountConductDetails/145999",
+					"protocol": "https",
+					"host": [
+						"demoapps",
+						"tcsbancs",
+						"com"
+					],
+					"path": [
+						"Core",
+						"loans",
+						"accountConductDetails",
+						"145999"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "GetLoansRepaymentSchedule",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "entity",
+						"value": "GPRDTTSTOU",
+						"type": "default"
+					},
+					{
+						"key": "languageCode",
+						"value": "1",
+						"type": "default"
+					},
+					{
+						"key": "loanReference",
+						"value": "999000000109598",
+						"type": "default"
+					},
+					{
+						"key": "repayOption",
+						"value": "1",
+						"type": "default"
+					},
+					{
+						"key": "userId",
+						"value": "1",
+						"type": "default"
+					}
+				],
+				"url": {
+					"raw": "https://demoapps.tcsbancs.com/Core/loans/repaymentSchedule/999000000109598?pageNum=1&pageSize=22&repayOption=1",
+					"protocol": "https",
+					"host": [
+						"demoapps",
+						"tcsbancs",
+						"com"
+					],
+					"path": [
+						"Core",
+						"loans",
+						"repaymentSchedule",
+						"999000000109598"
+					],
+					"query": [
+						{
+							"key": "pageNum",
+							"value": "1"
+						},
+						{
+							"key": "pageSize",
+							"value": "22"
+						},
+						{
+							"key": "repayOption",
+							"value": "1"
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "GetCustomerDetails",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "entity",
+						"value": "GPRDTTSTOU",
+						"type": "default"
+					},
+					{
+						"key": "languageCode",
+						"value": "1",
+						"type": "default"
+					},
+					{
+						"key": "userId",
+						"value": "1",
+						"type": "default"
+					}
+				],
+				"url": {
+					"raw": "https://demoapps.tcsbancs.com/Core/customerManagement/customer/viewDetails?CustomerID=146025&pageNum=1&pageSize=22",
+					"protocol": "https",
+					"host": [
+						"demoapps",
+						"tcsbancs",
+						"com"
+					],
+					"path": [
+						"Core",
+						"customerManagement",
+						"customer",
+						"viewDetails"
+					],
+					"query": [
+						{
+							"key": "CustomerID",
+							"value": "146025"
+						},
+						{
+							"key": "pageNum",
+							"value": "1"
+						},
+						{
+							"key": "pageSize",
+							"value": "22"
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "GetCustomerSearch",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "CustomerType",
+						"value": "1",
+						"type": "default"
+					},
+					{
+						"key": "entity",
+						"value": "GPRDTTSTOU",
+						"type": "default"
+					},
+					{
+						"key": "languageCode",
+						"value": "1",
+						"type": "default"
+					},
+					{
+						"key": "userId",
+						"value": "1",
+						"type": "default"
+					}
+				],
+				"url": {
+					"raw": "https://demoapps.tcsbancs.com/Core/customerManagement/customer/search?BusinessPartnerReference=145999&CustomerType=1&pageNum=1&pageSize=22",
+					"protocol": "https",
+					"host": [
+						"demoapps",
+						"tcsbancs",
+						"com"
+					],
+					"path": [
+						"Core",
+						"customerManagement",
+						"customer",
+						"search"
+					],
+					"query": [
+						{
+							"key": "BusinessPartnerReference",
+							"value": "145999"
+						},
+						{
+							"key": "CustomerType",
+							"value": "1"
+						},
+						{
+							"key": "pageNum",
+							"value": "1"
+						},
+						{
+							"key": "pageSize",
+							"value": "22"
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "GetLoanDischargeEnquiry",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "entity",
+						"value": "GPRDTTSTOU",
+						"type": "default"
+					},
+					{
+						"key": "languageCode",
+						"value": "1",
+						"type": "default"
+					},
+					{
+						"key": "userId",
+						"value": "1",
+						"type": "default"
+					}
+				],
+				"url": {
+					"raw": "https://demoapps.tcsbancs.com/Core/loans/enquiry/loanDischargeEnquiry?balanceType=1&businessDate=20221111&loanReference=999000000109598",
+					"protocol": "https",
+					"host": [
+						"demoapps",
+						"tcsbancs",
+						"com"
+					],
+					"path": [
+						"Core",
+						"loans",
+						"enquiry",
+						"loanDischargeEnquiry"
+					],
+					"query": [
+						{
+							"key": "balanceType",
+							"value": "1"
+						},
+						{
+							"key": "businessDate",
+							"value": "20221111"
+						},
+						{
+							"key": "loanReference",
+							"value": "999000000109598"
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "CustomerCreate",
+			"request": {
+				"auth": {
+					"type": "noauth"
+				},
+				"method": "POST",
+				"header": [
+					{
+						"key": "entity",
+						"value": "GPRDTTSTOU",
+						"type": "default"
+					},
+					{
+						"key": "userId",
+						"value": "1",
+						"type": "default"
+					},
+					{
+						"key": "languageCode",
+						"value": "1",
+						"type": "default"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n\t\"businessPartner\": \r\n\t{\r\n\t\t\"customerType\": 1,\r\n\t\t\"amlCheckRequired\": 2,\r\n\t\t\"countryOfRisk\": \"US\",\r\n\t\t\"customerOpenDate\": \"20320208\",\r\n\t\t\"domicile\": \"AU\",\r\n\t\t\"dateOfOrigin\": \"19980603\",\r\n\t\t\"customerFullName\": \"Leo\",\r\n\t\t\"nationality\": \"US\",\r\n\t\t\"customerRole\": 1,\r\n\t\t\"prospectRole\": 2,\r\n\t\t\"branchCode\": \"101\",\r\n\t\t\"customerSegment\": 17\r\n\t},\r\n\t\"postalAddress\": \r\n\t{\r\n\t\t\"addressType\": 2,\r\n\t\t\"postalCode\": \"2060\",\r\n\t\t\"country\": \"US\",\r\n\t\t\"originCity\": \"Sydney\",\r\n\t\t\"originState\": \"Sydney\",\r\n\t\t\"validFromDate\": \"20320208\",\r\n\t\t\"addressLine1\": \"Building Street\",\r\n\t\t\"addressLine2\": \"North Sydney\",\r\n\t\t\"correspondenceFlag\": 1\r\n\t},\r\n\t\"individual\": \r\n\t{\r\n\t\t\"birthPlace\": \"Sydney\",\r\n\t\t\"firstName\": \"Leos\",\r\n\t\t\"maritalStatus\": 1,\r\n\t\t\"sexIndicator\": 1,\r\n\t\t\"salutation\": 1,\r\n\t\t\"familyName\": \"Das\",\r\n\t\t\"secondarySector\": 2\r\n\t},\r\n\t\"identification\": \r\n\t[\r\n\t{\r\n\t\t\"primaryIdType\": 45,\r\n\t\t\"primaryId\": \"111187\",\r\n\t\t\"issueCountry\": \"US\",\r\n\t\t\"issueDate\": \"20320101\",\r\n\t\t\"expiryDate\": \"20451231\",\r\n\t\t\"issuePlace\": \"Sydney\"\r\n\t}\r\n\t],\r\n\t\"contactDetails\": \r\n\t[\r\n\t{\r\n\t\t\"contactType\": 31,\r\n\t\t\"contactNumber\": \"8989876578\",\r\n\t\t\"email\": \"LEODAS@gmail.com\",\r\n\t\t\"mobileCountryCode\": 1,\r\n\t\t\"smsRequired\": 1\r\n\t}\r\n\t]\r\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://demoapps.tcsbancs.com/Core/customerManagement/customer",
+					"protocol": "https",
+					"host": [
+						"demoapps",
+						"tcsbancs",
+						"com"
+					],
+					"path": [
+						"Core",
+						"customerManagement",
+						"customer"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "AccountCreate",
+			"request": {
+				"auth": {
+					"type": "noauth"
+				},
+				"method": "POST",
+				"header": [
+					{
+						"key": "entity",
+						"value": "GPRDTTSTOU",
+						"type": "default"
+					},
+					{
+						"key": "languageCode",
+						"value": "1",
+						"type": "default"
+					},
+					{
+						"key": "userId",
+						"value": "1",
+						"type": "default"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n    \"account\": {\r\n        \"customerId\": 146039,\r\n        \"accountLanguage\": 1,\r\n        \"accountUsage\": 40,\r\n        \"accountCurrency\": \"USD\",\r\n        \"accountType\": 1,\r\n        \"accountName\": \"Test Saving Account 101562 2\",\r\n        \"branchId\": \"101\",\r\n        \"product\": 1037\r\n    }\r\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://demoapps.tcsbancs.com/Core/accountManagement/account",
+					"protocol": "https",
+					"host": [
+						"demoapps",
+						"tcsbancs",
+						"com"
+					],
+					"path": [
+						"Core",
+						"accountManagement",
+						"account"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "AccountBlock",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "entity",
+						"value": "GPRDTTSTOU",
+						"type": "default"
+					},
+					{
+						"key": "languageCode",
+						"value": "1",
+						"type": "default"
+					},
+					{
+						"key": "userId",
+						"value": "1",
+						"type": "default"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n  \"customer\": {\r\n    \"followupEndDate\": \"20331101\",\r\n    \"followupReason\": \"Credit Block\",\r\n    \"followupStartDate\": \"20320802\",\r\n    \"followupStatus\": 93,\r\n    \"applicability\": 43,\r\n    \"customerId\": 146039,\r\n    \"originalSource\": 1,\r\n    \"accountReference\": \"101000000101814\"\r\n  }\r\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://demoapps.tcsbancs.com/Core/customerManagement/customer/followUp",
+					"protocol": "https",
+					"host": [
+						"demoapps",
+						"tcsbancs",
+						"com"
+					],
+					"path": [
+						"Core",
+						"customerManagement",
+						"customer",
+						"followUp"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "CreateBooking",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "entity",
+						"value": "GPRDTTSTOU",
+						"type": "default"
+					},
+					{
+						"key": "languageCode",
+						"value": "1",
+						"type": "default"
+					},
+					{
+						"key": "userId",
+						"value": "1",
+						"type": "default"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n  \"bookingMaster\": {\r\n    \"entity\": \"GPRDTTSTOU\",\r\n    \"transactionDate\": 20210801,\r\n    \"externalBusinessEventId\": 2034,\r\n    \"forcedBookingIndicator\": 2,\r\n    \"orderingSystemId\": 5,\r\n    \"bookingRequestId\": 20210406375200545,\r\n    \"transactionId\": 123456789121,\r\n    \"transactionSource\": 2,\r\n    \"reversalCorrectionIndicator\": 2\r\n  },\r\n  \"bookingDetailsList\": [\r\n    {\r\n      \"entity\": \"GPRDTTSTOU\",\r\n      \"baseCurrency\": \"USD\",\r\n      \"accountAmount\": 10,\r\n      \"accountNumberFormat\": 1,\r\n      \"accountNumber\": 201100200100241,\r\n      \"bookingType\": 1,\r\n      \"orginialValueDate\": 20210801,\r\n      \"customerExchangeRate\": 1,\r\n      \"valueDate\": 20210801,\r\n      \"narrativeId\": 4523,\r\n      \"bookId\": 1,\r\n      \"accountCurrency\": \"USD\",\r\n      \"accountingDate\": 20210801,\r\n      \"baseCurrencyAmount\": 10,\r\n      \"transactionAmount\": 10,\r\n      \"transactionCurrency\": \"USD\",\r\n      \"cashIndicator\": 1,\r\n      \"narrativePlaceholders\": \"NAME|Test|Date|20210101\",\r\n      \"btcCode\": 44244424,\r\n      \"epcCode\": 231,\r\n      \"businessTransactionDetail1\": \"Credit Account\",\r\n      \"businessTransactionDetail2\": \"A32\",\r\n      \"reconciliationReferenceId\": 123333,\r\n      \"componentType\": 1,\r\n      \"taxCode\": 1\r\n    },\r\n    {\r\n      \"entity\": \"GPRDTTSTOU\",\r\n      \"baseCurrency\": \"USD\",\r\n      \"accountAmount\": 10,\r\n      \"accountNumberFormat\": 1,\r\n      \"accountNumber\": 517000100000027,\r\n      \"bookingType\": 2,\r\n      \"cashBlockId\": null,\r\n      \"orginialValueDate\": 20210801,\r\n      \"customerExchangeRate\": 1,\r\n      \"valueDate\": 20210801,\r\n      \"narrativeId\": 4523,\r\n      \"bookId\": 1,\r\n      \"accountCurrency\": \"USD\",\r\n      \"accountingDate\": 20210801,\r\n      \"baseCurrencyAmount\": 10,\r\n      \"transactionAmount\": 10,\r\n      \"transactionCurrency\": \"USD\",\r\n      \"cashIndicator\": 1,\r\n      \"narrativePlaceholders\": \"NAME|Test|Date|20210101\",\r\n      \"btcCode\": 44244424,\r\n      \"epcCode\": 231,\r\n      \"businessTransactionDetail1\": \"Debit Account\",\r\n      \"businessTransactionDetail2\": \"A32\",\r\n      \"reconciliationReferenceId\": 123333,\r\n      \"componentType\": 1,\r\n      \"taxCode\": 1\r\n    }\r\n  ]\r\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://demoapps.tcsbancs.com/Core/financialAccounting/CreateBooking",
+					"protocol": "https",
+					"host": [
+						"demoapps",
+						"tcsbancs",
+						"com"
+					],
+					"path": [
+						"Core",
+						"financialAccounting",
+						"CreateBooking"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "CashBlock",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "entity",
+						"value": "GPRDTTSTOU",
+						"type": "default"
+					},
+					{
+						"key": "languageCode",
+						"value": "1",
+						"type": "default"
+					},
+					{
+						"key": "userId",
+						"value": "1",
+						"type": "default"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n  \"cashBlock\": {\r\n    \"accountCurrency\": \"USD\",\r\n    \"accountCurrencyAmount\": 100,\r\n    \"autoReleaseFlag\": 1,\r\n    \"blockAdvanceFlag\": 0,\r\n    \"blockCurrency\": \"USD\",\r\n    \"blockAmount\": 100,\r\n    \"blockLevel\": 1,\r\n    \"blockPurpose\": 0,\r\n    \"customerId\": 145999,\r\n    \"releaseDate\": \"20320801\",\r\n    \"remarks\": \"ok\",\r\n    \"identifierValue\": \"string\",\r\n    \"accountReference\": \"101000000112001\"\r\n  }\r\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://demoapps.tcsbancs.com/Core/accountManagement/account/cashBlock",
+					"protocol": "https",
+					"host": [
+						"demoapps",
+						"tcsbancs",
+						"com"
+					],
+					"path": [
+						"Core",
+						"accountManagement",
+						"account",
+						"cashBlock"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "CreateCollateral-RealState",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "userId",
+						"value": "1",
+						"type": "default"
+					},
+					{
+						"key": "languageCode",
+						"value": "1",
+						"type": "default"
+					},
+					{
+						"key": "entity",
+						"value": "GPRDTTSTOU",
+						"type": "default"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n  \"collateralMaster\": {\r\n    \"entity\": \"GPRDTTSTOU\",\r\n    \"collateralGroup\": 103,\r\n    \"collateralSubGroup\": 505,\r\n    \"collateralType\": 15,\r\n    \"description\": \"Test\",\r\n    \"riskCountry\": \"US\",\r\n    \"startDate\": \"20300306\",\r\n    \"expiryDate\": \"20400306\"\r\n  },\r\n  \"collateralVehicleMachinery\": {\r\n    \"manufacturer\": \"TCSMAN\",\r\n    \"make\": \"HERO\",\r\n    \"model\": \"GLAMOUR\",\r\n    \"totalPurchaseCost\": 1000,\r\n    \"purchaseCostCurrecy\": \"USD\",\r\n    \"safeLendingMargin\": 5.00,\r\n    \"bankValuation\": 950,\r\n    \"bankValuationCurrency\": \"USD\",\r\n    \"invoiceDate\": \"20300301\"\r\n  },\r\n  \"collateralValuation\": {\r\n    \"valuationAmountCurrency\": \"USD\",\r\n    \"valuationAmount\": 1000,\r\n    \"margin\": 5.00,\r\n    \"bankValuation\": 950,\r\n    \"bankValuationCurrency\": \"USD\",\r\n    \"valuationType\": 2\r\n  },\r\n  \"collateralOwnerDetails\": [\r\n    {\r\n      \"customerReference\": 145995,\r\n      \"primaryOwnerFlag\": 1,\r\n      \"customerName\": \"TEST LOC\",\r\n      \"ownerNameInLocalLanguage\": \"Test LOC\",\r\n      \"identificationReference\": \"Aadhar\",\r\n      \"collateralOwnerId\": \"145995\"\r\n    }\r\n  ],\r\n  \"moModeFlag\": {\r\n    \"authModeFlag\": 1\r\n  }\r\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://demoapps.tcsbancs.com/Core/loans/collateral/realestate/create",
+					"protocol": "https",
+					"host": [
+						"demoapps",
+						"tcsbancs",
+						"com"
+					],
+					"path": [
+						"Core",
+						"loans",
+						"collateral",
+						"realestate",
+						"create"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "ReleaseCancelCashBlock",
+			"request": {
+				"method": "DELETE",
+				"header": [
+					{
+						"key": "cashBlockId",
+						"value": "18004",
+						"type": "default"
+					},
+					{
+						"key": "entity",
+						"value": "GPRDTTSTOU",
+						"type": "default"
+					},
+					{
+						"key": "languageCode",
+						"value": "1",
+						"type": "default"
+					},
+					{
+						"key": "userId",
+						"value": "1",
+						"type": "default"
+					}
+				],
+				"url": {
+					"raw": "https://demoapps.tcsbancs.com/Core/accountManagement/account/cashBlock/18004/cancel",
+					"protocol": "https",
+					"host": [
+						"demoapps",
+						"tcsbancs",
+						"com"
+					],
+					"path": [
+						"Core",
+						"accountManagement",
+						"account",
+						"cashBlock",
+						"18004",
+						"cancel"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "CreateLoan",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "entity",
+						"value": "GPRDTTSTOU",
+						"type": "default"
+					},
+					{
+						"key": "languageCode",
+						"value": "1",
+						"type": "default"
+					},
+					{
+						"key": "userId",
+						"value": "1",
+						"type": "default"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n    \"intrstDetails\": [\r\n        {\r\n            \"category\": 2,\r\n            \"interestOverrideType\": 2,\r\n            \"interestPractice\": 1,\r\n            \"interestRateType\": 1,\r\n            \"refInterestBasis\": 24,\r\n            \"referenceInterestBaseCurrency\": \"USD\",\r\n            \"referenceInterestBaseperiod\": 1,\r\n            \"referenceInterestBaseperiodUnit\": 1,\r\n            \"minInterestRate\": 1,\r\n            \"maxInterestRate\": 20,\r\n            \"netInterestRate\": 4,\r\n            \"addOnRate\": 0\r\n        }\r\n    ],\r\n    \"loanEvents\": {\r\n        \"loanPurpose\": 1,\r\n        \"loanSubPurpose\": 1\r\n    },\r\n    \"loanExtDetails\": {\r\n        \"relationshipRf\": \"1\",\r\n        \"holidayTyp\": -999,\r\n        \"holidayStartDt\": \"_NS_\",\r\n        \"holidayPeriodFrequency\": -999,\r\n        \"holidayVal\": -999,\r\n        \"holidayStartMonth\": -999,\r\n        \"holidayEndMonth\": -999,\r\n        \"calculateFeeAplcbl\": -999,\r\n        \"marginComp1\": -99.99,\r\n        \"marginComp2\": -99.99,\r\n        \"marginComp3\": -99.99,\r\n        \"adjustedTenure\": -999,\r\n        \"operationType\": 1,\r\n        \"loanMaturity\": \"20330801\",\r\n        \"accountName\": \"AMAL FARAJ\"\r\n    },\r\n    \"loanDetails\": {\r\n        \"loanProductId\": 3373,\r\n        \"approvedLoanAmt\": 1000,\r\n        \"loanTenureFreq\": 8,\r\n        \"loanTenureUnit\": 2,\r\n        \"settlmentAccountRef\": \"101123400100002\",\r\n        \"repaymentDay\": 1,\r\n        \"installmentStartDate\": \"20311031\",\r\n        \"instalmentFrequency\": 5,\r\n        \"moratoriumInd\": -999,\r\n        \"primaryBorrowerId\": 100202,\r\n        \"moratoriumType\": -999,\r\n        \"moratoirumPeriod\": -999,\r\n        \"disburseLoanInd\": 1,\r\n        \"disbursmentStartDate\": \"20310901\",\r\n        \"disbursmentType\": 1,\r\n        \"applicationId\": \"_NS_\",\r\n        \"accountActivation\": 2,\r\n        \"sanctionDate\": \"20310901\",\r\n        \"loanCurrency\": \"USD\",\r\n        \"principalRepaymentStartDate\": \"20311031\",\r\n        \"principalRepaymentProductBasis\": 3,\r\n        \"interestRepaymentStartDate\": \"20311031\",\r\n        \"interestRepaymentProductBasis\": 1\r\n    }\r\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://demoapps.tcsbancs.com/Core/loans/loan",
+					"protocol": "https",
+					"host": [
+						"demoapps",
+						"tcsbancs",
+						"com"
+					],
+					"path": [
+						"Core",
+						"loans",
+						"loan"
+					]
+				}
+			},
+			"response": []
+		}
+	]
+}
