@@ -1700,6 +1700,12 @@
         
         // Setup WebSocket connection
         function setupWebSocket() {
+            // Vercel's rewrites can't proxy WebSockets, so on Vercel the attempt only fails noisily.
+            // Chat uses HTTP whenever the socket is closed.
+            if (window.location.hostname.endsWith('.vercel.app')) {
+                logToDevConsole('Chat uses HTTP (WebSockets are not available through Vercel)', 'info');
+                return;
+            }
             const wsUrl = `${config.wsProtocol}//${window.location.host}/ws`;
             
             try {
