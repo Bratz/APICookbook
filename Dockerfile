@@ -1,7 +1,7 @@
 # The API image for the OCI VM (deploy/oci/docker-compose.yml). Local development never uses it.
 # Build from the repo root:  docker build -t cookbook-api .
-# Python pinned to the interpreter the test suite passed on.
-FROM python:3.10.11-slim
+# Python pinned to the interpreter the test suite passed on (3.12: pydantic-ai needs >= 3.11).
+FROM python:3.12.15-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
