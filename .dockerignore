@@ -1,0 +1,8 @@
+# Build context is the repo root; only what the Dockerfile copies is sent.
+*
+!requirements.txt
+!backend/
+!frontend/
+!api_specs/
+!collections/
+**/__pycache__

@@ -1,5 +1,5 @@
 """
-MCP Server Implementation for TCS BAnCS
+MCP Server Implementation for TCS BaNCS
 Provides Model Context Protocol tools for AI integration
 """
 
@@ -48,7 +48,7 @@ from config import settings
 logger = logging.getLogger(__name__)
 
 class IntegratedMCPServer(Server):
-    """MCP Server integrated with the TCS BAnCS API chatbot"""
+    """MCP Server integrated with the TCS BaNCS API chatbot"""
     
     def __init__(self, knowledge_base):
         super().__init__(settings.mcp_server_name)
@@ -176,7 +176,7 @@ class IntegratedMCPServer(Server):
         resources = [
             Resource(
                 uri="bancs://api-documentation",
-                name="TCS BAnCS API Documentation",
+                name="TCS BaNCS API Documentation",
                 description="Complete API documentation with examples",
                 mimeType="text/markdown"
             ),
@@ -250,7 +250,7 @@ class IntegratedMCPServer(Server):
     
     def _get_api_documentation(self) -> str:
         """Generate comprehensive API documentation"""
-        doc = "# TCS BAnCS API Documentation\n\n"
+        doc = "# TCS BaNCS API Documentation\n\n"
         doc += f"Generated: {datetime.utcnow().isoformat()}\n\n"
         
         # Add table of contents
@@ -373,14 +373,14 @@ class IntegratedMCPServer(Server):
         openapi = {
             "openapi": "3.0.0",
             "info": {
-                "title": "TCS BAnCS API",
+                "title": "TCS BaNCS API",
                 "version": settings.app_version,
-                "description": "TCS BAnCS Banking API with MCP Support"
+                "description": "TCS BaNCS Banking API with MCP Support"
             },
             "servers": [
                 {
                     "url": settings.api_base_url,
-                    "description": "BAnCS API Server"
+                    "description": "BaNCS API Server"
                 }
             ],
             "paths": {},
@@ -449,8 +449,8 @@ class IntegratedMCPServer(Server):
         """Generate Postman collection"""
         collection = {
             "info": {
-                "name": "TCS BAnCS API Collection",
-                "description": "Generated Postman collection for TCS BAnCS APIs",
+                "name": "TCS BaNCS API Collection",
+                "description": "Generated Postman collection for TCS BaNCS APIs",
                 "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
             },
             "item": []

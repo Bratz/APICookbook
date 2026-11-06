@@ -1,0 +1,21 @@
+# APPEND this block to vam-portal/deploy/oci/Caddyfile — purely additive, never edit the existing
+# site blocks. Add it only once cookbook-api is running (a site with no upstream makes Caddy request a
+# certificate for nothing, and Let's Encrypt rate-limits per hostname).
+# Then run Actions -> "One-time OCI VM setup" (this repo) to validate and reload Caddy.
+# Revert = delete this block and reload.
+
+cookbook.161-33-9-182.sslip.io {
+	# The app has no sign-in. Knowledge-base writes stay local-only: the public can search, not edit.
+	respond /api/knowledge/add 403
+	@kbdelete {
+		method DELETE
+		path /api/knowledge/*
+	}
+	respond @kbdelete 403
+	# Everything else, including the app's own UI and /ws (Caddy proxies WebSockets as-is).
+	reverse_proxy cookbook-api:7600
+	log {
+		output stdout
+		format console
+	}
+}

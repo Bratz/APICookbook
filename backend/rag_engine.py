@@ -1,7 +1,7 @@
-# backend/rag_engine.py
 """
 Lightweight RAG engine optimized for API documentation
 Uses latest efficient embedding models and vector stores
+Enhanced with auto-training and knowledge base integration
 """
 
 import json
@@ -11,6 +11,8 @@ from dataclasses import dataclass
 import logging
 from pathlib import Path
 import pickle
+import hashlib
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -26,16 +28,41 @@ class LightweightRAG:
     """
     Efficient RAG system using small models
     Implements latest techniques from 2024
+    Enhanced with auto-training and caching
     """
-    
-    def __init__(self, embedding_model: str = "BAAI/bge-small-en-v1.5"):
+
+    QUERY_PREFIX = "Represent this sentence for searching relevant passages: "
+    # bge cosine scores are compressed (~0.5-0.9). On the BaNCS spec, good top hits
+    # scored >= 0.71, weak ones 0.65-0.68 (keyword search did better on those) and
+    # nonsense ~0.54. Below this, callers fall back to keyword search.
+    # ponytail: tuned on 8 sample queries; retune with real query logs or a new model.
+    MIN_SCORE = 0.7
+    INDEX_VERSION = 2  # bump when document construction changes, to rebuild the cache
+
+    def __init__(self, 
+                 knowledge_base=None,
+                 embedding_model: str = "BAAI/bge-small-en-v1.5",
+                 auto_train: bool = True):
+        self.kb = knowledge_base
         self.embedding_model_name = embedding_model
         self.embedding_model = None
         self.documents: List[Document] = []
+        # ponytail: plain float32 matrix (~3k x 384, a few MB). int8/Matryoshka tricks
+        # removed - they saved nothing here and the int8 dot product overflowed.
         self.embeddings_matrix = None
-        self.use_matryoshka = True  # Matryoshka embeddings for efficiency
-        self.use_quantization = True  # Quantize embeddings to int8
+
+        # Caching paths
+        self.cache_dir = Path("models/rag_cache")
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
+        self.index_path = self.cache_dir / "rag_index.pkl"
+        self.hash_path = self.cache_dir / "kb_hash.txt"
+        
+        # Initialize embedding model
         self._initialize_embedding_model()
+        
+        # Auto-train if knowledge base provided
+        if auto_train and self.kb:
+            self._auto_train_if_needed()
     
     def _initialize_embedding_model(self):
         """Initialize embedding model"""
@@ -53,68 +80,166 @@ class LightweightRAG:
                 "Snowflake/snowflake-arctic-embed-s": 33,  # Snowflake's small
             }
             
-            self.embedding_model = SentenceTransformer(self.embedding_model_name)
+            # Choose the best available model
+            model_to_use = self.embedding_model_name
+            if model_to_use not in small_models:
+                logger.warning(f"Unknown model {model_to_use}, using default")
+                model_to_use = "BAAI/bge-small-en-v1.5"
             
-            # Enable optimizations
-            if hasattr(self.embedding_model, "half"):
-                self.embedding_model.half()  # FP16 for speed
-            
-            logger.info(f"Loaded embedding model: {self.embedding_model_name}")
+            self.embedding_model = SentenceTransformer(model_to_use)
+            self.embedding_model_name = model_to_use
+
+            # FP16 only helps on GPU; on CPU it is slower and loses precision
+            if self.embedding_model.device.type == "cuda":
+                self.embedding_model.half()
+
+            logger.info(f"Loaded embedding model: {model_to_use} ({small_models.get(model_to_use, 'Unknown')}M params)")
             
         except ImportError:
-            logger.warning("sentence-transformers not installed, using numpy fallback")
+            logger.warning("sentence-transformers not installed, using TF-IDF fallback")
             self._use_numpy_embeddings = True
+            self._initialize_tfidf()
+    
+    def _initialize_tfidf(self):
+        """Initialize TF-IDF as fallback"""
+        from sklearn.feature_extraction.text import TfidfVectorizer
+        
+        self.tfidf_vectorizer = TfidfVectorizer(
+            max_features=2000,
+            stop_words='english',
+            ngram_range=(1, 3),
+            use_idf=True,
+            sublinear_tf=True
+        )
+    
+    def _get_kb_hash(self) -> str:
+        """Generate hash of knowledge base for cache invalidation"""
+        if not self.kb or not hasattr(self.kb, 'endpoints'):
+            return "empty"
+        
+        # Create deterministic hash of KB content + how it was embedded,
+        # so switching model (or TF-IDF <-> embeddings) rebuilds the cache
+        kb_summary = {
+            'model': self.embedding_model_name if self.embedding_model else 'tfidf',
+            'version': self.INDEX_VERSION,
+            'count': len(self.kb.endpoints),
+            'endpoints': sorted([
+                (name, data.get('url', ''), data.get('method', ''))
+                for name, data in self.kb.endpoints.items()
+            ])
+        }
+        
+        kb_str = json.dumps(kb_summary, sort_keys=True)
+        return hashlib.sha256(kb_str.encode()).hexdigest()[:16]
+    
+    def _needs_training(self) -> bool:
+        """Check if retraining is needed"""
+        if not self.index_path.exists() or not self.hash_path.exists():
+            return True
+        
+        try:
+            with open(self.hash_path, 'r') as f:
+                stored_hash = f.read().strip()
+            
+            current_hash = self._get_kb_hash()
+            needs_update = stored_hash != current_hash
+            
+            if needs_update:
+                logger.info(f"RAG: KB changed (hash: {stored_hash[:8]}... -> {current_hash[:8]}...)")
+            
+            return needs_update
+        except Exception as e:
+            logger.error(f"RAG: Error checking hash: {e}")
+            return True
+    
+    def _auto_train_if_needed(self):
+        """Auto-train if KB has changed"""
+        if self._needs_training():
+            start_time = datetime.now()
+            logger.info(f"RAG: Training on {len(self.kb.endpoints)} endpoints...")
+            
+            # Clear existing documents
+            self.documents = []
+            
+            # Add documents from KB
+            self.add_documents_from_apis(self.kb.endpoints)
+            
+            # Save index and hash
+            self.save_index(str(self.index_path))
+            with open(self.hash_path, 'w') as f:
+                f.write(self._get_kb_hash())
+            
+            elapsed = (datetime.now() - start_time).total_seconds()
+            logger.info(f"RAG: Training completed in {elapsed:.2f}s")
+        else:
+            # Load existing index
+            if self.index_path.exists():
+                self.load_index(str(self.index_path))
+                logger.info(f"RAG: Loaded cached index with {len(self.documents)} documents")
     
     def add_documents_from_apis(self, api_endpoints: Dict[str, Any]):
-        """Add API documentation to RAG"""
+        """Add one document per API endpoint.
+
+        ponytail: one chunk per endpoint. Measured on the BaNCS spec, the extra
+        parameter/keyword chunks ranked worse than the main chunk alone and the
+        parameter chunks tripled CPU build time. The main chunk lists the first 5 params.
+        """
         for endpoint_name, endpoint in api_endpoints.items():
-            # Create structured document
-            content = self._create_api_document(endpoint_name, endpoint)
-            
-            doc = Document(
-                content=content,
+            self.documents.append(Document(
+                content=self._create_api_document(endpoint_name, endpoint),
                 metadata={
                     "endpoint_name": endpoint_name,
                     "method": endpoint.get("method"),
-                    "path": endpoint.get("path"),
+                    "path": endpoint.get("url"),
                     "category": endpoint.get("category"),
-                    "tags": endpoint.get("tags", [])
+                    "tags": endpoint.get("tags", []),
+                    "chunk_type": "main"
                 },
-                chunk_id=f"api_{endpoint_name}"
-            )
-            
-            self.documents.append(doc)
-        
+                chunk_id=f"api_{endpoint_name}_main"
+            ))
+
         # Generate embeddings for all documents
         self._generate_embeddings()
-        logger.info(f"Added {len(self.documents)} API documents to RAG")
+        logger.info(f"Added {len(self.documents)} document chunks from {len(api_endpoints)} APIs")
     
     def _create_api_document(self, name: str, endpoint: Dict[str, Any]) -> str:
         """Create searchable document from API endpoint"""
-        parts = [
-            f"API: {name}",
-            f"Method: {endpoint.get('method', 'GET')}",
-            f"Path: {endpoint.get('path', '')}",
-            f"Description: {endpoint.get('description', '')}",
-            f"Category: {endpoint.get('category', 'general')}"
-        ]
+        import re
         
-        # Add parameters
+        parts = []
+        
+        # Tokenize name properly
+        name_tokens = re.findall(r'[A-Z]?[a-z]+|[A-Z]+(?=[A-Z][a-z]|\b)|[0-9]+', name)
+        parts.append(f"API Endpoint: {' '.join(name_tokens)}")
+        
+        parts.append(f"Method: {endpoint.get('method', 'GET')}")
+        parts.append(f"Path: {endpoint.get('url', '')}")
+        parts.append(f"Description: {endpoint.get('description', '')}")
+        parts.append(f"Category: {endpoint.get('category', 'general')}")
+        
+        # Add parameters with details
         if endpoint.get("parameters"):
-            param_strs = []
-            for param_name, param_info in endpoint["parameters"].items():
-                param_str = f"{param_name} ({param_info.get('type', 'string')}): {param_info.get('description', '')}"
-                param_strs.append(param_str)
-            parts.append(f"Parameters: {', '.join(param_strs)}")
+            if isinstance(endpoint["parameters"], dict):
+                param_strs = []
+                for param_name, param_info in endpoint["parameters"].items():
+                    if isinstance(param_info, dict):
+                        param_str = f"{param_name} ({param_info.get('type', 'string')}): {param_info.get('description', '')}"
+                        param_strs.append(param_str)
+                if param_strs:
+                    parts.append(f"Parameters: {', '.join(param_strs[:5])}")  # Limit to 5 for main doc
         
-        # Add examples if available
-        if endpoint.get("examples"):
-            parts.append(f"Examples available: {', '.join(endpoint['examples'].keys())}")
+        # Add authentication info
+        parts.append("Authentication: Required headers - entity, userId, languageCode")
         
         return "\n".join(parts)
     
     def _generate_embeddings(self):
         """Generate embeddings for all documents"""
+        if hasattr(self, '_use_numpy_embeddings') and self._use_numpy_embeddings:
+            # Use TF-IDF fallback
+            self._generate_tfidf_embeddings()
+            return
+        
         if not self.embedding_model:
             # Fallback to random embeddings for testing
             for doc in self.documents:
@@ -124,71 +249,74 @@ class LightweightRAG:
         
         # Batch encode all documents
         texts = [doc.content for doc in self.documents]
-        embeddings = self.embedding_model.encode(
-            texts,
-            batch_size=32,
-            show_progress_bar=False,
-            convert_to_numpy=True,
-            normalize_embeddings=True  # L2 normalization
-        )
         
-        # Apply optimizations
-        if self.use_matryoshka:
-            # Use only first 256 dimensions (Matryoshka representation)
-            embeddings = embeddings[:, :256]
+        # Process in batches for memory efficiency
+        batch_size = 32
+        all_embeddings = []
         
-        if self.use_quantization:
-            # Quantize to int8 for memory efficiency
-            embeddings = self._quantize_embeddings(embeddings)
+        for i in range(0, len(texts), batch_size):
+            batch_texts = texts[i:i+batch_size]
+            batch_embeddings = self.embedding_model.encode(
+                batch_texts,
+                batch_size=batch_size,
+                show_progress_bar=False,
+                convert_to_numpy=True,
+                normalize_embeddings=True  # L2 normalization
+            )
+            all_embeddings.append(batch_embeddings)
         
+        embeddings = np.vstack(all_embeddings).astype(np.float32)
+
         # Store embeddings
         for doc, embedding in zip(self.documents, embeddings):
             doc.embedding = embedding
         
         self.embeddings_matrix = embeddings
     
-    def _quantize_embeddings(self, embeddings: np.ndarray) -> np.ndarray:
-        """Quantize embeddings to int8"""
-        # Scale to int8 range
-        scale = 127.0 / np.max(np.abs(embeddings))
-        quantized = (embeddings * scale).astype(np.int8)
+    def _generate_tfidf_embeddings(self):
+        """Generate TF-IDF embeddings as fallback"""
+        texts = [doc.content for doc in self.documents]
         
-        # Store scale for dequantization
-        self.embedding_scale = scale
+        # Fit and transform
+        tfidf_matrix = self.tfidf_vectorizer.fit_transform(texts)
         
-        return quantized
+        # Convert to dense and store
+        embeddings = tfidf_matrix.toarray().astype(np.float32)
+        
+        for doc, embedding in zip(self.documents, embeddings):
+            doc.embedding = embedding
+        
+        self.embeddings_matrix = embeddings
     
     def search(
         self, 
         query: str, 
         top_k: int = 5,
-        filter_category: Optional[str] = None
+        filter_category: Optional[str] = None,
     ) -> List[Tuple[Document, float]]:
-        """Search for relevant documents"""
+        """Search for relevant documents.
+
+        Returns only matches at or above MIN_SCORE, so weak queries come back empty
+        and callers can fall back to keyword search.
+        """
+
+        if hasattr(self, '_use_numpy_embeddings') and self._use_numpy_embeddings:
+            # Use TF-IDF search
+            return self._tfidf_search(query, top_k, filter_category)
+        
         if not self.embedding_model:
             # Fallback to keyword search
             return self._keyword_search(query, top_k, filter_category)
         
-        # Encode query
+        # bge models expect this instruction on short retrieval queries (not on documents)
         query_embedding = self.embedding_model.encode(
-            query,
+            self.QUERY_PREFIX + query,
             convert_to_numpy=True,
             normalize_embeddings=True
         )
         
-        # Apply same optimizations as documents
-        if self.use_matryoshka:
-            query_embedding = query_embedding[:256]
-        
-        if self.use_quantization:
-            query_embedding = (query_embedding * self.embedding_scale).astype(np.int8)
-        
-        # Calculate similarities
-        if self.use_quantization:
-            # Integer dot product for speed
-            similarities = np.dot(self.embeddings_matrix, query_embedding) / (self.embedding_scale ** 2)
-        else:
-            similarities = np.dot(self.embeddings_matrix, query_embedding)
+        # Embeddings are L2-normalized, so a dot product is the cosine similarity
+        similarities = self.embeddings_matrix @ query_embedding
         
         # Apply category filter if specified
         if filter_category:
@@ -196,23 +324,36 @@ class LightweightRAG:
                 if doc.metadata.get("category") != filter_category:
                     similarities[i] = -1
         
+        top_indices = np.argsort(similarities)[-top_k:][::-1]
+        return [(self.documents[i], float(similarities[i]))
+                for i in top_indices if similarities[i] >= self.MIN_SCORE]
+    
+    def _tfidf_search(self, query: str, top_k: int, filter_category: Optional[str]) -> List[Tuple[Document, float]]:
+        """TF-IDF based search"""
+        # Transform query
+        query_vec = self.tfidf_vectorizer.transform([query])
+        
+        # Calculate similarities
+        similarities = (self.embeddings_matrix @ query_vec.T).toarray().flatten()
+        
+        # Apply filter
+        if filter_category:
+            for i, doc in enumerate(self.documents):
+                if doc.metadata.get("category") != filter_category:
+                    similarities[i] = 0
+        
         # Get top-k
         top_indices = np.argsort(similarities)[-top_k:][::-1]
         
         results = []
         for idx in top_indices:
-            if similarities[idx] > 0:  # Only return positive similarities
+            if similarities[idx] > 0:
                 results.append((self.documents[idx], float(similarities[idx])))
         
         return results
     
-    def _keyword_search(
-        self, 
-        query: str, 
-        top_k: int,
-        filter_category: Optional[str] = None
-    ) -> List[Tuple[Document, float]]:
-        """Fallback keyword search using TF-IDF"""
+    def _keyword_search(self, query: str, top_k: int, filter_category: Optional[str] = None) -> List[Tuple[Document, float]]:
+        """Fallback keyword search"""
         from sklearn.feature_extraction.text import TfidfVectorizer
         from sklearn.metrics.pairwise import cosine_similarity
         
@@ -254,13 +395,13 @@ class LightweightRAG:
         data = {
             "documents": self.documents,
             "embeddings_matrix": self.embeddings_matrix,
-            "embedding_scale": getattr(self, "embedding_scale", 1.0)
+            "model_name": self.embedding_model_name,
         }
         
         with open(path, "wb") as f:
-            pickle.dump(data, f)
+            pickle.dump(data, f, protocol=pickle.HIGHEST_PROTOCOL)
         
-        logger.info(f"Saved RAG index to {path}")
+        logger.info(f"Saved RAG index to {path} ({len(self.documents)} documents)")
     
     def load_index(self, path: str):
         """Load RAG index from disk"""
@@ -269,87 +410,5 @@ class LightweightRAG:
         
         self.documents = data["documents"]
         self.embeddings_matrix = data["embeddings_matrix"]
-        self.embedding_scale = data.get("embedding_scale", 1.0)
-        
-        logger.info(f"Loaded RAG index from {path}")
 
-class HybridSearch:
-    """Hybrid search combining dense and sparse retrieval"""
-    
-    def __init__(self, rag_engine: LightweightRAG):
-        self.rag_engine = rag_engine
-        self.bm25 = None
-        self._initialize_bm25()
-    
-    def _initialize_bm25(self):
-        """Initialize BM25 for sparse retrieval"""
-        try:
-            from rank_bm25 import BM25Okapi
-            
-            # Tokenize documents
-            tokenized_docs = [
-                doc.content.lower().split() 
-                for doc in self.rag_engine.documents
-            ]
-            
-            self.bm25 = BM25Okapi(tokenized_docs)
-            logger.info("Initialized BM25 for hybrid search")
-            
-        except ImportError:
-            logger.warning("rank-bm25 not installed")
-    
-    def search(
-        self, 
-        query: str, 
-        top_k: int = 5,
-        alpha: float = 0.5
-    ) -> List[Tuple[Document, float]]:
-        """
-        Hybrid search combining dense and sparse retrieval
-        alpha: weight for dense retrieval (1-alpha for sparse)
-        """
-        # Dense retrieval
-        dense_results = self.rag_engine.search(query, top_k * 2)
-        
-        # Sparse retrieval
-        sparse_results = []
-        if self.bm25:
-            tokenized_query = query.lower().split()
-            sparse_scores = self.bm25.get_scores(tokenized_query)
-            
-            top_sparse_indices = np.argsort(sparse_scores)[-top_k*2:][::-1]
-            for idx in top_sparse_indices:
-                if sparse_scores[idx] > 0:
-                    sparse_results.append((
-                        self.rag_engine.documents[idx],
-                        float(sparse_scores[idx])
-                    ))
-        
-        # Combine and rerank
-        combined_scores = {}
-        
-        # Add dense scores
-        for doc, score in dense_results:
-            combined_scores[doc.chunk_id] = alpha * score
-        
-        # Add sparse scores
-        for doc, score in sparse_results:
-            if doc.chunk_id in combined_scores:
-                combined_scores[doc.chunk_id] += (1 - alpha) * (score / 10)  # Normalize BM25
-            else:
-                combined_scores[doc.chunk_id] = (1 - alpha) * (score / 10)
-        
-        # Sort and return top-k
-        sorted_results = sorted(
-            combined_scores.items(),
-            key=lambda x: x[1],
-            reverse=True
-        )[:top_k]
-        
-        # Get documents
-        final_results = []
-        for chunk_id, score in sorted_results:
-            doc = next(d for d in self.rag_engine.documents if d.chunk_id == chunk_id)
-            final_results.append((doc, score))
-        
-        return final_results
+        logger.info(f"Loaded RAG index from {path} ({len(self.documents)} documents)")

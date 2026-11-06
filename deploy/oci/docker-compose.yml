@@ -1,0 +1,40 @@
+# ============================================================================
+# APICookbook API on the OCI VM it shares with vam-portal, uc05, liq and EXTN (same shape as EXTN's).
+# No database and no Caddy of its own:
+#   - State: none worth keeping. The knowledge base loads from api_specs/ + collections/ at start.
+#   - HTTPS: vam-portal's Caddy, site block in deploy/oci/Caddyfile.cookbook.
+# The frontend is not here: it deploys to Vercel and reaches this over a rewrite (frontend/vercel.json).
+# No .env needed: nothing below is secret.
+#
+#   sudo docker compose up -d --build     (run by .github/workflows/deploy-oci.yml)
+# ============================================================================
+name: cookbook  # not the directory name: vam-portal's project is already called `oci`
+
+services:
+  cookbook-api:
+    build: { context: ../.. }
+    image: cookbook-api:latest
+    container_name: cookbook-api  # the deploy workflow execs into it by this name
+    restart: unless-stopped
+    logging: { driver: json-file, options: { max-size: "10m", max-file: "3" } }  # uncapped logs have filled this disk before
+    expose: ["7600"]  # reached by Caddy over oci_default; never `ports:`
+    mem_limit: 2g     # shared VM; torch + bge-small + 950 embeddings sit well under this
+    volumes:
+      # The downloaded bge model and the RAG index cache. Losing it only costs one slow start.
+      - cookbook_models:/app/models
+    environment:
+      ENVIRONMENT: production
+      DEBUG: "false"  # keeps /api/developer/logs closed
+      RAG_ENABLED: "true"
+      RAG_EMBEDDING_MODEL: BAAI/bge-small-en-v1.5
+      DISABLE_BERT_SEARCH: "true"
+      ENABLE_BERT: "true"
+      HF_HUB_DISABLE_TELEMETRY: "1"
+
+volumes:
+  cookbook_models:
+
+networks:
+  default:
+    name: oci_default   # created by vam-portal's compose project
+    external: true      # attach, never own: `down` here must not remove the sibling's network

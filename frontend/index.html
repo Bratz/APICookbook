@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TCS BAnCS API Cookbook</title>
+    <title>TCS BaNCS API Cookbook - Developer Edition</title>
     
     <!-- Tailwind CSS for shadcn/ui compatibility -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -20,7 +20,9 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-bash.min.js"></script>
     
     <!-- Marked.js for Markdown parsing -->
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
+    <!-- DOMPurify: chat markdown echoes user/KB text, so sanitize before innerHTML -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js"></script>
     
     <style>
         /* Claude-inspired color scheme with shadcn/ui design patterns */
@@ -930,6 +932,34 @@
             font-size: 0.75rem;
             color: var(--claude-text-secondary);
         }
+
+        /* Developer Console */
+        .dev-console {
+            grid-column: 1 / -1;
+            max-height: 200px;
+            background: #1a1a1a;
+            color: #f0f0f0;
+        }
+
+        .dev-console .playground-header {
+            background: #2d2d2d;
+            border-bottom-color: #444;
+        }
+
+        .dev-console .playground-content {
+            font-family: 'Cascadia Code', 'Monaco', monospace;
+            font-size: 0.75rem;
+            line-height: 1.4;
+        }
+
+        .dev-log-entry {
+            padding: 2px 0;
+            border-bottom: 1px solid #333;
+        }
+
+        .dev-log-entry:hover {
+            background: #252525;
+        }
         
         /* Responsive design */
         @media (max-width: 1024px) {
@@ -953,28 +983,6 @@
             .playground-section {
                 height: 400px;
             }
-        }
-        
-        /* Related APIs section styling */
-        .message-content h2:has-text("Related API"),
-        .message-content h3:has-text("Related API"),
-        .message-content strong:has-text("Related API") {
-            color: var(--claude-accent);
-            margin-top: 1.5rem;
-            margin-bottom: 0.75rem;
-            border-top: 1px solid var(--claude-border);
-            padding-top: 1rem;
-        }
-
-        /* Style for API endpoint listings */
-        .message-content ol li strong,
-        .message-content ul li strong {
-            color: var(--claude-purple);
-            font-weight: 600;
-        }
-
-        .message-content code {
-            font-size: 0.85em;
         }
         
         /* Utility classes */
@@ -1005,7 +1013,7 @@
         <div class="header-content">
             <div class="logo">
                 <div class="logo-icon">API</div>
-                <span>TCS BAnCS API Cookbook</span>
+                <span>TCS BaNCS API Cookbook</span>
             </div>
             <div class="status-container">
                 <div class="status-indicator">
@@ -1016,6 +1024,9 @@
                     <span class="status-dot" id="mcpStatus"></span>
                     <span id="mcpStatusText">MCP: Unknown</span>
                 </div>
+                <button class="btn btn-ghost" onclick="showKeyboardShortcuts()">
+                    <i data-lucide="keyboard" style="width: 16px; height: 16px;"></i>
+                </button>
                 <button class="btn btn-ghost" onclick="showSettings()">
                     <i data-lucide="settings" style="width: 16px; height: 16px;"></i>
                 </button>
@@ -1027,6 +1038,27 @@
     <div class="app-container">
         <!-- Sidebar -->
         <aside class="sidebar" id="sidebar">
+            <!-- Developer Quick Actions -->
+            <div class="sidebar-section">
+                <div class="sidebar-title">Developer Quick Actions</div>
+                <div class="sidebar-item" onclick="quickDiscoverAPIs()">
+                    <i data-lucide="database" style="width: 16px; height: 16px;"></i>
+                    <span>Discover APIs</span>
+                </div>
+                <div class="sidebar-item" onclick="quickSearchEndpoints()">
+                    <i data-lucide="search" style="width: 16px; height: 16px;"></i>
+                    <span>Search Endpoints</span>
+                </div>
+                <div class="sidebar-item" onclick="quickTestAccount()">
+                    <i data-lucide="play-circle" style="width: 16px; height: 16px;"></i>
+                    <span>Test Account API</span>
+                </div>
+                <div class="sidebar-item" onclick="quickGetSchema()">
+                    <i data-lucide="file-code" style="width: 16px; height: 16px;"></i>
+                    <span>Get API Schema</span>
+                </div>
+            </div>
+
             <div class="sidebar-section">
                 <div class="sidebar-title">Quick Actions</div>
                 <div class="sidebar-item" onclick="sendQuickMessage('Show me all available APIs')">
@@ -1044,10 +1076,6 @@
                 <div class="sidebar-item" onclick="searchKnowledgeBase()">
                     <i data-lucide="search" style="width: 16px; height: 16px;"></i>
                     <span>Search Knowledge</span>
-                </div>
-                <div class="sidebar-item" onclick="sendQuickMessage('What MCP tools are available?')">
-                    <i data-lucide="wrench" style="width: 16px; height: 16px;"></i>
-                    <span>MCP Tools</span>
                 </div>
             </div>
             
@@ -1112,16 +1140,15 @@
                         <div class="message assistant">
                             <div class="message-label">API Assistant</div>
                             <div class="message-content">
-                                Hello! I'm your TCS BAnCS API assistant. I can help you with:
+                                <strong>Developer Mode Active!</strong> Quick tips:
                                 <ul style="margin-top: 0.5rem; margin-left: 1.5rem;">
-                                    <li>API endpoint documentation</li>
-                                    <li>Code examples in multiple languages</li>
-                                    <li>Authentication and security</li>
-                                    <li>Knowledge base search</li>
-                                    <li>MCP tools integration</li>
-                                    <li>Troubleshooting and best practices</li>
+                                    <li><kbd>Ctrl+E</kbd> - Execute in playground</li>
+                                    <li><kbd>Ctrl+K</kbd> - Search knowledge base</li>
+                                    <li><kbd>Ctrl+Shift+D</kbd> - Toggle dev console</li>
+                                    <li>Use <code>call_api</code> tool for all API calls</li>
+                                    <li>Use <code>get_api_schema</code> to discover endpoints</li>
                                 </ul>
-                                What would you like to know?
+                                What would you like to build today?
                             </div>
                         </div>
                     </div>
@@ -1172,7 +1199,7 @@
             
             <!-- Enhanced Playground Tab -->
             <div id="playgroundTab" class="tab-content hidden">
-                <div class="playground-container">
+                <div class="playground-container" id="playgroundContainer">
                     <!-- Request Section -->
                     <div class="playground-section">
                         <div class="playground-header">
@@ -1248,18 +1275,38 @@
                                     <label class="form-label">Tool Name</label>
                                     <select id="mcpToolSelect" class="form-input form-select" onchange="updateMCPToolParams()">
                                         <option value="">Select a tool...</option>
+                                        <option value="call_api">call_api - Call any API endpoint</option>
+                                        <option value="get_api_schema">get_api_schema - Get endpoint documentation</option>
+                                        <option value="search_endpoints">search_endpoints - Find endpoints</option>
+                                        <option value="list_apis">list_apis - List all registered APIs</option>
                                     </select>
                                 </div>
                                 
+                                <!-- Schema viewer -->
+                                <div id="schemaViewer" class="hidden">
+                                    <div class="form-group">
+                                        <label class="form-label">Endpoint Schema</label>
+                                        <div class="card" style="background: #f5f5f5; max-height: 200px; overflow-y: auto;">
+                                            <pre id="schemaContent" style="margin: 0; font-size: 0.75rem;"></pre>
+                                        </div>
+                                    </div>
+                                </div>
+                                
                                 <div class="form-group">
-                                    <label class="form-label">Parameters (JSON)</label>
+                                    <label class="form-label">
+                                        Parameters (JSON)
+                                        <button class="btn btn-ghost btn-sm ml-2" onclick="fetchSchemaForTool()">
+                                            <i data-lucide="info" style="width: 12px; height: 12px;"></i>
+                                            Get Schema
+                                        </button>
+                                    </label>
                                     <textarea id="mcpToolParams" class="form-input form-textarea" 
                                               placeholder='{"param1": "value1"}'></textarea>
                                 </div>
                             </div>
                             
                             <div class="flex gap-2 mt-4">
-                                <button class="btn btn-primary" onclick="executePlaygroundRequest()">
+                                <button class="btn btn-primary" onclick="executePlaygroundRequest()" title="Ctrl+E">
                                     <i data-lucide="play" style="width: 16px; height: 16px;"></i>
                                     Execute
                                 </button>
@@ -1390,10 +1437,318 @@
                 // Set up keyboard shortcuts
                 setupKeyboardShortcuts();
                 
+                // Initialize developer features
+                initDeveloperFeatures();
+                
             } catch (error) {
                 console.error('Initialization error:', error);
                 showNotification('Failed to initialize application', 'error');
             }
+        }
+        
+        // Initialize developer features
+        function initDeveloperFeatures() {
+            addDeveloperConsole();
+            
+            // Add keyboard shortcuts
+            document.addEventListener('keydown', (e) => {
+                // Ctrl+Shift+D for developer console
+                if (e.ctrlKey && e.shiftKey && e.key === 'D') {
+                    e.preventDefault();
+                    const devConsole = document.getElementById('devConsoleSection');
+                    if (devConsole) {
+                        devConsole.style.display = devConsole.style.display === 'none' ? 'flex' : 'none';
+                    }
+                }
+                
+                // Ctrl+E to execute
+                if (e.ctrlKey && e.key === 'e') {
+                    e.preventDefault();
+                    if (!document.getElementById('playgroundTab').classList.contains('hidden')) {
+                        executePlaygroundRequest();
+                    }
+                }
+            });
+        }
+        
+        // Add developer console
+        function addDeveloperConsole() {
+            const playgroundContainer = document.getElementById('playgroundContainer');
+            if (!playgroundContainer) return;
+            
+            // Add a third section for developer console
+            const devConsole = document.createElement('div');
+            devConsole.id = 'devConsoleSection';
+            devConsole.className = 'playground-section dev-console';
+            devConsole.style.gridColumn = '1 / -1';
+            devConsole.style.maxHeight = '200px';
+            devConsole.innerHTML = `
+                <div class="playground-header">
+                    <div class="playground-title">Developer Console</div>
+                    <div class="playground-controls">
+                        <button class="btn btn-ghost btn-sm" onclick="clearDevConsole()">
+                            <i data-lucide="trash-2" style="width: 14px; height: 14px;"></i>
+                            Clear
+                        </button>
+                    </div>
+                </div>
+                <div class="playground-content" id="devConsoleContent" style="font-family: monospace; font-size: 0.75rem;">
+                    <div class="text-muted">API calls and responses will appear here...</div>
+                </div>
+            `;
+            
+            playgroundContainer.appendChild(devConsole);
+            lucide.createIcons();
+        }
+        
+        // Log to developer console
+        function logToDevConsole(message, type = 'info') {
+            const consoleContent = document.getElementById('devConsoleContent');
+            if (!consoleContent) return;
+            
+            // Clear initial message if it's still there
+            if (consoleContent.querySelector('.text-muted')) {
+                consoleContent.innerHTML = '';
+            }
+            
+            const timestamp = new Date().toLocaleTimeString();
+            const typeColors = {
+                'info': '#3b82f6',
+                'success': '#22c55e',
+                'error': '#ef4444',
+                'warning': '#eab308'
+            };
+            
+            const logEntry = document.createElement('div');
+            logEntry.className = 'dev-log-entry';
+            logEntry.innerHTML = `
+                <span style="color: #999;">[${timestamp}]</span>
+                <span style="color: ${typeColors[type]}; font-weight: bold;">${type.toUpperCase()}</span>
+                <span style="color: #f0f0f0;">${escapeHtml(message)}</span>
+            `;
+            
+            consoleContent.appendChild(logEntry);
+            consoleContent.scrollTop = consoleContent.scrollHeight;
+        }
+        
+        function clearDevConsole() {
+            const consoleContent = document.getElementById('devConsoleContent');
+            if (consoleContent) {
+                consoleContent.innerHTML = '<div class="text-muted">Console cleared</div>';
+            }
+        }
+        
+        // Developer Quick Actions
+        async function quickDiscoverAPIs() {
+            switchTab('playground', document.querySelector('.tab:nth-child(3)'));
+            setRequestType('mcp', document.querySelector('.request-type-btn:nth-child(2)'));
+            document.getElementById('mcpToolSelect').value = 'list_apis';
+            document.getElementById('mcpToolParams').value = '{}';
+            await executePlaygroundRequest();
+        }
+        
+        async function quickSearchEndpoints() {
+            const query = prompt('Search for endpoints containing:');
+            if (!query) return;
+            
+            switchTab('playground', document.querySelector('.tab:nth-child(3)'));
+            setRequestType('mcp', document.querySelector('.request-type-btn:nth-child(2)'));
+            document.getElementById('mcpToolSelect').value = 'search_endpoints';
+            document.getElementById('mcpToolParams').value = JSON.stringify({
+                query: query
+            }, null, 2);
+            await executePlaygroundRequest();
+        }
+        
+        async function quickTestAccount() {
+            switchTab('playground', document.querySelector('.tab:nth-child(3)'));
+            setRequestType('mcp', document.querySelector('.request-type-btn:nth-child(2)'));
+            document.getElementById('mcpToolSelect').value = 'call_api';
+            document.getElementById('mcpToolParams').value = JSON.stringify({
+                "api_name": "TCS_BaNCS",
+                "endpoint_name": "get_account_balance",
+                "parameters": {
+                    "accountReference": "101000000101814"
+                }
+            }, null, 2);
+            
+            // Auto-fetch schema
+            await fetchSchemaForTool();
+        }
+        
+        async function quickGetSchema() {
+            const apiName = prompt('Enter API name (e.g., TCS_BaNCS):');
+            if (!apiName) return;
+            
+            const endpointName = prompt('Enter endpoint name (optional):');
+            
+            switchTab('playground', document.querySelector('.tab:nth-child(3)'));
+            setRequestType('mcp', document.querySelector('.request-type-btn:nth-child(2)'));
+            document.getElementById('mcpToolSelect').value = 'get_api_schema';
+            
+            const params = { api_name: apiName };
+            if (endpointName) params.endpoint_name = endpointName;
+            
+            document.getElementById('mcpToolParams').value = JSON.stringify(params, null, 2);
+            await executePlaygroundRequest();
+        }
+        
+        // Fetch schema for current tool selection
+        async function fetchSchemaForTool() {
+            const toolName = document.getElementById('mcpToolSelect').value;
+            
+            if (toolName !== 'call_api') {
+                showNotification('Schema helper is for call_api tool', 'info');
+                return;
+            }
+            
+            // Parse current parameters to get API and endpoint
+            try {
+                const params = JSON.parse(document.getElementById('mcpToolParams').value);
+                
+                if (!params.api_name) {
+                    // First, get list of APIs
+                    const response = await fetchWithRetry('/api/playground/execute', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            type: 'mcp',
+                            tool_name: 'list_apis',
+                            tool_params: {}
+                        })
+                    });
+                    
+                    const result = await response.json();
+                    if (result.success) {
+                        const apis = Object.keys(result.result);
+                        const apiList = apis.join('\n');
+                        document.getElementById('schemaViewer').classList.remove('hidden');
+                        document.getElementById('schemaContent').textContent = 
+                            `Available APIs:\n${apiList}\n\nAdd "api_name" to parameters to get endpoints`;
+                    }
+                    return;
+                }
+                
+                // Get schema for the API/endpoint
+                const schemaParams = {
+                    api_name: params.api_name,
+                    endpoint_name: params.endpoint_name || null
+                    };
+                
+                const response = await fetchWithRetry('/api/playground/execute', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        type: 'mcp',
+                        tool_name: 'get_api_schema',
+                        tool_params: schemaParams
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (result.success && result.result) {
+                    // Show schema in viewer
+                    document.getElementById('schemaViewer').classList.remove('hidden');
+                    
+                    // Format the schema nicely
+                    const schema = result.result;
+                    let schemaText = '';
+                    
+                    if (schema.example_call) {
+                        // Show the example call
+                        schemaText = `EXAMPLE CALL:\n${JSON.stringify(schema.example_call, null, 2)}\n\n`;
+                        
+                        // Auto-populate if we have an endpoint
+                        if (params.endpoint_name && schema.example_call.parameters) {
+                            document.getElementById('mcpToolParams').value = 
+                                JSON.stringify(schema.example_call.parameters, null, 2);
+                            showNotification('Example parameters loaded from schema', 'success');
+                        }
+                    }
+                    
+                    if (schema.parameters) {
+                        schemaText += 'PARAMETERS:\n';
+                        schema.parameters.forEach(param => {
+                            schemaText += `\n${param.name}:\n`;
+                            schemaText += `  Type: ${param.type}\n`;
+                            schemaText += `  Required: ${param.required}\n`;
+                            if (param.description) schemaText += `  Description: ${param.description}\n`;
+                            if (param.example) schemaText += `  Example: ${param.example}\n`;
+                            if (param.default) schemaText += `  Default: ${param.default}\n`;
+                        });
+                    } else if (schema.endpoints) {
+                        schemaText += `ENDPOINTS (${schema.total_endpoints} total, showing first 20):\n\n`;
+                        schema.endpoints.forEach(ep => {
+                            schemaText += `${ep.method} ${ep.name}\n`;
+                            if (ep.description) schemaText += `  ${ep.description}\n`;
+                            schemaText += `  Path: ${ep.path}\n\n`;
+                        });
+                    }
+                    
+                    document.getElementById('schemaContent').textContent = schemaText;
+                }
+                
+            } catch (e) {
+                showNotification('Invalid JSON in parameters', 'error');
+                logToDevConsole(`JSON Parse Error: ${e.message}`, 'error');
+            }
+        }
+        
+        // Enhanced MCP tool parameter updates
+        function updateMCPToolParams() {
+            const toolName = document.getElementById('mcpToolSelect').value;
+            
+            if (toolName === 'call_api') {
+                // Show example for call_api with better structure
+                const exampleParams = {
+                    "api_name": "TCS_BaNCS",
+                    "endpoint_name": "get_account_balance",
+                    "parameters": {
+                        "accountReference": "101000000101814"
+                    }
+                };
+                
+                document.getElementById('mcpToolParams').value = JSON.stringify(exampleParams, null, 2);
+                showNotification('Use get_api_schema to discover available endpoints and parameters', 'info');
+                
+            } else if (toolName === 'get_api_schema') {
+                const exampleParams = {
+                    "api_name": "TCS_BaNCS",
+                    "endpoint_name": "get_account_balance"  // Optional - omit for all endpoints
+                };
+                
+                document.getElementById('mcpToolParams').value = JSON.stringify(exampleParams, null, 2);
+                
+            } else if (toolName === 'search_endpoints') {
+                const exampleParams = {
+                    "query": "account",
+                    "api_name": null,  // Optional - search specific API
+                    "method": null     // Optional - filter by method
+                };
+                
+                document.getElementById('mcpToolParams').value = JSON.stringify(exampleParams, null, 2);
+                
+            } else if (toolName === 'list_apis') {
+                document.getElementById('mcpToolParams').value = '{}';  // No parameters needed
+            }
+            
+            // Clear schema viewer when changing tools
+            document.getElementById('schemaViewer').classList.add('hidden');
+        }
+        
+        // Show keyboard shortcuts
+        function showKeyboardShortcuts() {
+            const shortcuts = `
+                <strong>Keyboard Shortcuts:</strong><br><br>
+                <kbd>Ctrl+E</kbd> - Execute in playground<br>
+                <kbd>Ctrl+K</kbd> - Search knowledge base<br>
+                <kbd>Ctrl+Shift+D</kbd> - Toggle developer console<br>
+                <kbd>Enter</kbd> - Send message (in chat)<br>
+                <kbd>Shift+Enter</kbd> - New line (in chat)
+            `;
+            
+            showNotification(shortcuts, 'info', 5000);
         }
         
         // Check API and MCP status
@@ -1463,12 +1818,23 @@
                 return;
             }
             
-            container.innerHTML = endpoints.map(endpoint => `
-                <div class="sidebar-item" onclick="askAboutEndpoint('${endpoint.name}')">
-                    <span class="method-badge method-${endpoint.method.toLowerCase()}">${endpoint.method}</span>
-                    <span class="text-small">${endpoint.name}</span>
+            // Limit to first 20 endpoints for UI performance
+            const displayEndpoints = endpoints.slice(0, 20);
+            
+            container.innerHTML = displayEndpoints.map(endpoint => `
+                <div class="sidebar-item" onclick="askAboutEndpoint(${jsArg(endpoint.name)})">
+                    <span class="method-badge method-${escapeHtml(endpoint.method.toLowerCase())}">${escapeHtml(endpoint.method)}</span>
+                    <span class="text-small">${escapeHtml(endpoint.name)}</span>
                 </div>
             `).join('');
+            
+            if (endpoints.length > 20) {
+                container.innerHTML += `
+                    <div class="text-muted text-xs" style="padding: 0.5rem;">
+                        ... and ${endpoints.length - 20} more
+                    </div>
+                `;
+            }
         }
         
         // Load cookbook recipes
@@ -1492,12 +1858,12 @@
             }
             
             container.innerHTML = recipes.map(recipe => `
-                <div class="recipe-card" onclick="loadRecipe('${recipe.id}')">
-                    <div class="recipe-icon">${recipe.icon || '📚'}</div>
-                    <h3 class="recipe-title">${recipe.title}</h3>
-                    <p class="recipe-description">${recipe.description}</p>
+                <div class="recipe-card" onclick="loadRecipe(${jsArg(recipe.id)})">
+                    <div class="recipe-icon">${escapeHtml(recipe.icon || '📚')}</div>
+                    <h3 class="recipe-title">${escapeHtml(recipe.title)}</h3>
+                    <p class="recipe-description">${escapeHtml(recipe.description)}</p>
                     <div class="recipe-tags">
-                        ${recipe.tags?.map(tag => `<span class="recipe-tag">${tag}</span>`).join('') || ''}
+                        ${recipe.tags?.map(tag => `<span class="recipe-tag">${escapeHtml(tag)}</span>`).join('') || ''}
                     </div>
                 </div>
             `).join('');
@@ -1512,7 +1878,6 @@
                 if (!data.error) {
                     state.mcpTools = data.tools || [];
                     displayMCPTools(data.tools);
-                    populateMCPToolSelect(data.tools);
                 }
             } catch (error) {
                 console.error('Failed to load MCP tools:', error);
@@ -1523,19 +1888,21 @@
         function displayMCPTools(tools) {
             const container = document.getElementById('mcpToolsList');
             
-            if (!tools || tools.length === 0) {
-                container.innerHTML = '<div class="text-muted">No MCP tools available</div>';
-                return;
-            }
+            // Core tools that should always be shown
+            const coreTools = [
+                { name: 'call_api', description: 'Call any registered API endpoint', method: 'POST' },
+                { name: 'get_api_schema', description: 'Get API/endpoint documentation', method: 'GET' },
+                { name: 'search_endpoints', description: 'Search for endpoints by keyword', method: 'GET' },
+                { name: 'list_apis', description: 'List all registered APIs', method: 'GET' }
+            ];
             
-            container.innerHTML = tools.map(tool => `
+            container.innerHTML = coreTools.map(tool => `
                 <div class="card mb-3">
                     <div class="mb-2">
-                        <span class="method-badge method-${tool.method.toLowerCase()}">${tool.method}</span>
+                        <span class="badge badge-info">CORE</span>
                         <strong class="ml-2">${tool.name}</strong>
                     </div>
                     <p class="text-muted text-small mb-2">${tool.description}</p>
-                    <code class="text-small font-mono">${tool.path}</code>
                     <button class="btn btn-secondary mt-3" onclick="testMCPTool('${tool.name}')">
                         <i data-lucide="play" style="width: 14px; height: 14px;"></i>
                         Test Tool
@@ -1547,33 +1914,18 @@
             lucide.createIcons();
         }
         
-        // Populate MCP tool select
-        function populateMCPToolSelect(tools) {
-            const select = document.getElementById('mcpToolSelect');
-            if (!select) return;
-            
-            select.innerHTML = '<option value="">Select a tool...</option>';
-            
-            if (tools && tools.length > 0) {
-                tools.forEach(tool => {
-                    const option = document.createElement('option');
-                    option.value = tool.name;
-                    option.textContent = tool.name;
-                    select.appendChild(option);
-                });
-            }
-        }
-        
         // Setup WebSocket connection
         function setupWebSocket() {
-            const wsUrl = `${config.wsProtocol}//${window.location.host}/ws/chat`;
+            const wsUrl = `${config.wsProtocol}//${window.location.host}/ws`;
             
             try {
                 state.ws = new WebSocket(wsUrl);
                 
                 state.ws.onopen = () => {
                     state.isConnected = true;
+                    state.wsEverOpened = true;
                     console.log('WebSocket connected');
+                    logToDevConsole('WebSocket connected', 'success');
                 };
                 
                 state.ws.onmessage = (event) => {
@@ -1583,73 +1935,64 @@
                 
                 state.ws.onerror = (error) => {
                     console.error('WebSocket error:', error);
+                    logToDevConsole('WebSocket error', 'error');
                 };
                 
                 state.ws.onclose = () => {
                     state.isConnected = false;
+                    // Never connected (e.g. on Vercel, whose rewrites can't proxy WebSockets): chat uses HTTP, stop retrying
+                    if (!state.wsEverOpened) {
+                        logToDevConsole('WebSocket unavailable - chat uses HTTP', 'info');
+                        return;
+                    }
                     console.log('WebSocket disconnected');
+                    logToDevConsole('WebSocket disconnected - reconnecting in 5s', 'warning');
                     // Attempt to reconnect after 5 seconds
                     setTimeout(setupWebSocket, 5000);
                 };
             } catch (error) {
                 console.error('Failed to setup WebSocket:', error);
+                logToDevConsole(`WebSocket setup failed: ${error.message}`, 'error');
             }
-        }
-        
-        // Debug function to check response structure
-        function debugResponse(data) {
-            console.group('📊 Response Debug');
-            console.log('Full response:', data);
-            if (data.related_apis) {
-                console.log('Related APIs found:', data.related_apis.length);
-                console.table(data.related_apis);
-            }
-            if (data.sections) {
-                console.log('Sections found:', data.sections.length);
-                data.sections.forEach((section, i) => {
-                    console.log(`Section ${i}: ${section.type} - ${section.title}`);
-                    if (section.type === 'related_apis' && section.content) {
-                        console.log('Related APIs in section:', section.content);
-                    }
-                });
-            }
-            console.groupEnd();
         }
         
         // Handle WebSocket messages
         function handleWebSocketMessage(data) {
             console.log('WebSocket received:', data);
             
-            // Debug the response structure
-            debugResponse(data);
-            
-            if (data.type === 'ping') {
-                // Keep-alive ping
+            if (data.type === 'system') {
+                console.log('System message:', data.message);
                 return;
             }
             
             hideTypingIndicator();
             
-            if (data.response) {
+            // Handle different response structures
+            if (data.type === 'response' && data.data) {
+                const responseData = data.data;
+                const message = responseData.response || responseData.message || 'No response received';
+                addMessage(message, 'assistant', responseData);
+            } else if (data.response) {
                 addMessage(data.response, 'assistant', data);
+            } else if (data.message) {
+                addMessage(data.message, 'assistant', data);
             } else if (data.error) {
                 addMessage(`Error: ${data.error}`, 'assistant');
+            } else {
+                console.error('Unknown message format:', data);
+                addMessage(`Received: ${JSON.stringify(data)}`, 'assistant');
             }
         }
         
         // Knowledge Base Search Functions
         async function searchKnowledgeBase(query = null) {
-            // If no query provided, prompt the user
             if (!query) {
                 const searchQuery = prompt('What would you like to search in the knowledge base?');
                 if (!searchQuery) return;
                 query = searchQuery;
             }
             
-            // Add user message to chat
             addMessage(`Searching knowledge base for: "${query}"`, 'user');
-            
-            // Show typing indicator
             showTypingIndicator();
             
             try {
@@ -1660,7 +2003,7 @@
                     },
                     body: JSON.stringify({ 
                         query: query,
-                        limit: 5  // Return top 5 results
+                        limit: 5
                     })
                 });
                 
@@ -1687,23 +2030,19 @@
                results.results.forEach((result, index) => {
                    messageContent += `**${index + 1}. ${result.title || result.endpoint_name || 'Result ' + (index + 1)}**\n`;
                    
-                   // Add confidence score if available
                    if (result.score || result.confidence) {
                        const score = (result.score || result.confidence) * 100;
                        messageContent += `   📊 Relevance: ${score.toFixed(1)}%\n`;
                    }
                    
-                   // Add description
                    if (result.description) {
                        messageContent += `   ${result.description}\n`;
                    }
                    
-                   // Add endpoint details if available
                    if (result.method && result.path) {
                        messageContent += `   \`${result.method} ${result.path}\`\n`;
                    }
                    
-                   // Add content snippet if available
                    if (result.content) {
                        const snippet = result.content.substring(0, 200);
                        messageContent += `   _${snippet}${result.content.length > 200 ? '...' : ''}_\n`;
@@ -1712,18 +2051,17 @@
                    messageContent += '\n';
                });
                
-               // Add suggestions
                messageContent += '💡 **Next Steps:**\n';
-               messageContent += '• Click on an endpoint in the sidebar to learn more\n';
-               messageContent += '• Ask for code examples for any of these endpoints\n';
-               messageContent += '• Try a more specific search query for better results';
+               messageContent += '• Use get_api_schema to get full details\n';
+               messageContent += '• Use call_api to execute the endpoint\n';
+               messageContent += '• Ask for code examples for implementation';
                
            } else {
                messageContent = `No results found in knowledge base for "${query}".\n\n`;
                messageContent += '**Try:**\n';
                messageContent += '• Using different keywords\n';
-               messageContent += '• Searching for API endpoint names\n';
-               messageContent += '• Asking about authentication or code examples';
+               messageContent += '• Using search_endpoints MCP tool\n';
+               messageContent += '• Browsing the API list in the sidebar';
            }
            
            addMessage(messageContent, 'assistant', {
@@ -1772,10 +2110,8 @@
            
            if (!message) return;
            
-           // Add user message to chat
            addMessage(message, 'user');
            
-           // Clear input
            input.value = '';
            autoResizeTextarea(input);
            
@@ -1786,7 +2122,6 @@
            );
            
            if (isKnowledgeQuery) {
-               // Extract search term
                let searchTerm = message.toLowerCase();
                knowledgeKeywords.forEach(keyword => {
                    searchTerm = searchTerm.replace(keyword, '').trim();
@@ -1799,25 +2134,20 @@
                }
            }
            
-           // Disable send button
            const sendButton = document.getElementById('sendButton');
            sendButton.disabled = true;
            
-           // Show typing indicator
            showTypingIndicator();
            
            try {
-               // Prepare context (always as array)
                const context = Array.isArray(state.conversationContext) ? state.conversationContext : [];
                
-               // Try WebSocket first
                if (state.isConnected && state.ws && state.ws.readyState === WebSocket.OPEN) {
                    state.ws.send(JSON.stringify({
                        message: message,
                        context: context
                    }));
                } else {
-                   // Fallback to HTTP
                    const response = await fetchWithRetry('/api/chat', {
                        method: 'POST',
                        headers: {
@@ -1832,18 +2162,15 @@
                    if (response.ok) {
                        const data = await response.json();
                        
-                       // Add to conversation context
                        state.conversationContext.push(
                            { role: 'user', content: message },
                            { role: 'assistant', content: data.response }
                        );
                        
-                       // Keep context size manageable
                        if (state.conversationContext.length > 20) {
                            state.conversationContext = state.conversationContext.slice(-20);
                        }
                        
-                       // Remove typing indicator and add response
                        hideTypingIndicator();
                        addMessage(data.response, 'assistant', data);
                    } else {
@@ -1879,44 +2206,27 @@
            const contentDiv = document.createElement('div');
            contentDiv.className = 'message-content';
            
-           // Process the content to fix HTML entities and render markdown
            if (content) {
-               // First, unescape HTML entities
                const textarea = document.createElement('textarea');
                textarea.innerHTML = content;
                let unescapedContent = textarea.value;
                
-               // Configure marked options for better rendering
                marked.setOptions({
-                   breaks: true,  // Add this to respect line breaks
-                   gfm: true,     // GitHub flavored markdown
+                   breaks: true,
+                   gfm: true,
                    headerIds: false,
                    mangle: false
                });
                
-               // Parse markdown to HTML
                const parsedHTML = marked.parse(unescapedContent);
+               contentDiv.innerHTML = DOMPurify.sanitize(parsedHTML);
                
-               // Set the HTML content
-               contentDiv.innerHTML = parsedHTML;
-               
-               // Style all strong tags (bold text)
+               // Apply all styling
                contentDiv.querySelectorAll('strong').forEach(strong => {
                    strong.style.fontWeight = '600';
                    strong.style.color = '#2d2d2d';
                });
                
-               // Style emoji sections
-               contentDiv.querySelectorAll('h2, h3').forEach(heading => {
-                   if (heading.textContent.includes('🔗') || heading.textContent.includes('💡')) {
-                       heading.style.marginTop = '1.5rem';
-                       heading.style.marginBottom = '0.75rem';
-                       heading.style.fontSize = '1.1rem';
-                       heading.style.fontWeight = '600';
-                   }
-               });
-               
-               // Add custom styling for code blocks
                contentDiv.querySelectorAll('pre').forEach(pre => {
                    pre.style.backgroundColor = '#1e1e1e';
                    pre.style.padding = '1rem';
@@ -1926,7 +2236,6 @@
                    pre.style.marginBottom = '0.5rem';
                });
                
-               // Style inline code
                contentDiv.querySelectorAll('code').forEach(code => {
                    if (!code.parentElement || code.parentElement.tagName !== 'PRE') {
                        code.style.backgroundColor = '#f0f0f0';
@@ -1938,39 +2247,17 @@
                    }
                });
                
-               // Style lists with better spacing
-               contentDiv.querySelectorAll('ul, ol').forEach(list => {
-                   list.style.marginLeft = '1.5rem';
-                   list.style.marginTop = '0.5rem';
-                   list.style.marginBottom = '0.5rem';
-                   list.style.lineHeight = '1.8';
-               });
-               
-               contentDiv.querySelectorAll('li').forEach(li => {
-                   li.style.marginBottom = '0.5rem';
-               });
-               
-               // Apply syntax highlighting to code blocks using PRISM
                contentDiv.querySelectorAll('pre code').forEach((block) => {
-                   // Remove any HTML entities in code blocks
                    block.textContent = block.textContent.replace(/&#39;/g, "'")
                                                        .replace(/&quot;/g, '"')
                                                        .replace(/&lt;/g, '<')
                                                        .replace(/&gt;/g, '>')
                                                        .replace(/&amp;/g, '&');
                    
-                   // Add Prism language class if not present
                    if (!block.className.includes('language-')) {
-                       // Try to detect language from the code block
-                       const langMatch = block.parentElement.textContent.match(/^```(\w+)/);
-                       if (langMatch) {
-                           block.className = `language-${langMatch[1]}`;
-                       } else {
-                           block.className = 'language-python'; // Default to Python
-                       }
+                       block.className = 'language-json';
                    }
                    
-                   // Use Prism to highlight
                    if (typeof Prism !== 'undefined') {
                        Prism.highlightElement(block);
                    }
@@ -1979,7 +2266,6 @@
                contentDiv.textContent = 'Error: Empty response';
            }
            
-           // Add confidence indicator if available
            if (metadata.confidence !== undefined && metadata.confidence > 0) {
                const confidenceDiv = document.createElement('div');
                confidenceDiv.className = 'message-confidence';
@@ -1987,15 +2273,11 @@
                confidenceDiv.innerHTML = `
                    <span style="color: #666; font-size: 0.85em;">
                        Confidence: ${confidencePercent}%
-                       <span style="display: inline-block; width: 100px; height: 4px; background: #e0e0e0; border-radius: 2px; margin-left: 8px; vertical-align: middle;">
-                           <span style="display: block; width: ${confidencePercent}%; height: 100%; background: #4CAF50; border-radius: 2px;"></span>
-                       </span>
                    </span>
                `;
                contentDiv.appendChild(confidenceDiv);
            }
            
-           // Add source indicator if available
            if (metadata.metadata && metadata.metadata.source) {
                const sourceDiv = document.createElement('div');
                sourceDiv.className = 'message-source';
@@ -2009,11 +2291,9 @@
                };
                sourceDiv.innerHTML = `
                    <span style="font-size: 0.85em; color: ${sourceColors[source] || '#666'};">
-                       <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: ${sourceColors[source] || '#666'}; margin-right: 4px;"></span>
-                       Source: ${source}
+                       Source: ${escapeHtml(source)}
                    </span>
                `;
-               sourceDiv.style.marginTop = '8px';
                contentDiv.appendChild(sourceDiv);
            }
            
@@ -2021,29 +2301,7 @@
            messageDiv.appendChild(contentDiv);
            messagesContainer.appendChild(messageDiv);
            
-           // Scroll to bottom
            messagesContainer.scrollTop = messagesContainer.scrollHeight;
-       }
-       
-       // Copy code to clipboard
-       async function copyCode(id) {
-           const codeElement = document.getElementById(id);
-           const code = codeElement.textContent;
-           const button = codeElement.parentElement.querySelector('.copy-button');
-           
-           try {
-               await navigator.clipboard.writeText(code);
-               button.textContent = 'Copied!';
-               button.classList.add('copied');
-               setTimeout(() => {
-                   button.textContent = 'Copy';
-                   button.classList.remove('copied');
-               }, 2000);
-               showNotification('Code copied to clipboard!', 'success');
-           } catch (error) {
-               console.error('Failed to copy code:', error);
-               showNotification('Failed to copy code', 'error');
-           }
        }
        
        // Show typing indicator
@@ -2075,7 +2333,6 @@
        
        // Switch tabs
        function switchTab(tabName, tabElement) {
-           // Update tab buttons
            document.querySelectorAll('.tab').forEach(tab => {
                tab.classList.remove('active');
            });
@@ -2083,13 +2340,11 @@
                tabElement.classList.add('active');
            }
            
-           // Update tab content
            document.querySelectorAll('.tab-content').forEach(content => {
                content.classList.add('hidden');
            });
            document.getElementById(`${tabName}Tab`).classList.remove('hidden');
            
-           // Load tab-specific content if needed
            if (tabName === 'cookbook' && !document.getElementById('recipeGrid').innerHTML) {
                loadCookbookRecipes();
            } else if (tabName === 'mcp' && !state.mcpTools.length) {
@@ -2103,13 +2358,11 @@
        function setRequestType(type, button) {
            state.playgroundType = type;
            
-           // Update buttons
            document.querySelectorAll('.request-type-btn').forEach(btn => {
                btn.classList.remove('active');
            });
            button.classList.add('active');
            
-           // Show/hide forms
            if (type === 'api') {
                document.getElementById('apiRequestForm').classList.remove('hidden');
                document.getElementById('mcpToolForm').classList.add('hidden');
@@ -2151,6 +2404,7 @@
            return headers;
        }
        
+       // Enhanced execute function with better error handling
        async function executePlaygroundRequest() {
            const startTime = Date.now();
            
@@ -2158,7 +2412,6 @@
                let result;
                
                if (state.playgroundType === 'api') {
-                   // API Request
                    const method = document.getElementById('playgroundMethod').value;
                    const url = document.getElementById('playgroundUrl').value;
                    const headers = getHeaders();
@@ -2169,7 +2422,7 @@
                        return;
                    }
                    
-                   // Show loading
+                   logToDevConsole(`API Request: ${method} ${url}`, 'info');
                    showResponseLoading();
                    
                    const requestData = {
@@ -2208,15 +2461,21 @@
                        return;
                    }
                    
-                   // Show loading
+                   logToDevConsole(`Executing MCP tool: ${toolName}`, 'info');
                    showResponseLoading();
                    
                    let params = {};
                    if (paramsText) {
                        try {
                            params = JSON.parse(paramsText);
+                           logToDevConsole(`Parameters: ${JSON.stringify(params)}`, 'info');
                        } catch (e) {
+                           logToDevConsole(`Invalid JSON: ${e.message}`, 'error');
                            showNotification('Invalid JSON in parameters', 'error');
+                           displayPlaygroundError({
+                               message: `JSON Parse Error: ${e.message}`,
+                               hint: 'Check for missing quotes, commas, or brackets'
+                           });
                            return;
                        }
                    }
@@ -2234,12 +2493,20 @@
                    });
                    
                    result = await response.json();
+                   
+                   if (toolName === 'call_api' && params.api_name && params.endpoint_name) {
+                       logToDevConsole(
+                           `API Call: ${params.api_name}.${params.endpoint_name}`, 
+                           'info'
+                       );
+                   }
                }
                
-               // Display response
+               const duration = Date.now() - startTime;
+               logToDevConsole(`Response received in ${duration}ms`, result.success ? 'success' : 'error');
+               
                displayPlaygroundResponse(result);
                
-               // Add to history
                addToHistory({
                    type: state.playgroundType,
                    request: state.playgroundType === 'api' ? {
@@ -2253,11 +2520,12 @@
                    },
                    response: result,
                    timestamp: new Date().toISOString(),
-                   duration: Date.now() - startTime
+                   duration: duration
                });
                
            } catch (error) {
                console.error('Playground execution error:', error);
+               logToDevConsole(`Error: ${error.message}`, 'error');
                displayPlaygroundError(error);
            }
        }
@@ -2266,7 +2534,6 @@
            const responseContent = document.getElementById('responseContent');
            responseContent.innerHTML = '<div class="loading-spinner"></div> Executing request...';
            
-           // Hide metadata and tabs initially
            document.getElementById('responseMetadata').classList.add('hidden');
            document.getElementById('responseTabs').classList.add('hidden');
        }
@@ -2276,21 +2543,17 @@
            const responseMetadata = document.getElementById('responseMetadata');
            const responseTabs = document.getElementById('responseTabs');
            
-           // Store current response
            state.currentResponse = result;
            
-           // Show metadata
            responseMetadata.classList.remove('hidden');
            responseTabs.classList.remove('hidden');
            
-           // Update metadata
            if (result.success) {
                const response = result.result;
                if (response?.status_code) {
                    const statusCode = document.getElementById('statusCode');
                    statusCode.textContent = response.status_code;
                    
-                   // Style based on status code
                    statusCode.className = 'status-code';
                    if (response.status_code >= 200 && response.status_code < 300) {
                        statusCode.classList.add('success');
@@ -2305,17 +2568,14 @@
                
                document.getElementById('responseTime').textContent = `${result.duration_ms || 0}ms`;
                
-               // Calculate size
                const size = JSON.stringify(response?.body || response).length;
                document.getElementById('responseSize').textContent = formatBytes(size);
                
-               // Display body
                responseContent.innerHTML = createCodeBlockHTML(
                    JSON.stringify(response?.body || response, null, 2),
                    'json'
                );
            } else {
-               // Error response
                const statusCode = document.getElementById('statusCode');
                statusCode.textContent = 'Error';
                statusCode.className = 'status-code client-error';
@@ -2324,13 +2584,13 @@
                document.getElementById('responseSize').textContent = '0B';
                
                responseContent.innerHTML = `
-                   <div class="badge badge-error mb-2">${result.error_type || 'Error'}</div>
+                   <div class="badge badge-error mb-2">${escapeHtml(result.error_type || 'Error')}</div>
                    <pre class="text-small">${escapeHtml(result.error)}</pre>
                    ${result.traceback ? `<details class="mt-2"><summary>Stack Trace</summary><pre class="text-xs">${escapeHtml(result.traceback)}</pre></details>` : ''}
+                   ${result.hint ? `<div class="text-small text-muted mt-2">💡 Hint: ${escapeHtml(result.hint)}</div>` : ''}
                `;
            }
            
-           // Re-highlight code
            if (typeof Prism !== 'undefined') {
                Prism.highlightAll();
            }
@@ -2341,11 +2601,11 @@
            responseContent.innerHTML = `
                <div class="badge badge-error">Error</div>
                <pre class="mt-2">${escapeHtml(error.message || error)}</pre>
+               ${error.hint ? `<div class="text-small text-muted mt-2">💡 ${escapeHtml(error.hint)}</div>` : ''}
            `;
        }
        
        function switchResponseTab(tab, button) {
-           // Update tab buttons
            document.querySelectorAll('.response-tab').forEach(btn => {
                btn.classList.remove('active');
            });
@@ -2374,7 +2634,6 @@
                );
            }
            
-           // Re-highlight code
            if (typeof Prism !== 'undefined') {
                Prism.highlightAll();
            }
@@ -2386,7 +2645,6 @@
                document.getElementById('playgroundUrl').value = '';
                document.getElementById('playgroundBody').value = '';
                
-               // Reset headers to defaults
                document.getElementById('headersEditor').innerHTML = `
                    <div class="header-row">
                        <input type="text" class="form-input" placeholder="Key" value="entity">
@@ -2415,7 +2673,6 @@
                document.getElementById('mcpToolParams').value = '';
            }
            
-           // Clear response
            document.getElementById('responseContent').innerHTML = '<div class="text-muted">Execute a request to see the response here</div>';
            document.getElementById('responseMetadata').classList.add('hidden');
            document.getElementById('responseTabs').classList.add('hidden');
@@ -2465,40 +2722,16 @@
            showNotification('Response downloaded', 'success');
        }
        
-       function updateMCPToolParams() {
-           const toolName = document.getElementById('mcpToolSelect').value;
-           const tool = state.mcpTools.find(t => t.name === toolName);
-           
-           if (tool) {
-               // Set example parameters based on tool
-               const exampleParams = {};
-               
-               // Common BAnCS tool examples
-               if (toolName.includes('account_balance')) {
-                   exampleParams.accountReference = '101000000101814';
-               } else if (toolName.includes('customer')) {
-                   exampleParams.customerId = '146025';
-               } else if (toolName.includes('loan')) {
-                   exampleParams.loanReference = '999000000109598';
-               }
-               
-               document.getElementById('mcpToolParams').value = JSON.stringify(exampleParams, null, 2);
-           }
-       }
-       
        // History functions
        function addToHistory(item) {
            state.playgroundHistory.unshift(item);
            
-           // Keep only last 50 items
            if (state.playgroundHistory.length > 50) {
                state.playgroundHistory = state.playgroundHistory.slice(0, 50);
            }
            
-           // Save to localStorage
            saveHistoryToStorage();
            
-           // Update display if history tab is active
            if (!document.getElementById('historyTab').classList.contains('hidden')) {
                displayHistory();
            }
@@ -2521,12 +2754,12 @@
                        <div class="history-item" onclick="loadHistoryItem(${index})">
                            <div class="history-item-header">
                                <div>
-                                   <span class="method-badge method-${item.request.method.toLowerCase()}">${item.request.method}</span>
+                                   <span class="method-badge method-${escapeHtml(item.request.method.toLowerCase())}">${escapeHtml(item.request.method)}</span>
                                    <span class="history-item-method ml-2">${item.response?.success ? '✓' : '✗'}</span>
                                </div>
                                <span class="history-item-time">${time}</span>
                            </div>
-                           <div class="history-item-url">${item.request.url}</div>
+                           <div class="history-item-url">${escapeHtml(item.request.url)}</div>
                            <div class="text-xs text-muted">${date} • ${item.duration}ms</div>
                        </div>
                    `;
@@ -2540,7 +2773,7 @@
                                </div>
                                <span class="history-item-time">${time}</span>
                            </div>
-                           <div class="history-item-url">${item.request.tool}</div>
+                           <div class="history-item-url">${escapeHtml(item.request.tool)}</div>
                            <div class="text-xs text-muted">${date} • ${item.duration}ms</div>
                        </div>
                    `;
@@ -2552,19 +2785,15 @@
            const item = state.playgroundHistory[index];
            if (!item) return;
            
-           // Switch to playground tab
            switchTab('playground', document.querySelector('.tab:nth-child(3)'));
            
-           // Set request type
            if (item.type === 'api') {
                setRequestType('api', document.querySelector('.request-type-btn'));
                
-               // Populate fields
                document.getElementById('playgroundMethod').value = item.request.method;
                document.getElementById('playgroundUrl').value = item.request.url;
                document.getElementById('playgroundBody').value = item.request.body || '';
                
-               // Set headers
                const headersEditor = document.getElementById('headersEditor');
                headersEditor.innerHTML = '';
                
@@ -2583,12 +2812,10 @@
            } else {
                setRequestType('mcp', document.querySelector('.request-type-btn:nth-child(2)'));
                
-               // Populate fields
                document.getElementById('mcpToolSelect').value = item.request.tool;
                document.getElementById('mcpToolParams').value = item.request.params || '';
            }
            
-           // Display response
            displayPlaygroundResponse(item.response);
            
            lucide.createIcons();
@@ -2631,10 +2858,9 @@
        
        async function loadRecipe(recipeId) {
            try {
-               const response = await fetchWithRetry(`/api/cookbook/${recipeId}`);
+               const response = await fetchWithRetry(`/api/cookbook/${encodeURIComponent(recipeId)}`);
                const recipe = await response.json();
                
-               // Switch to chat and ask about recipe
                switchTab('chat', document.querySelector('.tab'));
                sendQuickMessage(`Show me the ${recipe.title} recipe with code examples`);
            } catch (error) {
@@ -2644,7 +2870,6 @@
        }
        
        function testMCPTool(toolName) {
-           // Switch to playground and set up MCP tool test
            switchTab('playground', document.querySelector('.tab:nth-child(3)'));
            setRequestType('mcp', document.querySelector('.request-type-btn:nth-child(2)'));
            document.getElementById('mcpToolSelect').value = toolName;
@@ -2657,7 +2882,6 @@
                const response = await fetchWithRetry('/api/openapi?version=3.0');
                const spec = await response.json();
                
-               // Switch to chat and show spec
                switchTab('chat', document.querySelector('.tab'));
                addMessage('Here\'s the OpenAPI specification:', 'assistant');
                
@@ -2669,7 +2893,6 @@
                );
                document.getElementById('chatMessages').appendChild(messageDiv);
                
-               // Re-highlight
                if (typeof Prism !== 'undefined') {
                    Prism.highlightAll();
                }
@@ -2707,7 +2930,6 @@
        }
        
        function showSettings() {
-           // Placeholder for settings modal
            showNotification('Settings panel coming soon!', 'info');
        }
        
@@ -2728,7 +2950,7 @@
            }
        }
        
-       function showNotification(message, type = 'info') {
+       function showNotification(message, type = 'info', duration = 3000) {
            const notification = document.createElement('div');
            notification.className = `badge badge-${type}`;
            notification.style.cssText = `
@@ -2738,15 +2960,22 @@
                padding: 12px 20px;
                z-index: 1000;
                animation: slideIn 0.3s ease;
+               max-width: 400px;
            `;
-           notification.textContent = message;
+           
+           // Allow HTML content for special notifications
+           if (message.includes('<')) {
+               notification.innerHTML = DOMPurify.sanitize(message);
+           } else {
+               notification.textContent = message;
+           }
            
            document.body.appendChild(notification);
            
            setTimeout(() => {
                notification.style.animation = 'slideOut 0.3s ease';
                setTimeout(() => notification.remove(), 300);
-           }, 3000);
+           }, duration);
        }
        
        function escapeHtml(text) {
@@ -2757,7 +2986,12 @@
                '"': '&quot;',
                "'": '&#039;'
            };
-           return String(text).replace(/[&<>"']/g, m => map[m]);
+           return String(text ?? '').replace(/[&<>"']/g, m => map[m]);
+       }
+
+       // Safe JS string literal for inline onclick="fn(...)" attributes
+       function jsArg(value) {
+           return escapeHtml(JSON.stringify(String(value ?? '')));
        }
        
        function createCodeBlockHTML(code, language = 'json') {
@@ -2771,6 +3005,26 @@
                    <pre><code id="${id}" class="language-${language}">${escapeHtml(code)}</code></pre>
                </div>
            `;
+       }
+       
+       async function copyCode(id) {
+           const codeElement = document.getElementById(id);
+           const code = codeElement.textContent;
+           
+           try {
+               await navigator.clipboard.writeText(code);
+               const button = codeElement.parentElement.parentElement.querySelector('.copy-button');
+               button.textContent = 'Copied!';
+               button.classList.add('copied');
+               setTimeout(() => {
+                   button.textContent = 'Copy';
+                   button.classList.remove('copied');
+               }, 2000);
+               showNotification('Code copied to clipboard!', 'success');
+           } catch (error) {
+               console.error('Failed to copy code:', error);
+               showNotification('Failed to copy code', 'error');
+           }
        }
        
        function autoResizeTextarea(textarea) {

@@ -289,7 +289,7 @@ def create_training_data():
         ("Rate limiting for {endpoint}", "rate_limiting")
     ]
     
-    # API endpoints from BAnCS
+    # API endpoints from BaNCS
     endpoints = [
         "GET /account/balance",
         "POST /customer/create",
@@ -311,7 +311,7 @@ def create_training_data():
                     error_code='401',
                     endpoint1=endpoint,
                     endpoint2=endpoints[0],
-                    api='BAnCS'
+                    api='BaNCS'
                 ),
                 'intent': intent,
                 'endpoint': endpoint

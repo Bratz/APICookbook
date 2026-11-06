@@ -1,12 +1,12 @@
 """
-TCS BAnCS API Cookbook Backend Package
+TCS BaNCS API Cookbook Backend Package
 Unified chatbot and MCP server implementation
 """
 
 from typing import TYPE_CHECKING
 
 __version__ = "2.0.0"
-__author__ = "TCS BAnCS Development Team"
+__author__ = "TCS BaNCS Development Team"
 
 # Version exports
 VERSION = __version__
@@ -16,7 +16,7 @@ API_VERSION = "v2"
 from .config import settings, Settings
 from .knowledge_base import UnifiedAPIKnowledgeBase
 from .response_generator import UnifiedResponseGenerator
-from .apiweaver import BAnCSAPIWeaver
+from .apiweaver import BaNCSAPIWeaver
 from .spec_loader import APISpecificationLoader
 
 # Conditional imports for type checking
@@ -39,7 +39,7 @@ __all__ = [
     "Settings",
     "UnifiedAPIKnowledgeBase",
     "UnifiedResponseGenerator",
-    "BAnCSAPIWeaver",
+    "BaNCSAPIWeaver",
     "APISpecificationLoader",
     
     # Version info

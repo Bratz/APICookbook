@@ -1,0 +1,57 @@
+# ============================================================================
+# One-time Caddy step, run by hand (Actions -> One-time OCI VM setup -> Run workflow).
+# It exists because the VM cannot be reached over SSH from the development machine.
+# Secrets: VM_HOST, VM_USER, VM_SSH_KEY.
+#
+# Run it after deploy/oci/Caddyfile.cookbook has been appended to vam-portal's Caddyfile and
+# vam-portal's own deploy has pulled it onto the VM: validates, reloads Caddy, checks the public
+# HTTPS name. It changes nothing in vam-portal's files. Safe to re-run.
+# ============================================================================
+name: One-time OCI VM setup
+
+on:
+  workflow_dispatch: {}
+
+concurrency:
+  group: deploy-oci
+  cancel-in-progress: false
+
+jobs:
+  caddy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VM_HOST }}
+          username: ${{ secrets.VM_USER }}
+          key: ${{ secrets.VM_SSH_KEY }}
+          command_timeout: 10m
+          script: |
+            set -e
+            HOST=cookbook.161-33-9-182.sslip.io
+            cd ~/VAM/deploy/oci
+            grep -q "$HOST" Caddyfile || { echo "the $HOST block is not in ~/VAM/deploy/oci/Caddyfile yet: has vam-portal's deploy pulled it?"; exit 1; }
+            sudo docker ps --format '{{.Names}}' | grep -q cookbook-api || { echo "cookbook-api is not running: not adding a site with no upstream"; exit 1; }
+            # Validate in a throwaway container first: a broken Caddyfile must never reach the live one.
+            sudo docker run --rm -v "$PWD/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2-alpine caddy validate --config /etc/caddy/Caddyfile
+            COMPOSE="sudo docker compose --profile mcp --profile defectfix --profile fileingest"
+            # The Caddyfile is bind-mounted as a single file; git replaces the file on pull, so the
+            # running container can still be looking at the old one.
+            if $COMPOSE exec -T caddy grep -q "$HOST" /etc/caddy/Caddyfile; then
+              $COMPOSE exec -T caddy caddy reload --config /etc/caddy/Caddyfile
+            else
+              $COMPOSE restart caddy
+            fi
+            # First request makes Caddy fetch a certificate; give it time.
+            for i in $(seq 30); do
+              if curl -fsS -m 10 "https://$HOST/health"; then
+                echo
+                curl -s -m 10 -o /dev/null -w "public KB writes blocked: %{http_code}\n" -X POST "https://$HOST/api/knowledge/add"
+                curl -fsS -m 10 -o /dev/null -w "liq still answers: %{http_code}\n" https://liq.161-33-9-182.sslip.io/api/v1/health
+                exit 0
+              fi
+              sleep 4
+            done
+            $COMPOSE logs --tail 40 caddy
+            exit 1

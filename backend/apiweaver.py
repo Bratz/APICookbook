@@ -42,6 +42,7 @@ class RequestParam(BaseModel):
     description: Optional[str] = None
     default: Optional[Any] = None
     enum: Optional[List[str]] = None
+    example: Optional[Any] = None  # Add example field
 
 class APIEndpoint(BaseModel):
     """API endpoint definition."""
@@ -76,23 +77,25 @@ class APIConfig(BaseModel):
 
 # ===================== Main APIWeaver Class =====================
 
-class BAnCSAPIWeaver:
+class BaNCSAPIWeaver:
     """Main server that creates MCP tools from API configurations."""
     
-    def __init__(self, name: str = "TCS-BAnCS-APIWeaver"):
+    def __init__(self, name: str = "TCS-BaNCS-APIWeaver"):
         self.mcp = FastMCP(name)
         self.apis: Dict[str, APIConfig] = {}
         self.http_clients: Dict[str, httpx.AsyncClient] = {}
+        self.created_tools: Dict[str, Any] = {}  # Track created tools
+        self.pending_registrations: List[Dict[str, Any]] = []  # Store configs to register later
         self._setup_core_tools()
         self._initialize_default_apis()
     
     def _initialize_default_apis(self):
-        """Initialize with default BAnCS APIs and load from files."""
-        # Default BAnCS configuration
+        """Initialize with default BaNCS APIs and load from files."""
+        # Default BaNCS configuration
         bancs_config = APIConfig(
-            name="TCS_BAnCS",
+            name="TCS_BaNCS",
             base_url="https://demoapps.tcsbancs.com",
-            description="TCS BAnCS Banking APIs",
+            description="TCS BaNCS Banking APIs",
             auth=AuthConfig(
                 type=AuthType.CUSTOM,
                 custom_headers={
@@ -113,7 +116,8 @@ class BAnCSAPIWeaver:
                             type="string",
                             location="path",
                             required=True,
-                            description="15-digit account reference number"
+                            description="15-digit account reference number",
+                            example="101000000101814"
                         )
                     ]
                 ),
@@ -128,7 +132,8 @@ class BAnCSAPIWeaver:
                             type="string",
                             location="query",
                             required=True,
-                            description="Customer ID"
+                            description="Customer ID",
+                            example="146025"
                         )
                     ]
                 ),
@@ -143,7 +148,8 @@ class BAnCSAPIWeaver:
                             type="integer",
                             location="body",
                             required=True,
-                            description="Customer type (1=Individual, 2=Corporate)"
+                            description="Customer type (1=Individual, 2=Corporate)",
+                            default=1
                         ),
                         RequestParam(
                             name="customerFullName",
@@ -157,7 +163,8 @@ class BAnCSAPIWeaver:
                             type="string",
                             location="body",
                             required=True,
-                            description="Nationality code"
+                            description="Nationality code",
+                            default="US"
                         )
                     ]
                 ),
@@ -193,22 +200,17 @@ class BAnCSAPIWeaver:
                             type="string",
                             location="body",
                             required=True,
-                            description="Currency code"
+                            description="Currency code",
+                            default="USD"
                         )
                     ]
                 )
             ]
         )
         
-        # Store BAnCS API configuration directly (synchronously)
+        # Store BaNCS API configuration directly (synchronously)
         self.apis[bancs_config.name] = bancs_config
-        
-        # Create HTTP client synchronously
-        try:
-            # We'll create the client later when needed
-            logger.info(f"Registered default BAnCS API with {len(bancs_config.endpoints)} endpoints")
-        except Exception as e:
-            logger.error(f"Error registering default BAnCS API: {e}")
+        logger.info(f"Registered default BaNCS API with {len(bancs_config.endpoints)} endpoints")
         
         # Load APIs from files
         self._load_apis_from_files()
@@ -252,51 +254,6 @@ class BAnCSAPIWeaver:
         """Set up the core management tools."""
         
         @self.mcp.tool()
-        async def register_api(config: Dict[str, Any], ctx: Context) -> str:
-            """
-            Register a new API configuration and create MCP tools for its endpoints.
-            
-            Args:
-                config: API configuration dictionary containing:
-                    - name: API name
-                    - base_url: Base URL for the API
-                    - description: Optional API description
-                    - auth: Optional authentication configuration
-                    - headers: Optional global headers
-                    - endpoints: List of endpoint configurations
-            
-            Returns:
-                Success message with list of created tools
-            """
-            try:
-                api_config = APIConfig(**config)
-                
-                # Store API configuration
-                self.apis[api_config.name] = api_config
-                
-                # Create HTTP client for this API
-                client = await self._create_http_client(api_config)
-                self.http_clients[api_config.name] = client
-                
-                # Create tools for each endpoint
-                created_tools = []
-                for endpoint in api_config.endpoints:
-                    tool_name = f"{api_config.name}_{endpoint.name}"
-                    try:
-                        await self._create_endpoint_tool(api_config, endpoint, tool_name)
-                        created_tools.append(tool_name)
-                    except Exception as e:
-                        await ctx.error(f"Failed to create tool {tool_name}: {str(e)}")
-                        continue
-                
-                await ctx.info(f"Registered API '{api_config.name}' with {len(created_tools)} tools")
-                return f"Successfully registered API '{api_config.name}' with tools: {', '.join(created_tools)}"
-                
-            except Exception as e:
-                await ctx.error(f"Failed to register API: {str(e)}")
-                raise
-        
-        @self.mcp.tool()
         async def list_apis(ctx: Context) -> Dict[str, Any]:
             """
             List all registered APIs and their endpoints.
@@ -310,110 +267,30 @@ class BAnCSAPIWeaver:
                     "base_url": api.base_url,
                     "description": api.description,
                     "auth_type": api.auth.type if api.auth else "none",
+                    "endpoints_count": len(api.endpoints),
                     "endpoints": [
                         {
                             "name": ep.name,
                             "method": ep.method,
                             "path": ep.path,
-                            "description": ep.description,
-                            "parameters": [
-                                {
-                                    "name": param.name,
-                                    "type": param.type,
-                                    "location": param.location,
-                                    "required": param.required,
-                                    "description": param.description,
-                                    "default": param.default
-                                }
-                                for param in ep.params
-                            ]
+                            "description": ep.description
                         }
-                        for ep in api.endpoints
+                        for ep in api.endpoints[:10]  # Show first 10 endpoints
                     ]
                 }
             return result
         
         @self.mcp.tool()
-        async def unregister_api(api_name: str, ctx: Context) -> str:
-            """
-            Unregister an API and remove its tools.
-            
-            Args:
-                api_name: Name of the API to unregister
-            
-            Returns:
-                Success message
-            """
-            if api_name not in self.apis:
-                raise ValueError(f"API '{api_name}' not found")
-            
-            api_config = self.apis[api_name]
-            
-            # Remove tools
-            for endpoint in api_config.endpoints:
-                tool_name = f"{api_name}_{endpoint.name}"
-                try:
-                    self.mcp.remove_tool(tool_name)
-                except:
-                    pass  # Tool might not exist
-            
-            # Close HTTP client
-            if api_name in self.http_clients:
-                await self.http_clients[api_name].aclose()
-                del self.http_clients[api_name]
-            
-            # Remove API config
-            del self.apis[api_name]
-            
-            await ctx.info(f"Unregistered API '{api_name}'")
-            return f"Successfully unregistered API '{api_name}'"
-        
-        @self.mcp.tool()
-        async def test_api_connection(api_name: str, ctx: Context) -> Dict[str, Any]:
-            """
-            Test connection to a registered API.
-            
-            Args:
-                api_name: Name of the API to test
-            
-            Returns:
-                Connection test results
-            """
-            if api_name not in self.apis:
-                raise ValueError(f"API '{api_name}' not found")
-            
-            api_config = self.apis[api_name]
-            client = self.http_clients.get(api_name)
-            
-            if not client:
-                raise ValueError(f"No HTTP client found for API '{api_name}'")
-            
-            try:
-                # Try a simple HEAD or GET request to base URL
-                response = await client.head(api_config.base_url, timeout=5.0)
-                return {
-                    "status": "connected",
-                    "status_code": response.status_code,
-                    "headers": dict(response.headers)
-                }
-            except Exception as e:
-                return {
-                    "status": "failed",
-                    "error": str(e)
-                }
-        
-        @self.mcp.tool()
         async def call_api(
             api_name: str,
             endpoint_name: str,
-            parameters: Dict[str, Any] = None,
+            parameters: Optional[Dict[str, Any]] = None,
             ctx: Optional[Context] = None
         ) -> Dict[str, Any]:
             """
             Call any registered API endpoint with dynamic parameters.
             
-            This is a generic tool that allows calling any registered API endpoint
-            without having to use the specific endpoint tools.
+            Use get_api_schema first to discover required parameters.
             
             Args:
                 api_name: Name of the registered API to call
@@ -423,6 +300,17 @@ class BAnCSAPIWeaver:
             
             Returns:
                 API response data and metadata
+            
+            Example:
+                # First check schema
+                schema = await get_api_schema("TCS_BaNCS", "get_account_balance")
+                
+                # Then call with correct parameters
+                result = await call_api(
+                    api_name="TCS_BaNCS",
+                    endpoint_name="get_account_balance",
+                    parameters={"accountReference": "101000000101814"}
+                )
             """
             if parameters is None:
                 parameters = {}
@@ -444,14 +332,14 @@ class BAnCSAPIWeaver:
                     break
             
             if not endpoint:
-                available_endpoints = [ep.name for ep in api_config.endpoints]
-                error_msg = f"Endpoint '{endpoint_name}' not found in API '{api_name}'. Available endpoints: {', '.join(available_endpoints)}"
+                available_endpoints = [ep.name for ep in api_config.endpoints][:10]
+                error_msg = f"Endpoint '{endpoint_name}' not found in API '{api_name}'. Available endpoints include: {', '.join(available_endpoints)}..."
                 if ctx:
                     await ctx.error(error_msg)
                 raise ValueError(error_msg)
             
             if ctx:
-                await ctx.info(f"Calling {api_name}.{endpoint_name} with parameters: {parameters}")
+                await ctx.info(f"Calling {api_name}.{endpoint_name}")
             
             try:
                 # Call the API
@@ -467,12 +355,6 @@ class BAnCSAPIWeaver:
                     "success": True,
                     "api_name": api_name,
                     "endpoint_name": endpoint_name,
-                    "endpoint_info": {
-                        "method": endpoint.method,
-                        "path": endpoint.path,
-                        "description": endpoint.description
-                    },
-                    "parameters_used": parameters,
                     "data": response_data
                 }
                 
@@ -482,6 +364,36 @@ class BAnCSAPIWeaver:
                 return result
                 
             except Exception as e:
+                # Check if it's a missing parameter error
+                if "Required parameter" in str(e):
+                    # Provide helpful error with example
+                    required_params = [p.name for p in endpoint.params if p.required]
+                    example_params = {}
+                    for param in endpoint.params:
+                        if param.required:
+                            if param.example:
+                                example_params[param.name] = param.example
+                            elif param.default:
+                                example_params[param.name] = param.default
+                            else:
+                                example_params[param.name] = f"<{param.type}>"
+                    
+                    error_msg = f"""
+Missing required parameter for {api_name}.{endpoint_name}
+
+Required parameters: {required_params}
+
+Example call:
+await call_api(
+    api_name="{api_name}",
+    endpoint_name="{endpoint_name}",
+    parameters={json.dumps(example_params, indent=4)}
+)
+
+Use get_api_schema("{api_name}", "{endpoint_name}") for full parameter details.
+"""
+                    raise ValueError(error_msg)
+                
                 error_result = {
                     "success": False,
                     "api_name": api_name,
@@ -497,360 +409,14 @@ class BAnCSAPIWeaver:
                 return error_result
         
         @self.mcp.tool()
-        async def get_api_schema(api_name: str, endpoint_name: str = None, ctx: Optional[Context] = None) -> Dict[str, Any]:
-            """
-            Get the schema/documentation for an API or specific endpoint.
-            
-            Args:
-                api_name: Name of the registered API
-                endpoint_name: Optional specific endpoint name
-                ctx: Optional context for logging
-            
-            Returns:
-                Schema information for the API or endpoint
-            """
-            if api_name not in self.apis:
-                available_apis = list(self.apis.keys())
-                error_msg = f"API '{api_name}' not found. Available APIs: {', '.join(available_apis)}"
-                if ctx:
-                    await ctx.error(error_msg)
-                raise ValueError(error_msg)
-            
-            api_config = self.apis[api_name]
-            
-            if endpoint_name:
-                # Return specific endpoint schema
-                endpoint = None
-                for ep in api_config.endpoints:
-                    if ep.name == endpoint_name:
-                        endpoint = ep
-                        break
-                
-                if not endpoint:
-                    available_endpoints = [ep.name for ep in api_config.endpoints]
-                    error_msg = f"Endpoint '{endpoint_name}' not found. Available: {', '.join(available_endpoints)}"
-                    if ctx:
-                        await ctx.error(error_msg)
-                    raise ValueError(error_msg)
-                
-                return {
-                    "api_name": api_name,
-                    "endpoint_name": endpoint_name,
-                    "method": endpoint.method,
-                    "path": endpoint.path,
-                    "description": endpoint.description,
-                    "parameters": [
-                        {
-                            "name": param.name,
-                            "type": param.type,
-                            "location": param.location,
-                            "required": param.required,
-                            "description": param.description,
-                            "default": param.default,
-                            "enum": param.enum
-                        }
-                        for param in endpoint.params
-                    ],
-                    "headers": endpoint.headers,
-                    "timeout": endpoint.timeout
-                }
-            else:
-                # Return all endpoints schema
-                return {
-                    "api_name": api_name,
-                    "base_url": api_config.base_url,
-                    "description": api_config.description,
-                    "auth_type": api_config.auth.type if api_config.auth else "none",
-                    "global_headers": api_config.headers,
-                    "endpoints": [
-                        {
-                            "name": ep.name,
-                            "method": ep.method,
-                            "path": ep.path,
-                            "description": ep.description,
-                            "parameters": [
-                                {
-                                    "name": param.name,
-                                    "type": param.type,
-                                    "location": param.location,
-                                    "required": param.required,
-                                    "description": param.description,
-                                    "default": param.default,
-                                    "enum": param.enum
-                                }
-                                for param in ep.params
-                            ]
-                        }
-                        for ep in api_config.endpoints
-                    ]
-                }
-            """
-            Register a new API configuration and create MCP tools for its endpoints.
-            
-            Args:
-                config: API configuration dictionary containing:
-                    - name: API name
-                    - base_url: Base URL for the API
-                    - description: Optional API description
-                    - auth: Optional authentication configuration
-                    - headers: Optional global headers
-                    - endpoints: List of endpoint configurations
-            
-            Returns:
-                Success message with list of created tools
-            """
-            try:
-                api_config = APIConfig(**config)
-                
-                # Store API configuration
-                self.apis[api_config.name] = api_config
-                
-                # Create HTTP client for this API
-                client = await self._create_http_client(api_config)
-                self.http_clients[api_config.name] = client
-                
-                # Create tools for each endpoint
-                created_tools = []
-                for endpoint in api_config.endpoints:
-                    tool_name = f"{api_config.name}_{endpoint.name}"
-                    try:
-                        await self._create_endpoint_tool(api_config, endpoint, tool_name)
-                        created_tools.append(tool_name)
-                    except Exception as e:
-                        await ctx.error(f"Failed to create tool {tool_name}: {str(e)}")
-                        continue
-                
-                await ctx.info(f"Registered API '{api_config.name}' with {len(created_tools)} tools")
-                return f"Successfully registered API '{api_config.name}' with tools: {', '.join(created_tools)}"
-                
-            except Exception as e:
-                await ctx.error(f"Failed to register API: {str(e)}")
-                raise
-        
-        @self.mcp.tool()
-        async def list_apis(ctx: Context) -> Dict[str, Any]:
-            """
-            List all registered APIs and their endpoints.
-            
-            Returns:
-                Dictionary of registered APIs with their configurations
-            """
-            result = {}
-            for name, api in self.apis.items():
-                result[name] = {
-                    "base_url": api.base_url,
-                    "description": api.description,
-                    "auth_type": api.auth.type if api.auth else "none",
-                    "endpoints": [
-                        {
-                            "name": ep.name,
-                            "method": ep.method,
-                            "path": ep.path,
-                            "description": ep.description,
-                            "parameters": [
-                                {
-                                    "name": param.name,
-                                    "type": param.type,
-                                    "location": param.location,
-                                    "required": param.required,
-                                    "description": param.description,
-                                    "default": param.default
-                                }
-                                for param in ep.params
-                            ]
-                        }
-                        for ep in api.endpoints
-                    ]
-                }
-            return result
-        
-        @self.mcp.tool()
-        async def unregister_api(api_name: str, ctx: Context) -> str:
-            """
-            Unregister an API and remove its tools.
-            
-            Args:
-                api_name: Name of the API to unregister
-                ctx: MCP context
-            
-            Returns:
-                Success message
-            """
-            if api_name not in self.apis:
-                raise ValueError(f"API '{api_name}' not found")
-            
-            api_config = self.apis[api_name]
-            
-            # Remove tools
-            for endpoint in api_config.endpoints:
-                tool_name = f"{api_name}_{endpoint.name}"
-                try:
-                    if self.mcp:
-                        self.mcp.remove_tool(tool_name)
-                except:
-                    pass  # Tool might not exist
-            
-            # Close HTTP client
-            if api_name in self.http_clients:
-                await self.http_clients[api_name].aclose()
-                del self.http_clients[api_name]
-            
-            # Remove API config
-            del self.apis[api_name]
-            
-            await ctx.info(f"Unregistered API '{api_name}'")
-            return f"Successfully unregistered API '{api_name}'"
-        
-        # Add to MCP if available
-        if self.mcp :
-            unregister_api.__name__ = "unregister_api"
-            self.mcp.add_tool(unregister_api)
-        
-        # Define test_api_connection
-        async def test_api_connection(api_name: str, ctx: Context) -> Dict[str, Any]:
-            """
-            Test connection to a registered API.
-            
-            Args:
-                api_name: Name of the API to test
-                ctx: MCP context
-            
-            Returns:
-                Connection test results
-            """
-            if api_name not in self.apis:
-                raise ValueError(f"API '{api_name}' not found")
-            
-            api_config = self.apis[api_name]
-            client = self.http_clients.get(api_name)
-            
-            if not client:
-                # Create client if needed
-                client = await self._create_http_client(api_config)
-                self.http_clients[api_name] = client
-            
-            try:
-                # Try a simple HEAD or GET request to base URL
-                response = await client.head(api_config.base_url, timeout=5.0)
-                return {
-                    "status": "connected",
-                    "status_code": response.status_code,
-                    "headers": dict(response.headers)
-                }
-            except Exception as e:
-                return {
-                    "status": "failed",
-                    "error": str(e)
-                }
-        
-        # Add to MCP if available
-        if self.mcp :
-            test_api_connection.__name__ = "test_api_connection"
-            self.mcp.add_tool(test_api_connection)
-        
-        # Define call_api
-        async def call_api(
-            api_name: str,
-            endpoint_name: str,
-            parameters: Dict[str, Any] = None,
+        async def get_api_schema(
+            api_name: str, 
+            endpoint_name: Optional[str] = None, 
             ctx: Optional[Context] = None
         ) -> Dict[str, Any]:
             """
-            Call any registered API endpoint with dynamic parameters.
-            
-            Args:
-                api_name: Name of the registered API to call
-                endpoint_name: Name of the endpoint within the API
-                parameters: Dictionary of parameters to pass to the endpoint
-                ctx: Optional context for logging
-            
-            Returns:
-                API response data and metadata
-            """
-            if parameters is None:
-                parameters = {}
-            
-            # Validate API exists
-            if api_name not in self.apis:
-                available_apis = list(self.apis.keys())
-                error_msg = f"API '{api_name}' not found. Available APIs: {', '.join(available_apis)}"
-                if ctx:
-                    await ctx.error(error_msg)
-                raise ValueError(error_msg)
-            
-            # Find the endpoint
-            api_config = self.apis[api_name]
-            endpoint = None
-            for ep in api_config.endpoints:
-                if ep.name == endpoint_name:
-                    endpoint = ep
-                    break
-            
-            if not endpoint:
-                available_endpoints = [ep.name for ep in api_config.endpoints]
-                error_msg = f"Endpoint '{endpoint_name}' not found in API '{api_name}'. Available endpoints: {', '.join(available_endpoints)}"
-                if ctx:
-                    await ctx.error(error_msg)
-                raise ValueError(error_msg)
-            
-            if ctx:
-                await ctx.info(f"Calling {api_name}.{endpoint_name} with parameters: {parameters}")
-            
-            try:
-                # Call the API using existing method
-                response_data = await self._execute_api_call(
-                    api_name=api_name,
-                    endpoint_name=endpoint_name,
-                    params=parameters,
-                    ctx=ctx
-                )
-                
-                # Return structured response with metadata
-                result = {
-                    "success": True,
-                    "api_name": api_name,
-                    "endpoint_name": endpoint_name,
-                    "endpoint_info": {
-                        "method": endpoint.method,
-                        "path": endpoint.path,
-                        "description": endpoint.description
-                    },
-                    "parameters_used": parameters,
-                    "data": response_data
-                }
-                
-                if ctx:
-                    await ctx.info(f"Successfully called {api_name}.{endpoint_name}")
-                
-                return result
-                
-            except Exception as e:
-                error_result = {
-                    "success": False,
-                    "api_name": api_name,
-                    "endpoint_name": endpoint_name,
-                    "parameters_used": parameters,
-                    "error": str(e),
-                    "error_type": type(e).__name__
-                }
-                
-                if ctx:
-                    await ctx.error(f"Failed to call {api_name}.{endpoint_name}: {str(e)}")
-                
-                return error_result
-        
-        # Store for internal use
-        self.call_api = call_api
-        
-        # Add to MCP if available
-        if self.mcp :
-            call_api.__name__ = "call_api"
-            self.mcp.add_tool(call_api)
-        
-        # Define get_api_schema
-        async def get_api_schema(api_name: str, endpoint_name: str = None, ctx: Optional[Context] = None) -> Dict[str, Any]:
-            """
             Get the schema/documentation for an API or specific endpoint.
+            Shows required parameters, types, and examples.
             
             Args:
                 api_name: Name of the registered API
@@ -858,7 +424,7 @@ class BAnCSAPIWeaver:
                 ctx: Optional context for logging
             
             Returns:
-                Schema information for the API or endpoint
+                Schema information with parameter details and examples
             """
             if api_name not in self.apis:
                 available_apis = list(self.apis.keys())
@@ -870,7 +436,7 @@ class BAnCSAPIWeaver:
             api_config = self.apis[api_name]
             
             if endpoint_name:
-                # Return specific endpoint schema
+                # Return specific endpoint schema with example
                 endpoint = None
                 for ep in api_config.endpoints:
                     if ep.name == endpoint_name:
@@ -878,11 +444,21 @@ class BAnCSAPIWeaver:
                         break
                 
                 if not endpoint:
-                    available_endpoints = [ep.name for ep in api_config.endpoints]
-                    error_msg = f"Endpoint '{endpoint_name}' not found. Available: {', '.join(available_endpoints)}"
+                    available_endpoints = [ep.name for ep in api_config.endpoints][:10]
+                    error_msg = f"Endpoint '{endpoint_name}' not found. Available: {', '.join(available_endpoints)}..."
                     if ctx:
                         await ctx.error(error_msg)
                     raise ValueError(error_msg)
+                
+                # Build example parameters
+                example_params = {}
+                for param in endpoint.params:
+                    if param.example:
+                        example_params[param.name] = param.example
+                    elif param.default:
+                        example_params[param.name] = param.default
+                    elif param.required:
+                        example_params[param.name] = f"<required_{param.type}>"
                 
                 return {
                     "api_name": api_name,
@@ -898,70 +474,118 @@ class BAnCSAPIWeaver:
                             "required": param.required,
                             "description": param.description,
                             "default": param.default,
+                            "example": param.example,
                             "enum": param.enum
                         }
                         for param in endpoint.params
                     ],
-                    "headers": endpoint.headers,
-                    "timeout": endpoint.timeout
+                    "example_call": {
+                        "tool": "call_api",
+                        "parameters": {
+                            "api_name": api_name,
+                            "endpoint_name": endpoint_name,
+                            "parameters": example_params
+                        }
+                    }
                 }
             else:
-                # Return all endpoints schema
+                # Return API overview
                 return {
                     "api_name": api_name,
                     "base_url": api_config.base_url,
                     "description": api_config.description,
                     "auth_type": api_config.auth.type if api_config.auth else "none",
-                    "global_headers": api_config.headers,
+                    "total_endpoints": len(api_config.endpoints),
                     "endpoints": [
                         {
                             "name": ep.name,
                             "method": ep.method,
                             "path": ep.path,
-                            "description": ep.description,
-                            "parameters": [
-                                {
-                                    "name": param.name,
-                                    "type": param.type,
-                                    "location": param.location,
-                                    "required": param.required,
-                                    "description": param.description,
-                                    "default": param.default,
-                                    "enum": param.enum
-                                }
-                                for param in ep.params
-                            ]
+                            "description": ep.description
                         }
-                        for ep in api_config.endpoints
-                    ]
+                        for ep in api_config.endpoints[:20]  # Show first 20
+                    ],
+                    "note": f"Use get_api_schema('{api_name}', 'endpoint_name') for specific endpoint details"
                 }
         
-        # Add to MCP if available
-        if self.mcp :
-            get_api_schema.__name__ = "get_api_schema"
-            self.mcp.add_tool(get_api_schema)
-        
-        # Store register_api for internal use
-        self.register_api = register_api
+        @self.mcp.tool()
+        async def search_endpoints(
+            query: str,
+            api_name: Optional[str] = None,
+            method: Optional[str] = None,
+            ctx: Optional[Context] = None
+        ) -> List[Dict[str, Any]]:
+            """
+            Search for endpoints across registered APIs.
+            
+            Args:
+                query: Search term to look for in endpoint names, paths, or descriptions
+                api_name: Optional - limit search to specific API
+                method: Optional - filter by HTTP method (GET, POST, etc.)
+                ctx: Optional context for logging
+            
+            Returns:
+                List of matching endpoints with their details
+            """
+            results = []
+            
+            for name, api in self.apis.items():
+                if api_name and name != api_name:
+                    continue
+                
+                for endpoint in api.endpoints:
+                    if method and endpoint.method != method:
+                        continue
+                    
+                    # Search in name, path, and description
+                    search_text = query.lower()
+                    if (search_text in endpoint.name.lower() or
+                        search_text in endpoint.path.lower() or
+                        (endpoint.description and search_text in endpoint.description.lower())):
+                        
+                        results.append({
+                            "api": name,
+                            "endpoint": endpoint.name,
+                            "method": endpoint.method,
+                            "path": endpoint.path,
+                            "description": endpoint.description,
+                            "usage": f"call_api('{name}', '{endpoint.name}', parameters={{...}})"
+                        })
+            
+            if ctx:
+                await ctx.info(f"Found {len(results)} endpoints matching '{query}'")
+            
+            return results
     
     async def _register_api_internal(self, config: Dict[str, Any]):
-        """Internal method to register an API without context."""
-        # if not FASTMCP_AVAILABLE:
-        #     logger.warning("Cannot register API - MCP not available")
-        #     return
-        
+        """Internal method to register an API without creating individual tools."""
         try:
-            # Create a dummy context for internal use
-            class DummyContext:
-                async def info(self, msg): logger.info(msg)
-                async def error(self, msg): logger.error(msg)
+            api_config = APIConfig(**config)
             
-            ctx = DummyContext()
-            # Call the implementation directly, not through MCP wrapper
-            result = await self.register_api(config, ctx)
-            logger.info(f"Internal registration: {result}")
+            # Store API configuration directly
+            self.apis[api_config.name] = api_config
+            
+            # Create HTTP client for this API
+            client = await self._create_http_client(api_config)
+            self.http_clients[api_config.name] = client
+            
+            # Don't create individual tools - use call_api for all endpoints
+            logger.info(f"Registered API '{api_config.name}' with {len(api_config.endpoints)} endpoints (use call_api tool)")
+            
         except Exception as e:
             logger.error(f"Error in internal API registration: {e}")
+    
+    async def process_pending_registrations(self):
+        """Process any pending API registrations."""
+        if not self.pending_registrations:
+            return
+            
+        for config in self.pending_registrations:
+            await self._register_api_internal(config)
+        
+        count = len(self.pending_registrations)
+        self.pending_registrations.clear()
+        logger.info(f"Processed {count} pending registrations")
     
     async def _create_http_client(self, api_config: APIConfig) -> httpx.AsyncClient:
         """Create an HTTP client with authentication configured."""
@@ -976,17 +600,17 @@ class BAnCSAPIWeaver:
         if api_config.auth:
             auth_config = api_config.auth
             
-            if auth_config.type == "bearer" and auth_config.bearer_token:
+            if auth_config.type == AuthType.BEARER and auth_config.bearer_token:
                 headers["Authorization"] = f"Bearer {auth_config.bearer_token}"
             
-            elif auth_config.type == "api_key":
+            elif auth_config.type == AuthType.API_KEY:
                 if auth_config.api_key_header and auth_config.api_key:
                     headers[auth_config.api_key_header] = auth_config.api_key
             
-            elif auth_config.type == "basic" and auth_config.username and auth_config.password:
+            elif auth_config.type == AuthType.BASIC and auth_config.username and auth_config.password:
                 auth = httpx.BasicAuth(auth_config.username, auth_config.password)
             
-            elif auth_config.type == "custom" and auth_config.custom_headers:
+            elif auth_config.type == AuthType.CUSTOM and auth_config.custom_headers:
                 headers.update(auth_config.custom_headers)
         
         # Create client
@@ -1000,95 +624,16 @@ class BAnCSAPIWeaver:
         
         return client
     
-    async def _create_endpoint_tool(self, api_config: APIConfig, endpoint: APIEndpoint, tool_name: str):
-        """Create an MCP tool for a specific API endpoint using closure approach."""
-        
-        # Build parameter signature
-        sig_parts = []
-        param_annotations = {}
-        
-        for param in endpoint.params:
-            # Determine Python type
-            param_type = str
-            if param.type == "integer":
-                param_type = int
-            elif param.type == "number":
-                param_type = float
-            elif param.type == "boolean":
-                param_type = bool
-            elif param.type == "array":
-                param_type = List[Any]
-            elif param.type == "object":
-                param_type = Dict[str, Any]
-            
-            # Build parameter with default if not required
-            if param.required:
-                sig_parts.append(param.name)
-            else:
-                default_val = param.default if param.default is not None else None
-                sig_parts.append(f"{param.name}={repr(default_val)}")
-            
-            param_annotations[param.name] = param_type
-        
-        # Add context parameter
-        sig_parts.append("ctx: Optional[Context] = None")
-        param_annotations["ctx"] = Optional[Context]
-        param_annotations["return"] = Any
-        
-        # Create the closure-based tool function
-        def create_tool_function():
-            # Capture the current values
-            api_name = api_config.name
-            endpoint_name = endpoint.name
-            
-            async def api_tool_func(*args, **kwargs):
-                # Map positional args to parameter names
-                param_names = [p.name for p in endpoint.params]
-                call_params = {}
-                
-                # Handle positional arguments
-                for i, arg in enumerate(args):
-                    if i < len(param_names):
-                        call_params[param_names[i]] = arg
-                
-                # Handle keyword arguments
-                ctx = kwargs.pop('ctx', None)
-                call_params.update(kwargs)
-                
-                return await self._execute_api_call(
-                    api_name=api_name,
-                    endpoint_name=endpoint_name,
-                    params=call_params,
-                    ctx=ctx
-                )
-            
-            # Set function metadata
-            api_tool_func.__name__ = tool_name
-            api_tool_func.__doc__ = f"""
-{endpoint.description}
-
-Generated tool for {api_config.name} API endpoint: {endpoint.method} {endpoint.path}
-
-Parameters:
-{self._generate_param_docs(endpoint)}
-"""
-            api_tool_func.__annotations__ = param_annotations
-            
-            return api_tool_func
-        
-        # Create and register the tool
-        tool_function = create_tool_function()
-        self.mcp.add_tool(tool_function)
-    
     def _generate_param_docs(self, endpoint: APIEndpoint) -> str:
         """Generate parameter documentation for the tool."""
         docs = []
         for param in endpoint.params:
             required_str = "required" if param.required else "optional"
             default_str = f" (default: {param.default})" if param.default is not None else ""
+            example_str = f" (example: {param.example})" if param.example else ""
             desc = param.description or ""
-            docs.append(f"- {param.name} ({param.type}, {required_str}){default_str}: {desc}")
-        return "\n".join(docs)
+            docs.append(f"- {param.name} ({param.type}, {required_str}){default_str}{example_str}: {desc}")
+        return "\n".join(docs) if docs else "No parameters"
     
     async def _execute_api_call(self, api_name: str, endpoint_name: str, params: Dict[str, Any], ctx: Optional[Context] = None) -> Any:
         """Execute an API call with the given parameters."""
@@ -1153,7 +698,7 @@ Parameters:
                 json_body[param.name] = value
         
         # Handle API key in query params
-        if api_config.auth and api_config.auth.type == "api_key" and api_config.auth.api_key_param:
+        if api_config.auth and api_config.auth.type == AuthType.API_KEY and api_config.auth.api_key_param:
             query_params[api_config.auth.api_key_param] = api_config.auth.api_key
         
         # Make request
@@ -1190,7 +735,7 @@ Parameters:
             raise
     
     def _load_postman_collection(self, collection: Dict[str, Any], file_path: Path):
-        """Convert Postman collection to API configuration."""
+        """Convert Postman collection to API configuration with examples."""
         api_name = collection.get("info", {}).get("name", "Postman_API").replace(" ", "_")
         
         endpoints = []
@@ -1203,7 +748,9 @@ Parameters:
                 "description": collection.get("info", {}).get("description", f"Loaded from {file_path.name}"),
                 "endpoints": endpoints
             }
-            asyncio.create_task(self._register_api_internal(config))
+            # Queue for later registration
+            self.pending_registrations.append(config)
+            logger.info(f"Queued Postman collection {api_name} for registration ({len(endpoints)} endpoints)")
     
     def _extract_base_url_from_postman(self, collection: Dict[str, Any]) -> str:
         """Extract base URL from Postman collection."""
@@ -1281,7 +828,7 @@ Parameters:
         return "/"
     
     def _extract_postman_params(self, request: Dict) -> List[Dict]:
-        """Extract parameters from Postman request."""
+        """Extract parameters from Postman request with examples."""
         params = []
         url = request.get("url", {})
         
@@ -1294,7 +841,8 @@ Parameters:
                     "location": "query",
                     "required": not param.get("disabled", False),
                     "description": param.get("description", ""),
-                    "default": param.get("value") if param.get("disabled") else None
+                    "default": param.get("value") if param.get("value") else None,
+                    "example": param.get("value")  # Use value as example
                 })
             
             # Path variables
@@ -1304,27 +852,44 @@ Parameters:
                     "type": "string",
                     "location": "path",
                     "required": True,
-                    "description": var.get("description", "")
+                    "description": var.get("description", ""),
+                    "example": var.get("value")  # Use value as example
                 })
         
-        # Body parameters (if any)
+        # Body parameters
         body = request.get("body", {})
         if body.get("mode") == "raw":
             try:
-                # Try to parse JSON body
                 raw_body = json.loads(body.get("raw", "{}"))
-                for key in raw_body.keys():
+                for key, value in raw_body.items():
                     params.append({
                         "name": key,
-                        "type": "string",
+                        "type": self._infer_type(value),
                         "location": "body",
                         "required": False,
-                        "description": ""
+                        "description": "",
+                        "default": value,
+                        "example": value  # Use value as example
                     })
             except:
                 pass
         
         return params
+    
+    def _infer_type(self, value):
+        """Infer parameter type from value."""
+        if isinstance(value, bool):
+            return "boolean"
+        elif isinstance(value, int):
+            return "integer"
+        elif isinstance(value, float):
+            return "number"
+        elif isinstance(value, list):
+            return "array"
+        elif isinstance(value, dict):
+            return "object"
+        else:
+            return "string"
     
     def _load_openapi_spec(self, spec: Dict[str, Any], file_path: Path):
         """Convert OpenAPI spec to API configuration."""
@@ -1356,22 +921,27 @@ Parameters:
                 "description": spec.get("info", {}).get("description", f"Loaded from {file_path.name}"),
                 "endpoints": endpoints
             }
-            asyncio.create_task(self._register_api_internal(config))
+            # Queue for later registration
+            self.pending_registrations.append(config)
+            logger.info(f"Queued OpenAPI spec {api_name} for registration ({len(endpoints)} endpoints)")
     
     def _extract_openapi_params(self, operation: Dict) -> List[Dict]:
         """Extract parameters from OpenAPI operation."""
         params = []
         
         for param in operation.get("parameters", []):
-            params.append({
+            schema = param.get("schema", {})
+            param_info = {
                 "name": param.get("name", ""),
-                "type": param.get("schema", {}).get("type", "string"),
+                "type": schema.get("type", "string"),
                 "location": param.get("in", "query"),
                 "required": param.get("required", False),
                 "description": param.get("description", ""),
-                "default": param.get("schema", {}).get("default"),
-                "enum": param.get("schema", {}).get("enum")
-            })
+                "default": schema.get("default"),
+                "enum": schema.get("enum"),
+                "example": param.get("example") or schema.get("example")
+            }
+            params.append(param_info)
         
         # Handle request body
         if "requestBody" in operation:
@@ -1385,7 +955,10 @@ Parameters:
                             "type": prop_schema.get("type", "string"),
                             "location": "body",
                             "required": prop_name in schema.get("required", []),
-                            "description": prop_schema.get("description", "")
+                            "description": prop_schema.get("description", ""),
+                            "default": prop_schema.get("default"),
+                            "enum": prop_schema.get("enum"),
+                            "example": prop_schema.get("example")
                         })
         
         return params
@@ -1399,4 +972,4 @@ Parameters:
             return None
 
 # Maintain backward compatibility
-APIWeaver = BAnCSAPIWeaver
+APIWeaver = BaNCSAPIWeaver

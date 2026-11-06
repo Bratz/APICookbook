@@ -1,0 +1,86 @@
+# ============================================================================
+# Push to main -> test -> SSH into the OCI VM -> pull -> docker compose up --build.
+# Same approach as vam-portal, uc05, liq and EXTN, which share the VM.
+# (The frontend deploys itself: Vercel's GitHub integration serves frontend/.)
+#
+# Repository secrets (Settings -> Secrets and variables -> Actions), the values vam-portal uses:
+#   VM_HOST      the VM's public IP
+#   VM_USER      ubuntu
+#   VM_SSH_KEY   the PRIVATE key the VM accepts for VM_USER
+# Until VM_HOST is set the deploy job is skipped, not failed.
+#
+# The repository is public, so the VM clones it over HTTPS on the first deploy: no deploy key,
+# no .env, no one-time bootstrap. The Caddy site is a separate one-time step: setup-oci.yml.
+# ============================================================================
+name: Test and deploy to OCI VM
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ["**.md"]
+  workflow_dispatch: {}
+
+concurrency:
+  group: deploy-oci
+  cancel-in-progress: false # never kill a deploy halfway through a build
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04 # pinned: ubuntu-latest moves under you
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10.11" # the tested interpreter, same as the image
+      # CPU torch first, as in the Dockerfile: the default wheel pulls ~3 GB of CUDA.
+      # No .env here, so RAG is off and the two semantic-search tests skip; everything else runs.
+      - run: pip install torch==2.12.0 --index-url https://download.pytorch.org/whl/cpu
+      - run: pip install -r requirements.txt
+      - run: python -m pytest tests -q
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      VM_HOST: ${{ secrets.VM_HOST }}
+    steps:
+      - name: SSH into VM and redeploy
+        if: env.VM_HOST != ''
+        uses: appleboy/ssh-action@v1
+        env:
+          REPO: ${{ github.repository }}
+        with:
+          host: ${{ secrets.VM_HOST }}
+          username: ${{ secrets.VM_USER }}
+          key: ${{ secrets.VM_SSH_KEY }}
+          envs: REPO
+          command_timeout: 35m
+          script: |
+            set -e
+            [ -d ~/APICookbook/.git ] || git clone "https://github.com/$REPO.git" ~/APICookbook
+            cd ~/APICookbook
+            # fetch + reset, not pull: this checkout exists only to be deployed from (vam-portal's lesson)
+            git fetch origin main
+            git reset --hard FETCH_HEAD
+            cd deploy/oci
+            # The disk is shared with vam-portal and its siblings and has been filled before.
+            free_gb=$(df --output=avail -BG /var/lib/docker | tail -1 | tr -dc 0-9)
+            echo "free disk for docker: ${free_gb}G"
+            [ "$free_gb" -ge 6 ] || { echo "less than 6G free: not building"; exit 1; }
+            # Prune before the build too: a post-build prune never runs when the build fails.
+            sudo docker builder prune -af --filter until=48h
+            sudo docker compose up -d --build
+            sudo docker image prune -f
+            sudo docker builder prune -af --filter until=48h
+            # The first start downloads the model and embeds every endpoint before serving: allow 10 min.
+            for i in $(seq 120); do
+              if sudo docker exec cookbook-api python -c \
+                "import urllib.request; print(urllib.request.urlopen('http://localhost:7600/health', timeout=3).read().decode())"; then
+                echo "cookbook-api healthy"; exit 0
+              fi
+              sleep 5
+            done
+            sudo docker logs --tail 80 cookbook-api
+            exit 1

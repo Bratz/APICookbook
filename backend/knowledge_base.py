@@ -1,6 +1,6 @@
 # backend/knowledge_base.py
 """
-Unified API Knowledge Base for TCS BAnCS
+Unified API Knowledge Base for TCS BaNCS
 Fixed version with proper async method
 """
 
@@ -51,7 +51,7 @@ class UnifiedAPIKnowledgeBase:
             self._auto_generate_mcp_tools()
     
     def _initialize_default_endpoints(self):
-        """Initialize with default BAnCS endpoints"""
+        """Initialize with default BaNCS endpoints"""
         self.endpoints = {
             "GetAccountBalance": {
                 "method": "GET",
@@ -466,14 +466,14 @@ class UnifiedAPIKnowledgeBase:
         spec = {
             "openapi": f"{version}.0",
             "info": {
-                "title": "TCS BAnCS API",
+                "title": "TCS BaNCS API",
                 "version": "1.0.0",
-                "description": "TCS BAnCS Banking API Documentation"
+                "description": "TCS BaNCS Banking API Documentation"
             },
             "servers": [
                 {
                     "url": "https://demoapps.tcsbancs.com",
-                    "description": "BAnCS Demo Server"
+                    "description": "BaNCS Demo Server"
                 }
             ],
             "paths": {},

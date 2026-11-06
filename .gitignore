@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+venv/
+.venv/
+.pytest_cache/
+
+# Secrets and local config (.env.example is the tracked template)
+.env
+
+# Regenerated at runtime: logs, downloaded models, the RAG index cache
+logs/
+*.log
+models/
+
+# Local scratch
+try.py
+test_bert_simple.py
+graphify-out/
+
+# Vercel CLI link
+.vercel

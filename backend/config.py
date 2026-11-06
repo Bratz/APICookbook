@@ -1,6 +1,6 @@
 # backend/config.py
 """
-Configuration management for TCS BAnCS API Cookbook
+Configuration management for TCS BaNCS API Cookbook
 Complete version with ALL required attributes
 """
 
@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     
     # ===================== Application Settings =====================
     app_name: str = Field(
-        default="TCS BAnCS API MCP Server",
+        default="TCS BaNCS API MCP Server",
         description="Application name"
     )
     app_version: str = Field(
@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     # ===================== API Settings =====================
     api_base_url: str = Field(
         default="https://demoapps.tcsbancs.com",
-        description="BAnCS API base URL"
+        description="BaNCS API base URL"
     )
     api_timeout: int = Field(
         default=30,
@@ -64,7 +64,7 @@ class Settings(BaseSettings):
     
     # ===================== Server Settings =====================
     host: str = Field(
-        default="0.0.0.0",
+        default="127.0.0.1",  # no auth on any route - set HOST=0.0.0.0 only behind a trusted network/proxy
         description="Server host"
     )
     api_port: int = Field(
@@ -76,18 +76,18 @@ class Settings(BaseSettings):
         description="MCP server port"
     )
     
-    # ===================== BAnCS Specific Settings =====================
+    # ===================== BaNCS Specific Settings =====================
     bancs_entity: str = Field(
         default="GPRDTTSTOU",
-        description="BAnCS entity code"
+        description="BaNCS entity code"
     )
     bancs_user_id: str = Field(
         default="1",
-        description="BAnCS user ID"
+        description="BaNCS user ID"
     )
     bancs_language_code: str = Field(
         default="1",
-        description="BAnCS language code (1 for English)"
+        description="BaNCS language code (1 for English)"
     )
     
     # ===================== CORS Settings =====================
@@ -137,6 +137,11 @@ class Settings(BaseSettings):
         description="Maximum concurrent MCP tool executions"
     )
     
+    hoppscotch_enabled: bool = Field(
+        default=True,  # read by /health; was only ever set by .env, so it crashed without one (Docker)
+        description="Enable Hoppscotch export"
+    )
+
     # ===================== Cache Settings =====================
     cache_enabled: bool = Field(
         default=True,
@@ -181,7 +186,7 @@ class Settings(BaseSettings):
     
     # ===================== Security Settings =====================
     jwt_secret_key: Optional[str] = Field(
-        default="your-secret-key-change-in-production",
+        default=None,  # must be set via JWT_SECRET_KEY; no guessable default
         description="JWT secret key for token generation"
     )
     jwt_algorithm: str = Field(

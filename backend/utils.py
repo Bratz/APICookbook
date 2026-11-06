@@ -1,6 +1,6 @@
 # backend/utils.py
 """
-Utility functions for TCS BAnCS API Cookbook
+Utility functions for TCS BaNCS API Cookbook
 """
 
 import hashlib
@@ -43,15 +43,15 @@ def sanitize_string(text: str, max_length: int = 200) -> str:
 # ===================== Date/Time Utilities =====================
 
 def format_bancs_date(date: datetime) -> str:
-    """Format date for BAnCS API (YYYYMMDD)"""
+    """Format date for BaNCS API (YYYYMMDD)"""
     return date.strftime("%Y%m%d")
 
 def parse_bancs_date(date_str: str) -> datetime:
-    """Parse BAnCS date format (YYYYMMDD)"""
+    """Parse BaNCS date format (YYYYMMDD)"""
     return datetime.strptime(date_str, "%Y%m%d")
 
 def get_current_bancs_date() -> str:
-    """Get current date in BAnCS format"""
+    """Get current date in BaNCS format"""
     return format_bancs_date(datetime.now())
 
 def add_business_days(start_date: datetime, days: int) -> datetime:
@@ -109,6 +109,12 @@ def verify_password(password: str, hashed: str) -> bool:
     import bcrypt
     return bcrypt.checkpw(password.encode('utf-8'), hashed.encode('utf-8'))
 
+def _jwt_secret() -> str:
+    """Refuse to sign/verify tokens with a guessable key."""
+    if not settings.jwt_secret_key:
+        raise RuntimeError("JWT_SECRET_KEY is not set")
+    return settings.jwt_secret_key
+
 def generate_jwt_token(payload: Dict[str, Any]) -> str:
     """Generate a JWT token"""
     payload['exp'] = datetime.utcnow() + timedelta(minutes=settings.jwt_expiration_minutes)
@@ -116,7 +122,7 @@ def generate_jwt_token(payload: Dict[str, Any]) -> str:
     
     return jwt.encode(
         payload,
-        settings.jwt_secret_key or "default-secret-key",
+        _jwt_secret(),
         algorithm=settings.jwt_algorithm
     )
 
@@ -125,7 +131,7 @@ def decode_jwt_token(token: str) -> Optional[Dict[str, Any]]:
     try:
         return jwt.decode(
             token,
-            settings.jwt_secret_key or "default-secret-key",
+            _jwt_secret(),
             algorithms=[settings.jwt_algorithm]
         )
     except jwt.ExpiredSignatureError:

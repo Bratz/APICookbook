@@ -7,16 +7,16 @@ import json
 class MCPClient:
     """Example client for interacting with MCP server."""
     
-    def __init__(self, server_name: str = "TCSBAnCSAPIWeaver"):
+    def __init__(self, server_name: str = "TCSBaNCSAPIWeaver"):
         self.server_name = server_name
         print(f"MCP Client connected to: {server_name}")
     
     async def register_bancs_api(self, base_url: str):
-        """Register BAnCS API with provided URL."""
+        """Register BaNCS API with provided URL."""
         config = {
-            "name": "BAnCS",
+            "name": "BaNCS",
             "base_url": base_url,
-            "description": "TCS BAnCS Banking API",
+            "description": "TCS BaNCS Banking API",
             "auth": {
                 "type": "custom",
                 "custom_headers": {
@@ -124,7 +124,7 @@ class MCPClient:
             ]
         }
         
-        print(f"Registering BAnCS API at {base_url}")
+        print(f"Registering BaNCS API at {base_url}")
         print(f"Configuration: {json.dumps(config, indent=2)}")
         
         # In real implementation, this would call the MCP server
@@ -147,12 +147,12 @@ if __name__ == "__main__":
         client = MCPClient()
         
         # Register API with custom URL
-        base_url = input("Enter BAnCS API base URL (e.g., https://demoapps.tcsbancs.com): ")
+        base_url = input("Enter BaNCS API base URL (e.g., https://demoapps.tcsbancs.com): ")
         await client.register_bancs_api(base_url)
         
         # Call an endpoint
         result = await client.call_api(
-            "BAnCS",
+            "BaNCS",
             "get_account_balance",
             {"accountReference": "101000000101814"}
         )

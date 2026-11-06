@@ -1,6 +1,6 @@
 # backend/response_generator.py
 """
-Response Generator for TCS BAnCS API Chatbot
+Response Generator for TCS BaNCS API Chatbot
 Generates intelligent responses based on queries and context
 """
 
@@ -30,7 +30,7 @@ class UnifiedResponseGenerator:
     def _load_response_templates(self) -> Dict[str, str]:
         """Load response templates for various query types"""
         return {
-            "greeting": "Hello! I'm your TCS BAnCS API assistant.",
+            "greeting": "Hello! I'm your TCS BaNCS API assistant.",
             "not_found": "I couldn't find specific information about that.",
             "error": "An error occurred while processing your request."
         }
@@ -124,7 +124,7 @@ class UnifiedResponseGenerator:
     All endpoints require authentication headers."""
             
         elif "auth" in message_lower or "header" in message_lower:
-            response_text = """Authentication for BAnCS API requires these headers:
+            response_text = """Authentication for BaNCS API requires these headers:
 
     **Required Headers:**
     ```json
@@ -172,7 +172,7 @@ class UnifiedResponseGenerator:
 
     Use the appropriate headers and parameters for this endpoint."""
             else:
-                response_text = """I can help you with the TCS BAnCS API.
+                response_text = """I can help you with the TCS BaNCS API.
 
     **Available Resources:**
     - Account Management (balance, details, transactions)
@@ -207,7 +207,7 @@ class UnifiedResponseGenerator:
         
         if mcp_tools:
             response = f"**MCP (Model Context Protocol) Tools Available: {len(mcp_tools)}**\n\n"
-            response += "These tools allow AI models to interact with the BAnCS API:\n\n"
+            response += "These tools allow AI models to interact with the BaNCS API:\n\n"
             
             for tool in mcp_tools[:10]:  # Show first 10
                 response += f"• **{tool['name']}**: {tool['description']}\n"

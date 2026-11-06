@@ -14,9 +14,11 @@ logger = logging.getLogger(__name__)
 
 # Use try/except for imports to handle different contexts
 try:
-    from .model import BERTCookbookChatbot
+    # from .model import BERTCookbookChatbot
+    from .sentence_transformer_model import BERTCookbookChatbot
 except ImportError:
-    from model import BERTCookbookChatbot
+    # from model import BERTCookbookChatbot
+    from sentence_transformer_model import BERTCookbookChatbot
 
 try:
     from ..knowledge_base import UnifiedAPIKnowledgeBase
@@ -153,7 +155,38 @@ class BERTChatbotIntegration:
     
     def _format_for_ui(self, response: Dict[str, Any]) -> Dict[str, Any]:
         """Format response for cookbook UI with proper code examples"""
+        def remove_emojis(text):
+            """Remove emoji characters that cause encoding issues"""
+            if not text:
+                return text
+            
+            # Replace known emojis with text equivalents
+            replacements = {
+                '💡': '[TIP]',
+                '🔗': '[LINK]',
+                '✅': '[OK]',
+                '❌': '[ERROR]',
+                '📝': '[NOTE]',
+                '🚀': '[START]',
+                '⚠️': '[WARNING]',
+                '📊': '[DATA]',
+                '🔍': '[SEARCH]',
+                '💻': '[CODE]'
+            }
+            
+            for emoji, replacement in replacements.items():
+                text = text.replace(emoji, replacement)
+            
+            # Remove any remaining Unicode characters that might cause issues
+            return text.encode('ascii', 'ignore').decode('ascii')
         
+        formatted = {
+            'status': response.get('status', 'success'),
+            'message': remove_emojis(response.get('message', '')),  # Clean message
+            'intent': response.get('intent'),
+            'confidence': response.get('confidence', 0),
+            'sections': []
+        }
         # Build the main message
         base_message = response.get('message', '')
         
@@ -310,7 +343,16 @@ class BERTChatbotIntegration:
                 'title': 'Related APIs',
                 'content': response['related_apis']
             })
+            # Clean the message before logging (line 315)
+        complete_message = remove_emojis(formatted.get('message', ''))
         
+        # Safe logging without emojis
+        try:
+            logger.debug(f"[BERT] Complete message preview: {complete_message[:200]}...")
+        except UnicodeEncodeError:
+            # Fallback to ASCII-safe logging
+            safe_message = complete_message.encode('ascii', 'ignore').decode('ascii')
+            logger.debug(f"[BERT] Complete message preview: {safe_message[:200]}...")
         logger.info(f"[BERT] Formatted response with {len(complete_message)} chars, {len(formatted.get('code_examples', []))} code examples, {len(formatted['sections'])} sections")
         logger.debug(f"[BERT] Complete message preview: {complete_message[:200]}...")
         logger.debug(f"[BERT] Related APIs in response: {len(response.get('related_apis', []))} items")

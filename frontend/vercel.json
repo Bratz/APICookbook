@@ -1,0 +1,7 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "rewrites": [
+    { "source": "/api/:path*", "destination": "https://cookbook.161-33-9-182.sslip.io/api/:path*" },
+    { "source": "/health", "destination": "https://cookbook.161-33-9-182.sslip.io/health" }
+  ]
+}
