@@ -10,7 +10,9 @@ WORKDIR /app
 
 # CPU-only torch first: the default x86 wheel drags in ~3 GB of CUDA the VM has no use for.
 # sentence-transformers (requirements.txt) then finds it satisfied and leaves it alone.
-RUN pip install --no-cache-dir torch==2.12.0 --index-url https://download.pytorch.org/whl/cpu
+# Extra index, not --index-url: torch's own dependencies must come from PyPI (the PyTorch index has
+# only sdists of some for arm64, and building them needs tools it doesn't carry). `+cpu` forces the CPU build.
+RUN pip install --no-cache-dir torch==2.12.0+cpu --extra-index-url https://download.pytorch.org/whl/cpu
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
