@@ -1,0 +1,3 @@
+# CLI deploys upload from the repo root (the project's Root Directory is frontend/): send only frontend/.
+/*
+!/frontend

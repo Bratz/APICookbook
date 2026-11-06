@@ -18,5 +18,6 @@ try.py
 test_bert_simple.py
 graphify-out/
 
-# Vercel CLI link
+# Vercel CLI link (.env.local holds its OIDC token)
 .vercel
+.env.local
