@@ -5,28 +5,13 @@ Runs the real app (lifespan included) in-process; no outbound network calls.
 """
 
 import json
-import os
 import re
-import sys
 from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
-from fastapi.testclient import TestClient
 
-# The app resolves api_specs/, collections/, frontend/ and logs/ relative to cwd.
-PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-os.chdir(PROJECT_ROOT)
-sys.path.insert(0, PROJECT_ROOT)
-
-from backend.main import app, settings  # noqa: E402
-
-
-@pytest.fixture(scope="module")
-def client():
-    # `with` runs the lifespan, which loads the knowledge base and APIWeaver
-    with TestClient(app) as c:
-        yield c
+from backend.main import app, settings  # conftest.py sets cwd and provides the `client` fixture
 
 
 # ===================== Core =====================

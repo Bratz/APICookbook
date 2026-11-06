@@ -25,6 +25,7 @@ fastmcp==4.1.6
 # Code-writing agent (docs/coding-agent-plan.md): pydantic-ai loop on Claude
 pydantic-ai-slim[anthropic]==2.66.0
 anthropic==2.6.0
+jsonschema==4.26.0  # validates request bodies in the agent's plans
 
 # Configuration
 python-dotenv==1.2.2

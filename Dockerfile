@@ -5,6 +5,7 @@ FROM python:3.12.15-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
+    PYDANTIC_AI_NO_BANNER=1 \
     HF_HOME=/app/models/hf
 WORKDIR /app
 
@@ -22,8 +23,9 @@ COPY api_specs/ api_specs/
 COPY collections/ collections/
 
 # models/ holds the downloaded bge model (HF_HOME) and the RAG index cache: a volume in compose,
-# so only the first start pays the download and the ~2 min embedding build.
-RUN useradd --create-home --uid 10001 app && mkdir -p logs models && chown app logs models
+# so only the first start pays the download and the ~2 min embedding build. data/ holds the agent's
+# usage ledger (a volume too, since it drives the spend caps).
+RUN useradd --create-home --uid 10001 app && mkdir -p logs models data && chown app logs models data
 USER app
 EXPOSE 7600
 CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "7600", "--proxy-headers", "--forwarded-allow-ips", "*"]

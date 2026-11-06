@@ -333,12 +333,15 @@ class LightweightRAG:
         query: str, 
         top_k: int = 5,
         filter_category: Optional[str] = None,
+        min_score: Optional[float] = None,
     ) -> List[Tuple[Document, float]]:
         """Search for relevant documents.
 
-        Returns only matches at or above MIN_SCORE, so weak queries come back empty
-        and callers can fall back to keyword search.
+        Returns only matches at or above MIN_SCORE (or ``min_score``), so weak queries come back
+        empty and callers can fall back to keyword search. The coding agent passes ``min_score=0``:
+        it reads the descriptions and judges relevance itself, so it wants the top hits regardless.
         """
+        floor = self.MIN_SCORE if min_score is None else min_score
 
         if hasattr(self, '_use_numpy_embeddings') and self._use_numpy_embeddings:
             # Use TF-IDF search
@@ -366,7 +369,7 @@ class LightweightRAG:
         
         top_indices = np.argsort(similarities)[-top_k:][::-1]
         return [(self.documents[i], float(similarities[i]))
-                for i in top_indices if similarities[i] >= self.MIN_SCORE]
+                for i in top_indices if similarities[i] >= floor]
     
     def _tfidf_search(self, query: str, top_k: int, filter_category: Optional[str]) -> List[Tuple[Document, float]]:
         """TF-IDF based search"""

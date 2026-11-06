@@ -33,6 +33,12 @@ import os
 # Load environment variables from .env file
 load_dotenv()
 
+# Code-writing agent (after load_dotenv, so AGENT_* settings and ANTHROPIC_API_KEY are visible)
+from pydantic_ai import capture_run_messages
+from pydantic_ai.exceptions import UsageLimitExceeded
+from backend import code_agent
+from backend.agent_guard import AgentGuard
+
 # Optional imports - PyTorch is NOT required
 try:
     import torch
@@ -617,6 +623,13 @@ async def lifespan(app: FastAPI):
     app.state.is_fallback_mode = False
     app.state.bert_integration = None
     app.state.rag_engine = None
+    # Code-writing agent: spend caps and rate limit (docs/coding-agent-plan.md, milestone 1)
+    app.state.agent_guard = AgentGuard(
+        os.getenv("AGENT_DATA_DIR", "data/agent"),
+        per_hour=int(os.getenv("AGENT_RATE_PER_HOUR", "10")),
+        daily_usd=float(os.getenv("AGENT_DAILY_CAP_USD", "5")),
+        monthly_usd=float(os.getenv("AGENT_MONTHLY_CAP_USD", "50")),
+    )
 
     try:
         # Initialize knowledge base
@@ -1717,23 +1730,100 @@ async def get_body_schema(method: str, url: str):
         pattern = re.sub(r"\{[^/]+\}", r"[^/]+", template)
         if not re.fullmatch(pattern, path.rstrip("/") or "/"):
             continue
-
-        reached, todo = {}, [body]
-        while todo:  # collect every definition reachable from the body schema
-            node = todo.pop()
-            if isinstance(node, dict):
-                ref = node.get("$ref", "")
-                if ref.startswith("#/definitions/"):
-                    key = ref.split("/")[-1]
-                    if key not in reached and key in kb.definitions:
-                        reached[key] = kb.definitions[key]
-                        todo.append(reached[key])
-                todo.extend(node.values())
-            elif isinstance(node, list):
-                todo.extend(node)
-        return {"endpoint": name, "schema": {**body, "definitions": reached}}
+        return {"endpoint": name, "schema": kb.resolved_body_schema(name)}
 
     raise HTTPException(status_code=404, detail="No request-body schema for this method and URL")
+
+
+# ---------------------------------------------------------------- code-writing agent (milestone 1)
+
+def _client_ip(request: Request) -> str:
+    # Vercel and Caddy put the visitor first in X-Forwarded-For. Direct calls can forge it, so the
+    # per-IP limit is advisory there; the USD caps are the real guard (docs/coding-agent-plan.md).
+    forwarded = request.headers.get("x-forwarded-for", "")
+    return forwarded.split(",")[0].strip() or (request.client.host if request.client else "unknown")
+
+
+def _agent_usage(result, seconds: float) -> dict:
+    u = result.usage()
+    return {"usd": round(code_agent.usd(result.all_messages()), 5), "seconds": round(seconds, 1),
+            "requests": u.requests, "tool_calls": u.tool_calls, "input_tokens": u.input_tokens,
+            "output_tokens": u.output_tokens, "cache_read_tokens": u.cache_read_tokens}
+
+
+async def _guarded_agent_run(request: Request, kind: str, run):
+    """Shared by both agent routes: availability, caps and rate limit, the run, and its ledger line."""
+    if not code_agent.available():
+        return JSONResponse(status_code=503, content={"error": "agent_unavailable",
+                            "message": "The code-writing agent isn't configured on this server."})
+    guard = app.state.agent_guard
+    blocked = guard.check(_client_ip(request))
+    if blocked:
+        return JSONResponse(status_code=429, content={"error": blocked[0], "message": blocked[1]})
+    started = time.time()
+    # Failed runs spent tokens too: price whatever responses came back, so the caps never under-count.
+    with capture_run_messages() as messages:
+        try:
+            result, payload = await run()
+        except UsageLimitExceeded:
+            guard.record(kind=kind, usd=code_agent.usd(messages), outcome="too_many_steps",
+                         seconds=time.time() - started)
+            return JSONResponse(status_code=422, content={"error": "too_many_steps",
+                                "message": "This needed too many steps. Try splitting it into smaller tasks."})
+        except Exception as e:  # refusals after fallback, API errors, invalid output after retries
+            logger.error(f"Agent {kind} failed: {type(e).__name__}: {e}")
+            guard.record(kind=kind, usd=code_agent.usd(messages), outcome=type(e).__name__,
+                         seconds=time.time() - started)
+            return JSONResponse(status_code=502, content={"error": "agent_error",
+                                "message": "The agent couldn't answer that. Try rephrasing the task."})
+    usage = _agent_usage(result, time.time() - started)
+    models = sorted({m.model_name for m in result.all_messages() if getattr(m, "model_name", None)})
+    guard.record(kind=kind, usd=usage["usd"], outcome="ok", seconds=usage["seconds"], tools=usage["tool_calls"],
+                 tokens={k: usage[k] for k in ("input_tokens", "output_tokens", "cache_read_tokens")}, models=models)
+    return {**payload, "usage": usage}
+
+
+@app.post("/api/agent/chat")
+async def agent_chat(request: Request):
+    """Plan the BaNCS calls for a task and write the code in one language (no code is run)."""
+    body = await request.json()
+    question = str(body.get("message", "")).strip()[:2000]
+    language = body.get("language", "curl")
+    if not question:
+        raise HTTPException(status_code=400, detail="message is required")
+    if language not in code_agent.LANGUAGES:
+        raise HTTPException(status_code=400, detail=f"language must be one of {', '.join(code_agent.LANGUAGES)}")
+
+    async def run():
+        result, deps = await code_agent.answer(question, language, app.state.kb, app.state.rag_engine)
+        return result, {"answer": result.output.model_dump(), "trace": deps.trace}
+
+    return await _guarded_agent_run(request, "chat", run)
+
+
+@app.post("/api/agent/code")
+async def agent_code(request: Request):
+    """The same plan's code in another language, written from the plan alone."""
+    body = await request.json()
+    language = body.get("language")
+    if language not in code_agent.LANGUAGES:
+        raise HTTPException(status_code=400, detail=f"language must be one of {', '.join(code_agent.LANGUAGES)}")
+    try:
+        plan = code_agent.Plan.model_validate(body.get("plan") or {})
+    except Exception:
+        raise HTTPException(status_code=400, detail="plan must be a plan returned by /api/agent/chat")
+
+    async def run():
+        result = await code_agent.rewrite(plan, language)
+        return result, {"language": language, "code": result.output.code}
+
+    return await _guarded_agent_run(request, "code", run)
+
+
+@app.get("/api/agent/status")
+async def agent_status():
+    """Whether the agent is available, and today's and this month's spend against the caps (no per-user data)."""
+    return {"available": code_agent.available(), "model": code_agent.MODEL, **app.state.agent_guard.status()}
 
 
 @app.get("/api/openapi")

@@ -13,6 +13,9 @@ logs/
 *.log
 models/
 
+# The agent's usage ledger and (later) session logs
+data/
+
 # Local scratch
 try.py
 test_bert_simple.py

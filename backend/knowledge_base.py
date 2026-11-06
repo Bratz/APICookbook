@@ -240,9 +240,11 @@ class UnifiedAPIKnowledgeBase:
                                 "body_schema": next((p.get('schema') for p in details.get('parameters', [])
                                                      if isinstance(p, dict) and p.get('in') == 'body'), None),
                                 "mcp_enabled": True,
-                                "mcp_name": endpoint_name.lower()
+                                "mcp_name": endpoint_name.lower(),
+                                # the coding agent uses only Swagger operations: templated paths, real schemas
+                                "source": "swagger",
                             }
-            
+
             logger.info(f"Loaded OpenAPI spec from {file_path}")
             return True
         except Exception as e:
@@ -401,6 +403,29 @@ class UnifiedAPIKnowledgeBase:
         return None
 
 # ============= ADD THIS TO THE END OF backend/knowledge_base.py =============
+
+    def resolved_body_schema(self, name: str) -> Optional[Dict[str, Any]]:
+        """The endpoint's request-body schema with every definition its $refs reach inlined, or None.
+
+        Self-contained, so the Playground editor and the coding agent's validator need nothing else.
+        """
+        body = (self.endpoints.get(name) or {}).get("body_schema")
+        if not body:
+            return None
+        reached, todo = {}, [body]
+        while todo:  # collect every definition reachable from the body schema
+            node = todo.pop()
+            if isinstance(node, dict):
+                ref = node.get("$ref", "")
+                if ref.startswith("#/definitions/"):
+                    key = ref.split("/")[-1]
+                    if key not in reached and key in self.definitions:
+                        reached[key] = self.definitions[key]
+                        todo.append(reached[key])
+                todo.extend(node.values())
+            elif isinstance(node, list):
+                todo.extend(node)
+        return {**body, "definitions": reached}
 
     async def list_endpoints(self, category=None):
         """List all endpoints"""

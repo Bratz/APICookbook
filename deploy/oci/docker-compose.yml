@@ -4,7 +4,8 @@
 #   - State: none worth keeping. The knowledge base loads from api_specs/ + collections/ at start.
 #   - HTTPS: vam-portal's Caddy, site block in deploy/oci/Caddyfile.cookbook.
 # The frontend is not here: it deploys to Vercel and reaches this over a rewrite (frontend/vercel.json).
-# No .env needed: nothing below is secret.
+# deploy/oci/.env (untracked, mode 600) will hold ANTHROPIC_API_KEY once the agent is switched on.
+# Without it the agent answers 503 and nothing is spent.
 #
 #   sudo docker compose up -d --build     (run by .github/workflows/deploy-oci.yml)
 # ============================================================================
@@ -22,6 +23,8 @@ services:
     volumes:
       # The downloaded bge model and the RAG index cache. Losing it only costs one slow start.
       - cookbook_models:/app/models
+      # The code-writing agent's usage ledger (drives the USD caps); session logs join it later.
+      - cookbook_data:/app/data
     environment:
       ENVIRONMENT: production
       DEBUG: "false"  # keeps /api/developer/logs closed
@@ -30,9 +33,18 @@ services:
       DISABLE_BERT_SEARCH: "true"
       ENABLE_BERT: "true"
       HF_HUB_DISABLE_TELEMETRY: "1"
+      # Code-writing agent (docs/coding-agent-plan.md). The key arrives only after milestone 1's exit check.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      AGENT_MODEL: claude-sonnet-5-5
+      AGENT_EFFORT: medium
+      AGENT_RATE_PER_HOUR: "10"
+      AGENT_DAILY_CAP_USD: "5"
+      AGENT_MONTHLY_CAP_USD: "50"
+      AGENT_DATA_DIR: /app/data/agent
 
 volumes:
   cookbook_models:
+  cookbook_data:
 
 networks:
   default:
