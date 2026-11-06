@@ -13,6 +13,7 @@ import asyncio
 import logging
 import json
 import os
+import re
 import sys
 import uuid
 import time
@@ -1694,6 +1695,46 @@ async def list_endpoints(category: Optional[str] = None):
     except Exception as e:
         logger.error(f"Endpoints error: {e}")
         return []
+
+@app.get("/api/body-schema")
+async def get_body_schema(method: str, url: str):
+    """JSON Schema for the request body of the endpoint at this method + URL (the Playground editor uses it).
+
+    Matches the URL's path against the Swagger path templates ({param} matches one segment) and inlines
+    every definition the body $ref reaches, so the result is a self-contained schema.
+    """
+    kb = app.state.kb
+    path = httpx.URL(url).path if "://" in url else url.split("?")[0]
+    if path.startswith("/Core/"):  # the spec's basePath; Swagger paths omit it
+        path = path[len("/Core"):]
+    path = "/" + path.strip("/")
+
+    for name, ep in kb.endpoints.items():
+        body = ep.get("body_schema")
+        if not body or ep.get("method", "").upper() != method.upper():
+            continue
+        template = re.escape(ep.get("url", "")).replace(r"\{", "{").replace(r"\}", "}")
+        pattern = re.sub(r"\{[^/]+\}", r"[^/]+", template)
+        if not re.fullmatch(pattern, path.rstrip("/") or "/"):
+            continue
+
+        reached, todo = {}, [body]
+        while todo:  # collect every definition reachable from the body schema
+            node = todo.pop()
+            if isinstance(node, dict):
+                ref = node.get("$ref", "")
+                if ref.startswith("#/definitions/"):
+                    key = ref.split("/")[-1]
+                    if key not in reached and key in kb.definitions:
+                        reached[key] = kb.definitions[key]
+                        todo.append(reached[key])
+                todo.extend(node.values())
+            elif isinstance(node, list):
+                todo.extend(node)
+        return {"endpoint": name, "schema": {**body, "definitions": reached}}
+
+    raise HTTPException(status_code=404, detail="No request-body schema for this method and URL")
+
 
 @app.get("/api/openapi")
 async def get_openapi_spec(version: str = "3.0"):

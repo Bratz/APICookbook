@@ -430,6 +430,16 @@
         }
         .form-select { cursor: pointer; }
         #playgroundUrl, #headersEditor .form-input { font-family: var(--font-outlier); }
+        /* Monaco body editor (desktop): same edge and focus as the inputs */
+        .body-editor {
+            height: 240px;
+            border: var(--rule-hair) solid var(--color-muted);
+            border-radius: var(--radius-input);
+            overflow: hidden;
+        }
+        .body-editor:focus-within { outline: 2px solid var(--color-focus); outline-offset: -1px; }
+        .field-help { min-height: 1lh; margin-top: var(--space-2xs); font-size: var(--text-xs); color: var(--color-muted); }
+        .field-help.ok { color: var(--color-success); }
         .header-row {
             display: grid;
             grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) var(--control-h);
@@ -1034,8 +1044,9 @@
                                 
                                 <div class="form-group">
                                     <label class="form-label">Body (JSON)</label>
-                                    <textarea id="playgroundBody" class="form-input form-textarea" 
-                                              placeholder='{"key": "value"}'></textarea>
+                                    <textarea id="playgroundBody" class="form-input form-textarea"
+                                              placeholder='{"key": "value"}' aria-label="Request body (JSON)"></textarea>
+                                    <p id="bodySchemaStatus" class="field-help" aria-live="polite"></p>
                                 </div>
                             </div>
                             
@@ -1209,6 +1220,9 @@
                 
                 // Initialize developer features
                 initDeveloperFeatures();
+
+                // Code editor for the Playground body (desktop only)
+                setupBodyEditor();
                 
             } catch (error) {
                 console.error('Initialization error:', error);
@@ -2780,6 +2794,136 @@
            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + sizes[i];
        }
        
+       // ---------- Playground body editor: Monaco, checked against the endpoint's body schema ----------
+       // ponytail: 0.52.2 is the last Monaco whose AMD build (the one usable without a bundler) is supported;
+       // newer versions need the ESM build and a bundler step this single page doesn't have.
+       const MONACO_BASE = 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.52.2/min';
+       const bodyEditor = { editor: null, model: null, schemaKey: '' };
+
+       function setupBodyEditor() {
+           // Monaco's README: mobile browsers are not supported. Phones keep the plain textarea.
+           if (!window.matchMedia('(min-width: 60rem) and (pointer: fine)').matches) return;
+           const script = document.createElement('script');
+           script.src = `${MONACO_BASE}/vs/loader.min.js`;
+           script.onload = () => {
+               window.MonacoEnvironment = {
+                   // workers come from the CDN, so start them through a same-origin blob
+                   getWorkerUrl: () => URL.createObjectURL(new Blob([
+                       `self.MonacoEnvironment = { baseUrl: '${MONACO_BASE}/' };` +
+                       `importScripts('${MONACO_BASE}/vs/base/worker/workerMain.js');`
+                   ], { type: 'text/javascript' }))
+               };
+               require.config({ paths: { vs: `${MONACO_BASE}/vs` } });
+               require(['vs/editor/editor.main'], mountBodyEditor);
+           };
+           script.onerror = () => logToDevConsole('Code editor did not load; using the plain body field', 'warning');
+           document.head.appendChild(script);
+       }
+
+       // Monaco themes take hex colours: read the page's tokens and let the browser convert them
+       function tokenHex(name) {
+           const ctx = tokenHex.ctx || (tokenHex.ctx = document.createElement('canvas').getContext('2d', { willReadFrequently: true }));
+           ctx.clearRect(0, 0, 1, 1);
+           ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+           ctx.fillRect(0, 0, 1, 1);
+           const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
+           return '#' + [r, g, b].map(v => v.toString(16).padStart(2, '0')).join('');
+       }
+
+       function mountBodyEditor() {
+           const textarea = document.getElementById('playgroundBody');
+           monaco.editor.defineTheme('cookbook', {
+               base: 'vs',
+               inherit: true,
+               rules: [
+                   { token: 'string.key.json', foreground: tokenHex('--color-ink-2').slice(1) },
+                   { token: 'string.value.json', foreground: tokenHex('--color-accent').slice(1) },
+                   { token: 'number', foreground: tokenHex('--color-success').slice(1) },
+                   { token: 'keyword.json', foreground: tokenHex('--color-warning').slice(1) },
+               ],
+               colors: {
+                   'editor.background': tokenHex('--color-key-face'),
+                   'editor.foreground': tokenHex('--color-ink'),
+                   'editorLineNumber.foreground': tokenHex('--color-rule-2'),
+                   'editorLineNumber.activeForeground': tokenHex('--color-muted'),
+                   'editorCursor.foreground': tokenHex('--color-accent'),
+                   'editor.selectionBackground': tokenHex('--color-accent-wash'),
+                   'editorIndentGuide.background1': tokenHex('--color-rule'),
+               },
+           });
+
+           const holder = document.createElement('div');
+           holder.className = 'body-editor';
+           textarea.after(holder);
+           textarea.hidden = true;
+
+           const model = monaco.editor.createModel(textarea.value, 'json', monaco.Uri.parse('inmemory://playground/body.json'));
+           const editor = monaco.editor.create(holder, {
+               model,
+               theme: 'cookbook',
+               ariaLabel: 'Request body (JSON)',
+               fontFamily: getComputedStyle(document.documentElement).getPropertyValue('--font-outlier'),
+               fontSize: 13,
+               tabSize: 2,
+               minimap: { enabled: false },
+               scrollBeyondLastLine: false,
+               automaticLayout: true,
+               renderLineHighlight: 'none',
+               overviewRulerLanes: 0,
+               fixedOverflowWidgets: true,
+           });
+           bodyEditor.editor = editor;
+           bodyEditor.model = model;
+
+           // Everything that reads or writes playgroundBody.value (execute, clear, history) now goes to the editor
+           Object.defineProperty(textarea, 'value', {
+               configurable: true,
+               get: () => editor.getValue(),
+               set: (v) => editor.setValue(v ?? ''),
+           });
+
+           let timer;
+           const later = () => { clearTimeout(timer); timer = setTimeout(refreshBodySchema, 400); };
+           document.getElementById('playgroundUrl').addEventListener('input', later);
+           document.getElementById('playgroundMethod').addEventListener('change', refreshBodySchema);
+           editor.onDidFocusEditorText(refreshBodySchema);  // catches URLs set by history or quick actions
+           refreshBodySchema();
+           logToDevConsole('Code editor ready', 'success');
+       }
+
+       async function refreshBodySchema() {
+           if (!bodyEditor.editor) return;
+           const method = document.getElementById('playgroundMethod').value;
+           const url = document.getElementById('playgroundUrl').value.trim();
+           const key = `${method} ${url}`;
+           if (key === bodyEditor.schemaKey) return;
+           bodyEditor.schemaKey = key;
+
+           const status = document.getElementById('bodySchemaStatus');
+           const setSchema = (schemas) => monaco.languages.json.jsonDefaults.setDiagnosticsOptions({
+               validate: true, allowComments: false, enableSchemaRequest: false, schemas,
+           });
+           if (!url || method === 'GET' || method === 'DELETE') {
+               setSchema([]);
+               status.textContent = '';
+               status.classList.remove('ok');
+               return;
+           }
+           try {
+               const response = await fetch(`/api/body-schema?method=${encodeURIComponent(method)}&url=${encodeURIComponent(url)}`);
+               if (key !== bodyEditor.schemaKey) return;  // the URL changed while this was loading
+               if (!response.ok) throw new Error(String(response.status));
+               const { endpoint, schema } = await response.json();
+               setSchema([{ uri: `inmemory://schema/${endpoint}.json`, fileMatch: [bodyEditor.model.uri.toString()], schema }]);
+               status.textContent = `Checked against the ${endpoint} body schema. Press Ctrl+Space for field names.`;
+               status.classList.add('ok');
+           } catch (error) {
+               setSchema([]);
+               status.textContent = 'No body schema found for this URL; only JSON syntax is checked.';
+               status.classList.remove('ok');
+           }
+       }
+
        // Add animations
        const style = document.createElement('style');
        style.textContent = `

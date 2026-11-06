@@ -4,7 +4,9 @@ Integration tests for the TCS BaNCS API Cookbook.
 Runs the real app (lifespan included) in-process; no outbound network calls.
 """
 
+import json
 import os
+import re
 import sys
 from unittest.mock import AsyncMock, patch
 
@@ -163,6 +165,29 @@ def test_off_topic_questions_get_no_semantic_match(client, query):
     if not app.state.rag_engine:
         pytest.skip("RAG_ENABLED is off or sentence-transformers is not installed")
     assert app.state.rag_engine.search(query, top_k=3) == []
+
+
+@pytest.mark.parametrize("url", [
+    "/accountManagement/account/cashBlock",
+    "https://demoapps.tcsbancs.com/Core/accountManagement/account/cashBlock",  # full URL with the basePath
+])
+def test_body_schema_resolves_for_playground_editor(client, url):
+    r = client.get("/api/body-schema", params={"method": "POST", "url": url})
+    assert r.status_code == 200
+    data = r.json()
+    assert data["endpoint"] == "AMBTCrtCashBlockWrapperUsingPOST"
+    defs = data["schema"]["definitions"]
+    assert data["schema"]["$ref"] == "#/definitions/createCashBlockResource" and "createCashBlockResource" in defs
+    # every $ref the schema uses is inlined, so the editor needs nothing else
+    refs = re.findall(r'"\$ref": "#/definitions/([^"]+)"', json.dumps(data["schema"]))
+    assert set(refs) <= set(defs)
+
+
+def test_body_schema_matches_path_parameters_and_misses_cleanly(client):
+    r = client.get("/api/body-schema", params={"method": "PUT", "url": "/accountManagement/account/cashblocks/123/update"})
+    assert r.status_code == 200 and r.json()["endpoint"] == "AMBT0119UpdCashBlckIntfUsingPUT"
+    assert client.get("/api/body-schema", params={"method": "GET", "url": "/Core/accountManagement/account/balanceDetails/1"}).status_code == 404
+    assert client.get("/api/body-schema", params={"method": "POST", "url": "/no/such/path"}).status_code == 404
 
 
 def test_kb_fuzzy_search():

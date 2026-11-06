@@ -33,6 +33,7 @@ class UnifiedAPIKnowledgeBase:
     
     def __init__(self):
         self.endpoints = {}
+        self.definitions = {}  # Swagger 2.0 schema definitions, for request-body schemas
         self.mcp_tools = []
         self.api_categories = {}
         self.http_client = httpx.AsyncClient(
@@ -221,6 +222,8 @@ class UnifiedAPIKnowledgeBase:
                 else:
                     spec = json.load(f)
             
+            self.definitions.update(spec.get('definitions', {}))
+
             # Parse OpenAPI spec and add endpoints
             if 'paths' in spec:
                 for path, methods in spec['paths'].items():
@@ -233,6 +236,9 @@ class UnifiedAPIKnowledgeBase:
                                 "description": details.get('summary', details.get('description', '')),
                                 "category": details.get('tags', ['general'])[0] if details.get('tags') else 'general',
                                 "parameters": self._parse_openapi_parameters(details),
+                                # Swagger 2.0 "in: body" schema (usually a $ref into self.definitions)
+                                "body_schema": next((p.get('schema') for p in details.get('parameters', [])
+                                                     if isinstance(p, dict) and p.get('in') == 'body'), None),
                                 "mcp_enabled": True,
                                 "mcp_name": endpoint_name.lower()
                             }
