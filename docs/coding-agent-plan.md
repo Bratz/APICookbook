@@ -23,9 +23,9 @@ It is built the way the decode course builds a coding agent: a small tool-callin
 | Loop | **pydantic-ai, as in the course** | Requires Python ≥ 3.11 (current `pydantic-ai-slim` 2.66.0 says `>=3.11`; decode uses 3.12). This app runs 3.10.11, so milestone 0 upgrades it. |
 | Access | **Open, with caps** | 10 questions/hour per client IP, hard caps of **$5/day and $50/month**. At a cap the agent says so and the free BERT chat answers instead. |
 | UI | **Chat becomes the agent** | Streamed steps, the plan, code in 4 tabs with Copy and "Open in Playground". The Search KB bar and the sidebar "Search Knowledge" item go. |
-| Code targets | **curl, Python, JavaScript/TypeScript, Java** | Python on `httpx`, JS/TS on `fetch`, Java on `java.net.http.HttpClient` (no dependencies, so `javac` alone can check it). |
+| Code targets | **curl, Python, JavaScript/TypeScript, Java** | Python on `httpx`, JS/TS on `fetch`, Java on the JDK's built-in `java.net.http.HttpClient` (confirmed: no Spring, no dependencies, so `javac` alone can check it). |
 | Sessions | **Server session log (JSONL)** | Full conversations kept **30 days**, then deleted automatically. A notice under the chat says so and asks people not to paste real customer data. |
-| Evals | **Gold call sequences + static checks + live GET checks** | Run by hand from GitHub Actions, not on every push. An LLM judge is not included (read from the interview answer; add it if wanted). |
+| Evals | **Gold call sequences + static checks + live GET checks + LLM judge** | Run by hand from GitHub Actions, not on every push. The judge (confirmed) is a second Claude call that grades each answer, so each eval run costs roughly twice as much. |
 
 ## What we take from decode, and what we skip
 
@@ -90,11 +90,12 @@ Each one ships on its own, as the course does.
   - the right endpoints in the right order;
   - request bodies valid against their schemas (`jsonschema`);
   - code that compiles: Python `ast.parse`, `node --check`, `javac`, and a parse of the curl line (URL on the BaNCS host, headers present);
-  - live read-only checks: every GET step is called against the demo host during evals only, and must return 2xx.
+  - live read-only checks: every GET step is called against the demo host during evals only, and must return 2xx;
+  - an LLM judge: a second Claude call scores each answer against a short rubric (the plan fits the task, the steps pass data correctly between calls, the notes are accurate), with its reasons kept in the eval report.
 
   It runs as a `workflow_dispatch` GitHub Action with the API key secret, with thresholds that fail the run. Regression cases are mined from session logs.
 
-**Later, if wanted:** expose the agent as an MCP tool for Claude Desktop and Cursor; an LLM judge; compaction; other model providers.
+**Later, if wanted:** expose the agent as an MCP tool for Claude Desktop and Cursor; compaction; other model providers.
 
 ## Risks and open points
 

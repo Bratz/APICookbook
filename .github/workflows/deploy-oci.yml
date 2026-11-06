@@ -87,6 +87,8 @@ jobs:
             [ "$free_gb" -ge 6 ] || { echo "less than 6G free: not building"; sudo docker system df; exit 1; }
             sudo docker compose up -d --build
             sudo docker image prune -f
+            # Base images of earlier builds stay tagged, so prune -f keeps them. Only ours used 3.10.
+            sudo docker image rm python:3.10.11-slim 2>/dev/null || true
             sudo docker builder prune -af --filter until=48h
             # The first start downloads the model and embeds every endpoint before serving: allow 10 min.
             for i in $(seq 120); do
