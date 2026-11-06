@@ -18,7 +18,12 @@ on:
   push:
     branches: [main]
     paths-ignore: ["**.md"]
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      prune_all_build_cache:
+        description: "Clear ALL unused Docker build cache on the shared VM first (siblings rebuild without cache next time)"
+        type: boolean
+        default: false
 
 concurrency:
   group: deploy-oci
@@ -51,11 +56,12 @@ jobs:
         uses: appleboy/ssh-action@v1
         env:
           REPO: ${{ github.repository }}
+          PRUNE_ALL: ${{ inputs.prune_all_build_cache || false }}
         with:
           host: ${{ secrets.VM_HOST }}
           username: ${{ secrets.VM_USER }}
           key: ${{ secrets.VM_SSH_KEY }}
-          envs: REPO
+          envs: REPO,PRUNE_ALL
           command_timeout: 35m
           script: |
             set -e
@@ -69,7 +75,12 @@ jobs:
             # Prune first, then measure: build cache older than 48h and dangling images only,
             # nothing a running container uses. A post-build prune never runs when the build fails.
             echo "free before prune: $(df --output=avail -BG /var/lib/docker | tail -1 | tr -d ' ')"
-            sudo docker builder prune -af --filter until=48h
+            if [ "$PRUNE_ALL" = "true" ]; then
+              echo "clearing all unused build cache (requested by hand)"
+              sudo docker builder prune -af
+            else
+              sudo docker builder prune -af --filter until=48h
+            fi
             sudo docker image prune -f
             free_gb=$(df --output=avail -BG /var/lib/docker | tail -1 | tr -dc 0-9)
             echo "free disk for docker: ${free_gb}G"
