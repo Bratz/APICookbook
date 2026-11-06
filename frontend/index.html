@@ -2897,6 +2897,28 @@
            logToDevConsole('Code editor ready', 'success');
        }
 
+       // {"cashBlock": {}} from createCashBlockResource: nested objects only, no invented values
+       function startBodyFromSchema(schema) {
+           const resolve = (node) => {
+               for (let i = 0; node && node.$ref && i < 20; i++) node = schema.definitions?.[node.$ref.split('/').pop()];
+               return node || {};
+           };
+           const skeleton = (node, depth) => {
+               const out = {};
+               for (const [key, child] of Object.entries(resolve(node).properties || {})) {
+                   const c = resolve(child);
+                   if (c.properties && depth < 3) out[key] = skeleton(c, depth + 1);
+               }
+               return out;
+           };
+           const text = JSON.stringify(skeleton(schema, 0), null, 2);
+           const editor = bodyEditor.editor;
+           editor.setValue(text);
+           const at = text.indexOf('{}');  // the first empty object: put the cursor between its braces
+           const pos = bodyEditor.model.getPositionAt(at === -1 ? 1 : at + 1);
+           editor.setPosition(pos);
+       }
+
        async function refreshBodySchema() {
            if (!bodyEditor.editor) return;
            const method = document.getElementById('playgroundMethod').value;
@@ -2921,7 +2943,10 @@
                if (!response.ok) throw new Error(String(response.status));
                const { endpoint, schema } = await response.json();
                setSchema([{ uri: `inmemory://schema/${endpoint}.json`, fileMatch: [bodyEditor.model.uri.toString()], schema }]);
-               status.textContent = `Checked against the ${endpoint} body schema. Press Ctrl+Space for field names.`;
+               // In an empty body Ctrl+Space can only offer "{}"; field names appear inside the right object.
+               // So start an empty body with the schema's object structure and put the cursor in the first object.
+               if (!bodyEditor.editor.getValue().trim()) startBodyFromSchema(schema);
+               status.textContent = `Checked against the ${endpoint} body schema. Press Ctrl+Space inside an object for its fields.`;
                status.classList.add('ok');
            } catch (error) {
                setSchema([]);
