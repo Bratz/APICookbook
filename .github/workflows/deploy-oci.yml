@@ -66,11 +66,14 @@ jobs:
             git reset --hard FETCH_HEAD
             cd deploy/oci
             # The disk is shared with vam-portal and its siblings and has been filled before.
+            # Prune first, then measure: build cache older than 48h and dangling images only,
+            # nothing a running container uses. A post-build prune never runs when the build fails.
+            echo "free before prune: $(df --output=avail -BG /var/lib/docker | tail -1 | tr -d ' ')"
+            sudo docker builder prune -af --filter until=48h
+            sudo docker image prune -f
             free_gb=$(df --output=avail -BG /var/lib/docker | tail -1 | tr -dc 0-9)
             echo "free disk for docker: ${free_gb}G"
-            [ "$free_gb" -ge 6 ] || { echo "less than 6G free: not building"; exit 1; }
-            # Prune before the build too: a post-build prune never runs when the build fails.
-            sudo docker builder prune -af --filter until=48h
+            [ "$free_gb" -ge 6 ] || { echo "less than 6G free: not building"; sudo docker system df; exit 1; }
             sudo docker compose up -d --build
             sudo docker image prune -f
             sudo docker builder prune -af --filter until=48h
