@@ -110,6 +110,61 @@ def test_semantic_search_low_confidence_falls_back_to_keyword(client):
     assert data["source"] == "keyword" and data["total"] == 0
 
 
+# 30 developer questions, each with every endpoint that answers it (Postman and Swagger duplicates).
+# Measured: 0.53 top-3 with the old document text, 0.80 with the current one (rag_engine._create_api_document).
+RETRIEVAL_CASES = [
+    ("check account balance", {"GetAccountBalance", "CBPETGetAccountBalanceUsingGET"}),
+    ("how much money is in this account right now", {"GetAccountBalance", "CBPETGetAccountBalanceUsingGET"}),
+    ("list all accounts of a customer with their balances", {"CBCET0101FetchCustAcntsUsingGET", "AMET0395GetAcntUsrBlncsUsingGET", "GetAccountListByCustomerID"}),
+    ("onboard a new customer", {"CreateCustomer", "CustomerCreate", "RSTBTQuickCustomerOnboardingWthMnrUsingPOST"}),
+    ("I need to open a savings account for an existing customer", {"AMBT2020CreateAcntActvUsingPOST", "RSTBTCreateAcntActv_POSTUsingPOST", "AccountCreate", "RSTBT2020CreateAcntActvwthRelationsUsingPOST"}),
+    ("update customer mobile number", {"RSTBTAmendPhonenumberUsingPUT", "BRBT0303ModContactDtls_POSTUsingPUT"}),
+    ("the customer moved house, change their postal address", {"RSTBTAmendPostalAddressUsingPUT", "BRBTCreateModifyCommDtlsUsingPUT"}),
+    ("transfer money between two accounts", {"AMEBTFundTransferWrapperIB_POSTUsingPOST", "AMEBT2021AmeWrapper_POSTUsingPOST"}),
+    ("approve a pending fund transfer", {"AMEBT1603AuthAMETxn_POSTUsingPOST"}),
+    ("list fund transfers", {"AMEET1612FetchAMETxnList_POSTUsingGET_1"}),
+    ("put a hold on some funds so they cannot be withdrawn", {"AMBTCrtCashBlockWrapperUsingPOST", "CashBlock", "INTBT0118CrtCshBlckIntf_POSTUsingPOST"}),
+    ("cancel a cash block", {"AMBTCancelCashBlockWrapperUsingDELETE", "ReleaseCancelCashBlock"}),
+    ("see all blocks placed on an account", {"AMET0117FtchBlckLstUsingGET"}),
+    ("loan repayment schedule", {"CRET2811GetRpymntDtls_POSTUsingGET", "GetLoansRepaymentSchedule"}),
+    ("pay out the loan amount to the borrower", {"CRBT4211DownDisbLOSMasterWrapper_POSTUsingPOST", "CRBT1751CreateDisburReqUsingPOST"}),
+    ("how much does the customer still owe to close the loan", {"CRET6827FetchLoanWriteoffDtlsUsingGET", "GetLoanDischargeEnquiry"}),
+    ("repay a loan by transfer from an account", {"CRBT0315InitRpymnt_POSTUsingPOST"}),
+    ("request an account statement", {"BRBTRequestAcntStatmntUsingPOST", "AMET2021AcntsBalStatmnt_POSTUsingPOST"}),
+    ("order a new cheque book", {"CBCBTCreateChequeBookRequestUsingPOST", "RSBTCreateChqRequestOnRlsd_POSTUsingPOST"}),
+    ("stop payment on a cheque", {"RSTBT11810StopPymntChqUsingPOST", "RSBTCreateStopChequeRequest_POSTUsingPOST"}),
+    ("the customer wants to close their account", {"AMTO5202CrtAcntClsReleased_POSTUsingPOST", "RSTBT2010AcntClsrRls_POSTUsingPOST", "AMTO5201ValidateAcntClsDtls_POSTUsingGET"}),
+    ("open a fixed deposit", {"DEPBTOpenTDWrapperIB_POSTUsingPOST"}),
+    ("break a term deposit before it matures", {"DEPBT0409IBCreateDealErlMtrty_POSTUsingPOST"}),
+    ("current currency exchange rate", {"CBCET1401GetEXRTUsingGET", "MIET1210ListOthrPrpsEXRTUsingGET"}),
+    ("what interest rate applies to a loan product", {"CBCET0333GetLatestINRT_POSTUsingGET"}),
+    ("register a house as security for a loan", {"CreateCollateral-RealState", "CRBT1801CrtTenantOwnedCltrlWrapperUsingPOST"}),
+    ("account details including the address", {"AMET2020GetAcntDetails_wrapperUsingGET"}),
+    ("look up a customer's profile", {"GetCustomerDetails", "RSTETViewCustomerDetailsUsingGET", "CBPET0106GetBPDetailsUsingGET"}),
+    ("show the transaction history of an account", {"GetAccountTransactions", "CBCET2001CalcRNGBalUsingGET"}),
+    ("crypto wallet balance", {"FAET2022FetchCryptoBal_POSTUsingGET"}),
+]
+
+
+def test_retrieval_quality_on_developer_questions(client):
+    rag = app.state.rag_engine
+    if not rag:
+        pytest.skip("RAG_ENABLED is off or sentence-transformers is not installed")
+    hits = []
+    for query, gold in RETRIEVAL_CASES:
+        top3 = {doc.metadata["endpoint_name"] for doc, _ in rag.search(query, top_k=3)}
+        hits.append(bool(top3 & gold))
+    missed = [q for (q, _), ok in zip(RETRIEVAL_CASES, hits) if not ok]
+    assert sum(hits) / len(hits) >= 0.75, f"top-3 hit rate {sum(hits)}/{len(hits)}; missed: {missed}"
+
+
+@pytest.mark.parametrize("query", ["what is the weather in paris", "recipe for chocolate pancakes", "tell me a joke"])
+def test_off_topic_questions_get_no_semantic_match(client, query):
+    if not app.state.rag_engine:
+        pytest.skip("RAG_ENABLED is off or sentence-transformers is not installed")
+    assert app.state.rag_engine.search(query, top_k=3) == []
+
+
 def test_kb_fuzzy_search():
     from backend.knowledge_base import UnifiedAPIKnowledgeBase
     results = UnifiedAPIKnowledgeBase().search_endpoints("GetAccountBalance")

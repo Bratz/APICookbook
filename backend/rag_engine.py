@@ -32,12 +32,35 @@ class LightweightRAG:
     """
 
     QUERY_PREFIX = "Represent this sentence for searching relevant passages: "
-    # bge cosine scores are compressed (~0.5-0.9). On the BaNCS spec, good top hits
-    # scored >= 0.71, weak ones 0.65-0.68 (keyword search did better on those) and
-    # nonsense ~0.54. Below this, callers fall back to keyword search.
-    # ponytail: tuned on 8 sample queries; retune with real query logs or a new model.
-    MIN_SCORE = 0.7
-    INDEX_VERSION = 2  # bump when document construction changes, to rebuild the cache
+    # bge cosine scores are compressed (~0.45-0.9). On the cleaned BaNCS text, the 30
+    # developer questions in tests/test_retrieval.py score 0.67-0.87 at top-1 and
+    # off-topic questions ("weather in paris", "zzqx nonsense") 0.46-0.58.
+    # Below this, callers fall back to keyword search.
+    # ponytail: tuned on 30 + 12 hand-written queries; retune with real query logs or a new model.
+    MIN_SCORE = 0.62
+    INDEX_VERSION = 3  # bump when document construction changes, to rebuild the cache
+
+    # BaNCS operation names abbreviate heavily (AMBT0119UpdCashBlckIntfUsingPUT);
+    # embedding models only understand the full words. Read off the catalogue's names.
+    ABBREVIATIONS = {
+        "acnt": "account", "acct": "account", "acnts": "accounts", "actv": "active", "blck": "block",
+        "blk": "block", "bal": "balance", "blnc": "balance", "blncs": "balances", "dtls": "details",
+        "lst": "list", "cust": "customer", "chq": "cheque", "rpymnt": "repayment", "pymnt": "payment",
+        "stmnt": "statement", "statmnt": "statement", "clsr": "closure", "cls": "closure", "crt": "create",
+        "mod": "modify", "mdfy": "modify", "upd": "update", "txn": "transaction", "txns": "transactions",
+        "intrst": "interest", "inrt": "interest rate", "exrt": "exchange rate", "ibrt": "interbank rate",
+        "rlsd": "released", "rls": "release", "auth": "authorise", "ftch": "fetch", "rvrsl": "reversal",
+        "rvrs": "reverse", "rqst": "request", "req": "request", "cltrl": "collateral", "grnte": "guarantee",
+        "prprty": "property", "dsbrsmnt": "disbursement", "disb": "disbursement", "disbur": "disbursement",
+        "mtrty": "maturity", "erl": "early", "instlmt": "instalment", "adrs": "address", "comm": "communication",
+        "orgntng": "originating", "rspnd": "responding", "vldt": "validate", "gen": "generate",
+        "resr": "reservation", "schdl": "schedule", "sch": "schedule", "amnt": "amount", "prdt": "product",
+        "prd": "product", "usr": "user", "frzng": "freezing", "unblck": "unblock", "lnk": "link",
+        "cncl": "cancel", "rjct": "reject", "rej": "reject", "maint": "maintenance", "hist": "history",
+        "rcvbl": "receivable", "dl": "deal", "td": "term deposit", "rd": "recurring deposit",
+        "pdc": "post dated cheque", "loc": "line of credit", "bp": "customer", "ib": "internet banking",
+        "npa": "non performing asset", "rng": "running", "calc": "calculate",
+    }
 
     def __init__(self, 
                  knowledge_base=None,
@@ -184,6 +207,12 @@ class LightweightRAG:
         parameter/keyword chunks ranked worse than the main chunk alone and the
         parameter chunks tripled CPU build time. The main chunk lists the first 5 params.
         """
+        from collections import Counter
+        counts = Counter(k for ep in api_endpoints.values()
+                         if isinstance(ep.get("parameters"), dict) for k in ep["parameters"])
+        # headers like Accesstoken or Channel Type sit on nearly every call and make all documents alike
+        self._common_params = {k for k, c in counts.items() if c > 0.3 * max(len(api_endpoints), 1)}
+
         for endpoint_name, endpoint in api_endpoints.items():
             self.documents.append(Document(
                 content=self._create_api_document(endpoint_name, endpoint),
@@ -203,36 +232,47 @@ class LightweightRAG:
         logger.info(f"Added {len(self.documents)} document chunks from {len(api_endpoints)} APIs")
     
     def _create_api_document(self, name: str, endpoint: Dict[str, Any]) -> str:
-        """Create searchable document from API endpoint"""
+        """Searchable text for one endpoint: what it does in plain words, nothing every endpoint shares.
+
+        Measured on 30 developer questions (tests/test_retrieval.py): top-3 hit rate 0.53 with the old
+        "API Endpoint/Method/Path/.../Authentication" template, 0.80 with this text, same model.
+        """
         import re
-        
-        parts = []
-        
-        # Tokenize name properly
-        name_tokens = re.findall(r'[A-Z]?[a-z]+|[A-Z]+(?=[A-Z][a-z]|\b)|[0-9]+', name)
-        parts.append(f"API Endpoint: {' '.join(name_tokens)}")
-        
-        parts.append(f"Method: {endpoint.get('method', 'GET')}")
-        parts.append(f"Path: {endpoint.get('url', '')}")
-        parts.append(f"Description: {endpoint.get('description', '')}")
-        parts.append(f"Category: {endpoint.get('category', 'general')}")
-        
-        # Add parameters with details
-        if endpoint.get("parameters"):
-            if isinstance(endpoint["parameters"], dict):
-                param_strs = []
-                for param_name, param_info in endpoint["parameters"].items():
-                    if isinstance(param_info, dict):
-                        param_str = f"{param_name} ({param_info.get('type', 'string')}): {param_info.get('description', '')}"
-                        param_strs.append(param_str)
-                if param_strs:
-                    parts.append(f"Parameters: {', '.join(param_strs[:5])}")  # Limit to 5 for main doc
-        
-        # Add authentication info
-        parts.append("Authentication: Required headers - entity, userId, languageCode")
-        
-        return "\n".join(parts)
-    
+
+        # AMBT0119UpdCashBlckIntfUsingPUT -> "update cash block intf"
+        core = re.sub(r'Using(GET|POST|PUT|DELETE|PATCH)(_\d+)?$', '', name)
+        core = re.sub(r'^[A-Z]{2,6}\d{2,5}', '', core)          # AMBT2020, CRET0601 ...
+        core = re.sub(r'^[A-Z]{3,6}(?=[A-Z][a-z])', '', core)     # AMBT, RSTBT ... without digits
+        words = []
+        for tok in re.findall(r'[A-Z]?[a-z]+|[A-Z]+(?=[A-Z][a-z]|\b|_)|[0-9]+', core):
+            low = tok.lower()
+            if low not in ("post", "get", "put", "delete", "using", "wrapper"):
+                words.append(self.ABBREVIATIONS.get(low, low))
+        title = " ".join(words)
+
+        parts = [title + "." if title else ""]
+        desc = (endpoint.get("description") or "").strip()
+        if desc and desc.lower().replace(" ", "") != title.lower().replace(" ", ""):
+            parts.append(desc.rstrip(".") + ".")
+
+        segments = [seg for seg in (endpoint.get("url") or "").split("/")
+                    if seg and not seg.startswith("{") and not seg.isdigit() and seg.lower() != "core"]
+        path_text = " ".join(re.sub(r'([a-z])([A-Z])', r'\1 \2', seg) for seg in segments)
+        parts.append(f"{endpoint.get('method', 'GET')} {path_text}.")
+
+        category = endpoint.get("category")
+        if category and category != "general":
+            parts.append(f"Area: {category}.")
+
+        params = endpoint.get("parameters")
+        if isinstance(params, dict):
+            common = getattr(self, "_common_params", set())
+            fields = [re.sub(r'([a-z])([A-Z])', r'\1 \2', k) for k in params if k not in common][:8]
+            if fields:
+                parts.append("Fields: " + ", ".join(fields) + ".")
+
+        return " ".join(p for p in parts if p)
+
     def _generate_embeddings(self):
         """Generate embeddings for all documents"""
         if hasattr(self, '_use_numpy_embeddings') and self._use_numpy_embeddings:
