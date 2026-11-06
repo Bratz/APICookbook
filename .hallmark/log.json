@@ -1,0 +1,28 @@
+[
+ {
+  "mode": "redesign",
+  "depth": "full",
+  "scope": "app",
+  "shape": "app screen",
+  "theme": "cobalt",
+  "axes": "light/grotesk-sans/cool",
+  "nav": "top bar over a ruled sidebar",
+  "footer": "none (app)",
+  "hero": "none (app)",
+  "imagery": "none",
+  "photos": [],
+  "entry": "chat tab",
+  "signature": "endpoint reference rows",
+  "sections": [
+   "sidebar reference",
+   "chat",
+   "cookbook table",
+   "playground",
+   "mcp tools",
+   "history"
+  ],
+  "waived": [],
+  "prompt": "developer API reference, search and request playground for a core banking platform",
+  "date": "2026-11-06"
+ }
+]
