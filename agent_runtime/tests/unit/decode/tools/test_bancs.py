@@ -66,3 +66,6 @@ def test_the_prompt_names_the_proxy_base_and_the_approval_rule(monkeypatch):
 
     assert f"{PROXY}/Core" in text  # the only address the code may call
     assert "WAITS" in text and "403" in text  # writes are held; a refusal is final
+    # F5 finding: an unattended run must find real records and act, never stop to ask.
+    assert "do not call ask_user" in text and "find a REAL one yourself" in text
+    assert "MAKE the call" in text
