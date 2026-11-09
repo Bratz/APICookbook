@@ -1,5 +1,7 @@
 # Code-writing agent for APICookbook: intent and plan
 
+> **Superseded (2026-11-09):** this agent will be replaced by the decode-based "Build & run" agent; see [decode-fork-plan.md](decode-fork-plan.md). Milestones 0–2 below are done and live, and stay live until that replacement passes its guardrails and evals. Milestones 3–4 here will not be built.
+
 Status: proposed · Decided with the owner in two interviews on 2026-11-06 · Reference: [decodingai-magazine/building-a-coding-agent-from-scratch-course](https://github.com/decodingai-magazine/building-a-coding-agent-from-scratch-course) ("decode", Apache-2.0)
 
 ## Intent
