@@ -165,6 +165,20 @@ Still open, both outside the code:
 - **Every Build & run write is auto-rejected,** so evals never change demo data. Operator runs stay out of the visitors' caps.
 - **Agent eval** (manual workflow) runs it in a one-off container on the VM, never inside the live one, and posts the side-by-side table on the run page.
 - **Replace rule:** Build & run replaces the code agent (F6) if it hits at least as many gold sequences overall, **and** a gold GET answered 2xx on at least 8 of the 11 read tasks.
+- *Results (2026-11-09):*
+
+  | | Code agent | Build & run, first run | Build & run, after the prompt fix |
+  |---|---|---|---|
+  | Gold sequence hit | 20/20 | 6/20 | **19/20** |
+  | … read · write | 11/11 · 9/9 | 6/11 · 0/9 | 11/11 · 8/9 |
+  | A gold GET answered 2xx (read) | — | 4/11 | **11/11** |
+  | Held write bodies valid against the schema | — | none held | **8/8** |
+  | Cost per task, median time | $0.019, 8 s | $0.052, 18 s | $0.081, 22 s |
+
+  - **First run:** Build & run picked the right operations but stopped to ask for IDs that nobody could give in a website run. The fix (`9f276ea`): never ask; find a real record with GETs; make the write, since the visitor approves it; don't finish before the code has called the bank.
+  - **The one remaining miss (task 20):** the code read the profile from `GET /customer/detail`, a path that is **not in the spec**, although the prompt says to use only operations the tools returned. The gold is right; the miss is real.
+  - **The code agent's 20/20 scores plans with placeholders that were never run;** Build & run's scores come from calls the bank answered.
+  - **Replace rule:** the 2xx part is met (11/11, needing 8). The gold-hit part is short by one task (19 vs 20).
 - *Not yet:* an LLM judge, and regression cases mined from session logs (the two empty-tool-call prompts). Add them if scores and reading the answers disagree.
 
 **F6. Switch over.**
