@@ -213,7 +213,7 @@ Still open, both outside the code:
 - `docs/coding-agent-plan.md` milestones 3 and 4 (sessions, evals) are superseded by decode's session log and F5.
 
 **MCP endpoint** (decided 2026-11-09):
-- **Tools:** APIWeaver's four (`list_apis`, `call_api`, `get_api_schema`, `search_endpoints`), served over streamable HTTP at `https://apicookbook.vercel.app/api/mcp/` for any MCP client, without a key.
+- **Tools:** APIWeaver's four (`list_apis`, `call_api`, `get_api_schema`, `search_endpoints`), served over streamable HTTP at `https://apicookbook.vercel.app/api/mcp` for any MCP client, without a key.
 - **Limit:** 300 requests per hour per IP.
 - **Writes are held:** `call_api` with POST, PUT, PATCH or DELETE returns `pending_approval` and a link. A person opens `/#approve-<id>` on the site and approves within 10 minutes, which sends the stored request. The client then calls `call_api` with `{"approval_id": …}` for the result.
 - **Also changed:** the Playground's MCP mode runs the real tools (it was a stub); the broken stdio `backend/mcp_server.py` is deleted.

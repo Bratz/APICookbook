@@ -795,6 +795,9 @@ _MCP_GUARD = None
 async def mcp_rate_limit(request: Request, call_next):
     """MCP is open to anyone: cap requests per IP (each tool call is one POST to /api/mcp/)."""
     global _MCP_GUARD
+    if request.url.path == "/api/mcp":
+        # Vercel's /api/:path* rewrite cannot carry a trailing slash: serve /api/mcp itself, no redirect.
+        request.scope["path"], request.scope["raw_path"] = "/api/mcp/", b"/api/mcp/"
     if request.method == "POST" and request.url.path.rstrip("/") == "/api/mcp":
         if _MCP_GUARD is None:
             _MCP_GUARD = AgentGuard(os.getenv("MCP_DATA_DIR", "data/mcp"),
@@ -2498,7 +2501,7 @@ async def general_exception_handler(request: Request, exc: Exception):
 
 # ============= MAIN ENTRY POINT =============
 if MCP_HTTP is not None:
-    app.mount("/api/mcp", MCP_HTTP)  # MCP clients: https://apicookbook.vercel.app/api/mcp/
+    app.mount("/api/mcp", MCP_HTTP)  # MCP clients: https://apicookbook.vercel.app/api/mcp
 
 
 if __name__ == "__main__":

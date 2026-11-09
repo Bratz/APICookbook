@@ -1166,11 +1166,11 @@
                 <div class="card mb-3">
                     <h2 class="mb-3">Connect an MCP client</h2>
                     <p>Any MCP client (Claude Code, Claude Desktop, Cursor…) can use these tools over streamable HTTP. No key needed; requests are rate-limited per address.</p>
-                    <dl class="basics"><dt>Endpoint</dt><dd>https://apicookbook.vercel.app/api/mcp/</dd></dl>
+                    <dl class="basics"><dt>Endpoint</dt><dd>https://apicookbook.vercel.app/api/mcp</dd></dl>
                     <p class="text-small">Claude Code:</p>
-                    <pre><code class="language-bash">claude mcp add --transport http bancs https://apicookbook.vercel.app/api/mcp/</code></pre>
+                    <pre><code class="language-bash">claude mcp add --transport http bancs https://apicookbook.vercel.app/api/mcp</code></pre>
                     <p class="text-small">Other clients (JSON config):</p>
-                    <pre><code class="language-json">{ "mcpServers": { "bancs": { "type": "http", "url": "https://apicookbook.vercel.app/api/mcp/" } } }</code></pre>
+                    <pre><code class="language-json">{ "mcpServers": { "bancs": { "type": "http", "url": "https://apicookbook.vercel.app/api/mcp" } } }</code></pre>
                     <p class="text-small text-muted">Reads run at once. A write (POST, PUT, PATCH, DELETE) is not sent: <code>call_api</code> returns an approval link. Open it here, approve within 10 minutes, then the client calls <code>call_api</code> again with <code>{"approval_id": …}</code> for the result.</p>
                 </div>
                 <div class="card">

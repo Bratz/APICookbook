@@ -78,3 +78,14 @@ def test_any_mcp_client_can_list_the_tools_over_http(client):
 
     data = next(json.loads(line[6:]) for line in listed.text.splitlines() if line.startswith("data: "))
     assert {t["name"] for t in data["result"]["tools"]} == {"list_apis", "call_api", "get_api_schema", "search_endpoints"}
+
+
+def test_the_endpoint_answers_without_a_trailing_slash_and_without_a_redirect(client):
+    # Vercel's /api/:path* rewrite drops the slash: /api/mcp itself must be the MCP endpoint.
+    init = client.post("/api/mcp", follow_redirects=False,
+                       headers={"Accept": "application/json, text/event-stream", "Content-Type": "application/json"},
+                       json={"jsonrpc": "2.0", "id": 1, "method": "initialize",
+                             "params": {"protocolVersion": "2025-06-18", "capabilities": {},
+                                        "clientInfo": {"name": "test", "version": "1"}}})
+
+    assert init.status_code == 200 and init.headers.get("mcp-session-id")
