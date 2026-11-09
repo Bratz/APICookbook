@@ -1,0 +1,101 @@
+"""The dependency object Pydantic AI injects into the agent run (ADR-0002 §1-3, ADR-0012 §6).
+
+:class:`AgentDeps` is what ``agent.iter(deps=...)`` hands every tool call and instructions hook
+as ``ctx.deps``. Field meaning, one line each:
+
+* ``cwd`` — the tool scope: file/search tools + ``bash`` resolve paths against it (the Workspace in a sandbox mode).
+* ``harness_home`` — the artifact root (launch cwd) for sessions/memory/skills/settings; defaults to ``cwd``.
+* ``emit`` — the sink the loop streams :mod:`decode.entities.events` through to the TUI.
+* ``gate`` — the :class:`~decode.permissions.gate.PermissionGate` policy: allow/ask/deny per tool call.
+* ``resolve_permission`` — async hook turning a gate *ask* into the human's allow/deny verdict.
+* ``resolve_user_question`` — async hook for ``ask_user``; rides the SAME single decision channel (never a second input surface); the headless default raises so it fails cleanly.
+* ``task_store`` — the per-run TodoWrite list the ``todo_write`` tool rewrites in place.
+* ``active_agent`` — the selected persona (prompt + tool allowlist), reassigned by ``/agent`` and read fresh per turn.
+* ``context_window_tokens`` — the compaction window resolved for this run's actual model; ``None`` falls back to the configured one.
+* ``verbose`` — the live Verbose Mode flag (Ctrl+O): mutable, flipped by the TUI keybind mid-turn, read at emit time by the ``agent`` tool's child sink.
+
+Plain callable fields (not methods) let tools and the loop share one event channel and one
+decision channel without importing the harness or the TUI.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import TYPE_CHECKING
+
+from decode.entities import events
+from decode.entities.permissions import PermissionDecision, PermissionRequest
+from decode.entities.task import Task
+from decode.permissions.gate import PermissionGate
+
+if TYPE_CHECKING:
+    # Typing-only import: a runtime import would form a cycle (agents loader → decode.tools →
+    # this module); the __future__ annotations keep the field annotation a string.
+    from decode.entities.agent_def import AgentDef
+
+
+def _default_active_agent() -> AgentDef:
+    """The default persona: ``build`` (full tool set; ADR-0003 §7). Lazy import avoids the cycle."""
+    from decode.agents.loader import load_agent
+
+    return load_agent("build")
+
+
+@dataclass(slots=True)
+class VerboseFlag:
+    """The live Verbose Mode toggle (Ctrl+O): show Explore Subagent activity in the TUI.
+
+    A MUTABLE object on the deps — deliberately, and for the same reason
+    :class:`~decode.permissions.gate.PermissionGate` is one: the user flips it MID-TURN (Ctrl+O
+    while a fan-out is running), so every reader must see the new value on its very next read. The
+    ``agent`` tool's child sink therefore reads ``enabled`` at EMIT time, never captures it at spawn
+    time. Off by default (ADR-0013 §8 amendment).
+    """
+
+    enabled: bool = False
+
+    def toggle(self) -> bool:
+        """Flip the flag in place and return the NEW state (what the keybind renders)."""
+        self.enabled = not self.enabled
+        return self.enabled
+
+
+EventSink = Callable[[events.Event], None]
+# Resolve a gated tool call into the human's allow/deny verdict (async: blocks on the TUI).
+PermissionResolver = Callable[[PermissionRequest], Awaitable[PermissionDecision]]
+# Resolve an ``ask_user`` question into the human's typed answer, on the same decision channel.
+UserQuestionResolver = Callable[[str], Awaitable[str]]
+
+
+@dataclass(slots=True)
+class AgentDeps:
+    """What the agent run carries: cwd, event sink, gate, two decision resolvers, task store.
+
+    Not frozen: the sink may be rebound and ``active_agent`` is reassigned by an ``/agent``
+    switch; the factories keep mutable defaults per-instance.
+    """
+
+    cwd: Path
+    emit: EventSink
+    gate: PermissionGate
+    resolve_permission: PermissionResolver
+    resolve_user_question: UserQuestionResolver
+    task_store: list[Task] = field(default_factory=list)
+    active_agent: AgentDef = field(default_factory=_default_active_agent)
+    # The Ctrl+O Verbose Mode toggle; the TUI keybind mutates it live, the ``agent`` tool reads it.
+    verbose: VerboseFlag = field(default_factory=VerboseFlag)
+    # Harness-Home artifact root (ADR-0012 §6); ``None`` defaults to ``cwd`` in __post_init__.
+    harness_home: Path | None = None
+    # The compaction window resolved for THIS run's model (task 123) — the Model Override included,
+    # which process-scoped ``Settings`` structurally cannot see. ``None`` means "not resolved here";
+    # readers fall back to ``settings.compaction_context_window_tokens``. Deliberately NOT resolved
+    # in ``__post_init__``: that would fire a provider probe on every ``AgentDeps()`` ever built,
+    # tests included. The entrypoints that know the run's model resolve it and pass it in.
+    context_window_tokens: int | None = None
+
+    def __post_init__(self) -> None:
+        """Default ``harness_home`` to ``cwd`` when unset — the back-compat equal-roots case (§6)."""
+        if self.harness_home is None:
+            self.harness_home = self.cwd

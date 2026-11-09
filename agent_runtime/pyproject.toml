@@ -1,0 +1,100 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "decode"
+version = "0.1.0+apicookbook"
+description = "A terminal coding agent (agentic harness) built from scratch, step by step — the artifact of the building-a-coding-agent-from-scratch course."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "Apache-2.0" }
+authors = [
+    { name = "Paul Iusztin", email = "p.e.iusztin@gmail.com" },
+]
+keywords = ["coding-agent", "llm", "agent", "tui", "pydantic-ai", "mcp"]
+classifiers = [
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+]
+
+# Runtime deps only. Dev/test go in [dependency-groups]. Kept light on purpose —
+# the course adds the heavier integrations at the step that needs them.
+dependencies = [
+    "pydantic>=2.0,<3",  # major bound only: the old <2.13 zenml cap died with kitaru 0.22 (ADR-0019)
+    "pydantic-settings>=2.4",
+    "python-dotenv>=1",  # explicit .env-file parsing for pydantic-settings (env_file=".env")
+    "click>=8.1,<9",  # major bound only: the old <8.3 zenml cap died with kitaru 0.22 (ADR-0019)
+    "rich>=13",
+    # APICookbook fork: Kitaru removed, so the pin follows APICookbook (anthropic extra added)
+    "pydantic-ai-slim[anthropic,google,openai]==2.66.0",
+    "httpx>=0.28.1",
+    "pyyaml>=6.0.3",
+    "modal>=1.5.3",
+    "anyio>=4.14.2",
+    "logfire>=4.37.0",
+]
+
+[project.scripts]
+decode = "decode.cli:cli"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "pytest-mock>=3.12",
+    "ruff>=0.15.21",
+    "pre-commit>=4.6.0",
+    "ty>=0.0.73",
+    "opik>=2.2.9",  # eval harness (ADR-0017); dev group — evals is not shipped in the wheel
+    # litellm is opik's transitive judge backend; pinned <1.78 because 1.92+ (what opik 2.x pulls)
+    # ships a Rust bridge that needs rustc >=1.86 to build from sdist. 1.77.x is pure-python wheels,
+    # so `uv sync` / `make ci` build everywhere without a Rust toolchain. Lift once opik 2.0 Test
+    # Suites are needed (ADR-0017 §6) and the build env has rustc >=1.86.
+    "litellm<1.98",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/decode"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+extend-exclude = ["generated_client"]
+
+[tool.ruff.lint]
+select = [
+    "E", "W",   # pycodestyle
+    "F",        # pyflakes
+    "I",        # isort
+    "B",        # flake8-bugbear
+    "UP",       # pyupgrade (PEP 585/604)
+    "SIM",      # flake8-simplify
+    "RUF",      # ruff-specific
+]
+ignore = [
+    "E501",     # line length — the formatter owns this
+]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.pytest.ini_options]
+testpaths = ["tests/unit", "tests/integration"]
+python_files = "test_*.py"
+python_functions = "test_*"
+addopts = "-ra --strict-markers --import-mode=importlib"
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+# ``tests/support`` carries shared test-only helpers (e.g. the gated ``noop`` tool the
+# permission/loop/e2e tests drive) that the shipped ``decode`` package must not contain. ``.`` puts the
+# repo root on the path so the unit tests can import the operator scripts in ``scripts/`` (unpackaged).
+pythonpath = ["src", "tests", "."]
+filterwarnings = [
+    "error",
+    # APICookbook fork: google-genai (pulled by pydantic-ai 2.66) has an invalid escape in a docstring
+    "ignore:invalid escape sequence:SyntaxWarning",
+]

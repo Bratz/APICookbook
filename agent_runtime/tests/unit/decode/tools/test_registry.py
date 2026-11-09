@@ -1,0 +1,160 @@
+"""Unit tests for the flat tool registry (``decode.tools.registry``) — ADR-0002 §7 / ADR-0003 §2.
+
+Asserts the registry's two jobs without a network call: every expected tool ends up on the
+agent (and the scaffolding ``noop`` never does), and the tool-kind map matches each tool's
+declared classification (the loop reads it via ``tool_kind`` when building a PermissionRequest).
+"""
+
+from pydantic import SecretStr
+from pydantic_ai import Agent, DeferredToolRequests
+from pydantic_ai.models.test import TestModel
+from support.registered_tools import registered_tools
+
+from decode.agent.deps import AgentDeps
+from decode.agent.factory import build_agent
+from decode.permissions.types import ToolKind
+from decode.tools import tool_kind
+from decode.tools.registry import TOOL_KIND, TOOL_SPECS, register_tools
+
+
+def _agent(mocker):
+    mocker.patch(
+        "decode.agent.factory.settings.gemini_api_key", SecretStr("test-key"), create=False
+    )
+    return build_agent()
+
+
+def test_registry_lists_the_expected_tools():
+    names = {spec.name for spec in TOOL_SPECS}
+    assert names == {
+        "read",
+        "glob",
+        "grep",
+        # The active Code Intelligence tool (task 052 / ADR-0007): READ_ONLY, like the file readers.
+        "lsp",
+        "write",
+        "edit",
+        "bash",
+        "todo_write",
+        "ask_user",
+        # The ungated orchestration + sleep controls (task 021 / ADR-0003 §8).
+        "enter_plan_mode",
+        "exit_plan_mode",
+        "sleep",
+        # The READ_ONLY Agent tool — spawns a read-only Explore subagent (task 088 / ADR-0013).
+        "agent",
+    }
+
+
+def test_registry_does_not_expose_the_scaffolding_noop_tool():
+    # ADR-0002 §7 + AGENTS.md: the task-005 ``noop`` scaffolding is superseded by the real
+    # tools (006-011) and must NOT ride on the production agent. It survives only as a
+    # TEST-ONLY helper (support.noop_helper.register_noop), never in the registry.
+    assert "noop" not in {spec.name for spec in TOOL_SPECS}
+    assert "noop" not in TOOL_KIND
+    # Unknown tools (including ``noop``) default to OTHER (mutating) via the loop's lookup.
+    assert tool_kind("noop") is ToolKind.OTHER
+
+
+def test_tool_kinds_match_each_spec():
+    by_name = {spec.name: spec for spec in TOOL_SPECS}
+    # Read-only tools (no disk/exec side effect): the three file readers, todo_write.
+    assert by_name["read"].kind is ToolKind.READ_ONLY
+    assert by_name["glob"].kind is ToolKind.READ_ONLY
+    assert by_name["grep"].kind is ToolKind.READ_ONLY
+    # lsp only reads code intelligence (task 052 / ADR-0007): READ_ONLY, auto-allowed like the readers.
+    assert by_name["lsp"].kind is ToolKind.READ_ONLY
+    # todo_write is an in-memory checklist with no disk/exec side effect: READ_ONLY (ADR-0003 §2),
+    # so it works in plan mode and never prompts.
+    assert by_name["todo_write"].kind is ToolKind.READ_ONLY
+    # The mutating file tools are FILE_EDIT (edit mode auto-allows these).
+    assert by_name["write"].kind is ToolKind.FILE_EDIT
+    assert by_name["edit"].kind is ToolKind.FILE_EDIT
+    # bash mutates the world via shell exec: OTHER (edit mode still asks for it).
+    assert by_name["bash"].kind is ToolKind.OTHER
+    # ask_user is the human-interaction tool (ungated — never reaches the gate): OTHER.
+    assert by_name["ask_user"].kind is ToolKind.OTHER
+    # The orchestration + sleep controls are ungated too (kind OTHER, never consulted).
+    assert by_name["enter_plan_mode"].kind is ToolKind.OTHER
+    assert by_name["exit_plan_mode"].kind is ToolKind.OTHER
+    assert by_name["sleep"].kind is ToolKind.OTHER
+
+
+def test_tool_kind_reflects_the_registered_kinds():
+    # The loop consults this exact function when building a PermissionRequest.
+    assert tool_kind("read") is ToolKind.READ_ONLY
+    assert tool_kind("glob") is ToolKind.READ_ONLY
+    assert tool_kind("grep") is ToolKind.READ_ONLY
+    assert tool_kind("lsp") is ToolKind.READ_ONLY
+    assert tool_kind("todo_write") is ToolKind.READ_ONLY
+    assert tool_kind("write") is ToolKind.FILE_EDIT
+    assert tool_kind("edit") is ToolKind.FILE_EDIT
+    assert tool_kind("bash") is ToolKind.OTHER
+    assert tool_kind("ask_user") is ToolKind.OTHER
+    # The ungated orchestration + sleep controls are OTHER (never consulted; ADR-0003 §8).
+    assert tool_kind("enter_plan_mode") is ToolKind.OTHER
+    assert tool_kind("exit_plan_mode") is ToolKind.OTHER
+    assert tool_kind("sleep") is ToolKind.OTHER
+    # Unknown tools default to OTHER (mutating/gated).
+    assert tool_kind("does-not-exist") is ToolKind.OTHER
+
+
+def test_register_tools_registers_every_spec_on_the_agent(mocker):
+    agent = _agent(mocker)
+
+    # build_agent already registers via the registry; the real M1 tools must be on the agent...
+    registered = set(registered_tools(agent))
+    assert {
+        "read",
+        "glob",
+        "grep",
+        "lsp",
+        "write",
+        "edit",
+        "bash",
+        "todo_write",
+        "ask_user",
+        "enter_plan_mode",
+        "exit_plan_mode",
+        "sleep",
+    } <= registered
+    # ...and the scaffolding ``noop`` must NOT be (it is never registered in production).
+    assert "noop" not in registered
+
+
+def test_register_tools_registers_every_spec_onto_a_bare_agent():
+    # The registry is the single source of truth: pointing it at a fresh agent registers
+    # exactly the specs it knows about (no factory in the loop).
+    bare: Agent[AgentDeps, str | DeferredToolRequests] = Agent(
+        TestModel(),
+        deps_type=AgentDeps,
+        output_type=[str, DeferredToolRequests],
+    )
+
+    register_tools(bare)
+
+    assert set(registered_tools(bare)) == {spec.name for spec in TOOL_SPECS}
+
+
+async def test_restrict_to_active_agent_hides_disallowed_tools(monkeypatch):
+    """The per-tool ``prepare=`` callback returns ``None`` for a tool the active agent omits.
+
+    Unit-level proof of ADR-0003 §6: ``_restrict_to_active_agent("bash")`` is the prepare for the
+    ``bash`` tool. Given an active agent whose ``tools`` lacks ``bash`` it returns ``None`` (hide);
+    given one that includes ``bash`` it returns the unchanged definition (show).
+    """
+    from pydantic_ai.tools import ToolDefinition
+
+    from decode.agents.loader import load_agent
+    from decode.tools.registry import _restrict_to_active_agent
+
+    prepare = _restrict_to_active_agent("bash")
+    tool_def = ToolDefinition(name="bash", parameters_json_schema={"type": "object"})
+
+    class _Ctx:
+        def __init__(self, agent_name: str) -> None:
+            self.deps = type("D", (), {"active_agent": load_agent(agent_name)})()
+
+    # plan omits bash → hidden; build includes bash → shown (returns the same definition).
+    assert await prepare(_Ctx("plan"), tool_def) is None  # type: ignore[arg-type]
+    assert await prepare(_Ctx("build"), tool_def) is tool_def  # type: ignore[arg-type]

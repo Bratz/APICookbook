@@ -1,6 +1,6 @@
 # Forking decode into APICookbook: decisions and plan
 
-Status: proposed · Decided with the owner in an interview on 2026-11-09 · Upstream: [decodingai-magazine/building-a-coding-agent-from-scratch-course](https://github.com/decodingai-magazine/building-a-coding-agent-from-scratch-course) ("decode", Apache-2.0)
+Status: F0 done (2026-11-09), F1 next · Decided with the owner in an interview on 2026-11-09 · Upstream: [decodingai-magazine/building-a-coding-agent-from-scratch-course](https://github.com/decodingai-magazine/building-a-coding-agent-from-scratch-course) ("decode", Apache-2.0)
 
 ## Intent
 
@@ -26,7 +26,7 @@ This **replaces** today's code agent (`backend/code_agent.py`), which writes cod
 | Repo extras | Keep the eval harness, regression framework, tests and ADRs. Replace the generic benchmark with BaNCS tasks. Delete the course media and site. |
 | Fork home | **Inside the APICookbook repo**, under `agent_runtime/`, keeping decode's Apache-2.0 licence and notices |
 | Today's agent | **Replaced** by Build & run once F4 and F5 pass; it stays live until then |
-| Model | Claude only. The fork gains an Anthropic option in `agent/factory.py`; the Gemini, OpenRouter and Modal LLM options are removed. *(Assumed from "decode for Claude".)* |
+| Model | Claude by default. F0 added an `anthropic` provider and made it the default; Gemini, OpenRouter and Modal stay selectable but unused, so upstream's tests keep running. Removing them is deferred. |
 
 ## What stays and what goes
 
@@ -52,7 +52,8 @@ Sizes are decode's source as of 2026-11-09 (about 630 KB in `src/decode`).
 | `runtime/` headless, summary, task inputs | 32 KB | **Keep** |
 | `runtime/recording.py` (Kitaru) | 14 KB | **Remove**, with `kitaru` and `kitaru-pydantic-ai` |
 | `observability/` | 19 KB | **Adapt.** Keep the OpenTelemetry spans and drop the Opik-specific parts. Cost goes into APICookbook's usage ledger. |
-| `tui/` + `cli.py` | 80 KB | **Remove**, with `prompt-toolkit`. Check whether anything kept still needs `rich` and `click`. |
+| `tui/` | 53 KB | **Remove**, with `prompt-toolkit`. The event renderer `tui/render.py` is kept as `decode/render.py`, since the capstone tests and logs use it, so `rich` stays. |
+| `cli.py` | 26 KB | **Trim**, not remove (found in F0): the Modal runner calls `decode run` as a subprocess. It keeps `run` and `sessions`; the REPL path goes. |
 | `config/` | 22 KB | **Keep.** Anthropic settings replace the other providers'. |
 | `evals/` harness and regression framework | — | **Keep.** Replace the generic tasks with BaNCS gold call sequences; report to a file and GitHub Actions instead of Opik. |
 | `tests/` | 2.6 MB | **Keep** those for kept modules; delete the rest |
@@ -84,6 +85,8 @@ Two design points the answers imply:
 - Delete the parts marked Remove.
 - Add Anthropic to the factory; move to pydantic-ai 2.66 and fix whatever its API changes break.
 - The kept tests pass locally against a local sandbox.
+
+*F0 result (2026-11-09):* every kept `decode` unit test matches upstream's result. On Windows the remaining failures also fail on upstream: bash-driven eval tests, the Modal backend's `signal.SIGKILL`, and path separators. The Linux run is in F1. pydantic-ai 2.66 changed one thing we depended on: a tool retry now arrives as `ToolReturnPart(outcome="retried")`, not `RetryPromptPart`. Compaction and the test models were updated to match. What stays inert until F5 is listed in `agent_runtime/NOTICE`.
 
 **F1. Modal.**
 - A Modal app running the headless agent with the Modal sandbox backend: image with Python, Node, JDK and the LSP servers; the Anthropic key as a Modal secret.

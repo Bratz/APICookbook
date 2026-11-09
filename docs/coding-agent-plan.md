@@ -120,7 +120,7 @@ Sidebar quick actions stay on the search chat.
 
 One fix from this run: the prompt now decides on ambiguity before exploring. Previously "Open an account" researched every account type and hit the 12-request limit; now it asks after one search.
 
-Still to check: SSE through Vercel, once the key is on the VM.
+Checked 2026-11-09: SSE streams through Vercel's rewrite with the key on the VM.
 
 **Milestone 2 as planned:** The chat renders steps, the plan or the clarifying question, a language picker, and Copy and "Open in Playground". The Search KB bar and sidebar item are removed. The BERT chat answers when the agent is down or capped, and the notice about stored conversations goes under the chat. SSE is checked through both Vercel and Caddy.
 

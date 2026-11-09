@@ -1,0 +1,182 @@
+"""Build the ``decode`` Pydantic AI agent on the configured **LLM Provider**.
+
+The factory owns the Provider Seam: :func:`_build_model` branches on ``settings.llm_provider``
+(``gemini`` / ``openrouter`` / ``modal``); everything else in :func:`build_agent` is
+provider-agnostic, and the loop owns all runtime behaviour. Tools come from the flat
+:mod:`decode.tools.registry` (the single source of truth); ``output_type=[str,
+DeferredToolRequests]`` wires the permission gate's deferred-tool seam.
+See ADR-0002 §1-2 and ADR-0005 (provider construction facts live on :func:`_build_model`).
+"""
+
+from __future__ import annotations
+
+import logging
+from typing import Literal
+
+from openai import AsyncOpenAI
+from pydantic_ai import Agent, DeferredToolRequests, RunContext
+from pydantic_ai.agent import AgentRetries
+from pydantic_ai.models import Model
+from pydantic_ai.models.anthropic import AnthropicModel, AnthropicModelSettings
+from pydantic_ai.models.google import GoogleModel
+from pydantic_ai.models.openai import OpenAIChatModel
+from pydantic_ai.profiles import ModelProfile, merge_profile
+from pydantic_ai.profiles.openai import OpenAIModelProfile
+from pydantic_ai.providers.anthropic import AnthropicProvider
+from pydantic_ai.providers.google import GoogleProvider
+from pydantic_ai.providers.openai import OpenAIProvider
+from pydantic_ai.providers.openrouter import OpenRouterProvider
+
+from decode.agent.deps import AgentDeps
+from decode.config.settings import settings
+from decode.memory.service import assemble_memory
+from decode.tools.agent import set_main_agent
+from decode.tools.registry import register_tools
+
+logger = logging.getLogger(__name__)
+
+# Static base system prompt; memory-file injection is layered on top by the instructions hook.
+_BASE_INSTRUCTIONS = (
+    "You are Decode, a terminal coding agent that helps a developer in their working "
+    "directory. You are concise and precise: answer directly, prefer running the work over "
+    "describing it, and never invent file contents or command output you have not seen. "
+    "When you do not have a tool for something yet, say so plainly rather than pretending."
+)
+
+
+def build_agent(*, model: str | None = None) -> Agent[AgentDeps, str | DeferredToolRequests]:
+    """Construct the agent on the configured LLM Provider + register the flat tools (ADR-0002 §1-3,7).
+
+    One build for every caller — the REPL and the headless runner alike (ADR-0019 §1). The provider
+    key always comes from ``Settings`` (ADR-0015 §4). ``model`` is the Model Override: it overrides
+    only the active provider's model id, never the provider.
+    """
+    built_model = _build_model(model=model)
+    agent: Agent[AgentDeps, str | DeferredToolRequests] = Agent(
+        built_model,
+        deps_type=AgentDeps,
+        output_type=[str, DeferredToolRequests],
+        # Per-category retry budgets, one dict since pydantic-ai 2.x (``AgentRetries``):
+        # - output: Gemini 2.5 sometimes returns empty/thinking-only turns after a tool call; the
+        #   default budget of 1 then aborts real multi-turn runs. Give it a few attempts.
+        # - tools: tools coach the model with ModelRetry (edit "old_string not found", grep "no
+        #   matches"); the default per-tool budget of 1 turns the SECOND consecutive nag into
+        #   UnexpectedModelBehavior, killing the whole turn. The counter only resets when the tool
+        #   *succeeds* — a re-read between two mis-aimed edits doesn't help — so give real headroom.
+        retries=AgentRetries(output=3, tools=5),
+    )
+    register_tools(agent)
+    _register_instructions(agent)
+    # Subagent-spawn seam (ADR-0013 §6): the ``agent`` tool re-enters this Agent for every Explore
+    # child, reusing its model + client; one ``agent.override(model=…)`` covers parent + children.
+    set_main_agent(agent)
+    logger.debug("built agent on llm_provider=%s", settings.llm_provider)
+    return agent
+
+
+def _build_model(*, model: str | None = None) -> Model:
+    """Build the Pydantic AI model for ``settings.llm_provider`` — the Provider Seam (ADR-0005 §3-5).
+
+    ``model`` is the optional Model Override: ``model or settings.<provider>_model`` per branch —
+    never the provider branch or the auth/key path; no cross-provider swap. Branch facts verified
+    against the installed SDKs: ``gemini`` uses the Generative-Language API-key path and never passes
+    ``vertexai=`` (its deprecation warning would fail under ``filterwarnings=["error"]``);
+    ``openrouter`` / ``modal`` both ride ``OpenAIChatModel``, modal over a bespoke ``AsyncOpenAI``
+    client for its per-user ``base_url`` + dual-header proxy-token auth (both-or-neither enforced
+    upstream by the cli guard). ``gemini`` / ``openrouter`` source their key from ``Settings`` through
+    :func:`_provider_api_key` (ADR-0015 §4); modal is deliberately not on it (a header surface, not a
+    single api_key). The trailing :class:`ValueError` is defensive — the settings ``Literal`` blocks
+    it upstream.
+    """
+    provider = settings.llm_provider
+    if provider == "anthropic":
+        # APICookbook fork: Claude. Instructions and tool definitions never change within a run, so
+        # both are prompt-cached; a declined request reruns on another Claude model inside the call.
+        return AnthropicModel(
+            model or settings.anthropic_model,
+            provider=AnthropicProvider(api_key=settings.anthropic_api_key.get_secret_value()),
+            settings=AnthropicModelSettings(
+                anthropic_effort=settings.anthropic_effort,
+                anthropic_cache_instructions=True,
+                anthropic_cache_tool_definitions=True,
+                anthropic_betas=["server-side-fallback-2026-07-01"],
+                extra_body={"fallbacks": "default"},
+            ),
+        )
+    if provider == "gemini":
+        return GoogleModel(
+            model or settings.gemini_model,
+            provider=GoogleProvider(api_key=_provider_api_key("gemini")),
+        )
+    if provider == "openrouter":
+        return OpenAIChatModel(
+            model or settings.openrouter_model,
+            provider=OpenRouterProvider(api_key=_provider_api_key("openrouter")),
+        )
+    if provider == "modal":
+        base_url = f"{settings.modal_endpoint_url}/v1"
+        token_id = settings.modal_proxy_token_id.get_secret_value()
+        token_secret = settings.modal_proxy_token_secret.get_secret_value()
+        if token_id and token_secret:
+            # Authenticated endpoint: dual Modal-Key / Modal-Secret proxy headers (not Bearer).
+            client = AsyncOpenAI(
+                base_url=base_url,
+                api_key=token_secret,  # non-empty; the OpenAI client requires it
+                default_headers={"Modal-Key": token_id, "Modal-Secret": token_secret},
+            )
+        else:
+            # --unauthenticated endpoint: no Modal headers; placeholder api_key (SDK needs non-empty).
+            client = AsyncOpenAI(base_url=base_url, api_key="EMPTY")
+        return OpenAIChatModel(
+            model or settings.modal_endpoint_model,
+            provider=OpenAIProvider(openai_client=client),
+            profile=_modal_profile,
+        )
+    raise ValueError(f"unsupported llm_provider: {provider!r}")
+
+
+def _modal_profile(inferred: ModelProfile) -> ModelProfile:
+    """Never send ``"strict": true`` on a tool definition to a Modal endpoint.
+
+    ``strict`` is OpenAI-cloud constrained decoding; pydantic-ai flags every strict-compatible
+    tool with it whenever the profile allows. The open-weights servers behind a Modal endpoint do
+    not implement it, and SGLang's gpt-oss (Harmony) tool-call parser silently DROPS the call when
+    the flag is present: the model stops on ``<|call|>`` but the reply carries no ``tool_calls``
+    and empty content, so the agent sees "nothing" and the run dies on output retries (every
+    benchmark trial of gpt-oss-120b scored 0). Layered on top of whatever profile the provider
+    inferred from the model id, so Qwen / other families keep their own settings.
+    """
+    return merge_profile(inferred, OpenAIModelProfile(openai_supports_strict_tool_definition=False))
+
+
+def _provider_api_key(provider: Literal["gemini", "openrouter"]) -> str:
+    """Read the provider API key from ``Settings`` — the single source of truth (ADR-0021).
+
+    Whichever store feeds the chain (``.env`` on a laptop, a Modal Secret in a container) hydrates
+    the ``SecretStr``; the key never comes from anywhere else, headless or interactively.
+    """
+    secret = settings.gemini_api_key if provider == "gemini" else settings.openrouter_api_key
+    return secret.get_secret_value()
+
+
+def _register_instructions(agent: Agent[AgentDeps, str | DeferredToolRequests]) -> None:
+    """Assemble the whole system prompt as ONE instructions block (ADR-0002 §8, ADR-0003 §6-7, ADR-0004 §1,§9).
+
+    Four parts (base, persona prompt, memory, Skills Catalog) join into a SINGLE instructions
+    source because ``OpenAIChatModel`` emits one ``system`` message per source and strict
+    OpenAI-compatible servers (vLLM behind Modal, some OpenRouter models) reject more than one.
+    It stays a dynamic per-run hook so persona/memory/skills are read fresh each turn with no
+    agent rebuild; empty parts are dropped.
+    """
+
+    @agent.instructions
+    def assemble_instructions(ctx: RunContext[AgentDeps]) -> str:
+        # Memory is a HARNESS artifact: it reads harness_home (the launch cwd), not cwd — in a
+        # sandbox mode cwd is the Workspace (ADR-0012 §6). Skills were removed in the APICookbook fork.
+        harness_home = ctx.deps.harness_home or ctx.deps.cwd
+        parts = (
+            _BASE_INSTRUCTIONS,
+            ctx.deps.active_agent.prompt,
+            assemble_memory(harness_home),
+        )
+        return "\n\n".join(part for part in parts if part)
