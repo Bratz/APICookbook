@@ -193,3 +193,44 @@ def test_big_schemas_are_compacted_and_long_lists_say_so(client):
     assert len(json.dumps(big)) <= code_agent.MAX_TOOL_CHARS + 500
     listed = code_agent.list_endpoints(ctx(), "TradeFinance")
     assert listed["shown"] == 80 and listed["total"] > 80
+
+
+# ---------------------------------------------------------------- milestone 2: the streaming route
+
+def sse_events(text):
+    events = []
+    for block in text.strip().split("\n\n"):
+        lines = dict(line.split(": ", 1) for line in block.splitlines() if ": " in line)
+        events.append((lines.get("event"), json.loads(lines.get("data", "{}"))))
+    return events
+
+
+def test_stream_sends_steps_then_the_answer(client, agent_on):
+    agent_on(
+        ModelResponse(parts=[ToolCallPart("search_endpoints", {"query": "block funds"})], model_name="claude-sonnet-5-5"),
+        ModelResponse(parts=[ToolCallPart("get_endpoint", {"name": CASH_BLOCK})], model_name="claude-sonnet-5-5"),
+        as_output("Plan", plan()),
+    )
+    r = client.post("/api/agent/stream", json={"message": "put a hold on funds"})
+    assert r.status_code == 200 and r.headers["content-type"].startswith("text/event-stream")
+    events = sse_events(r.text)
+    assert [e for e, _ in events] == ["step", "step", "answer"]
+    assert events[0][1] == {"tool": "search_endpoints", "query": "block funds"}
+    assert events[2][1]["answer"]["steps"][0]["endpoint"] == CASH_BLOCK and events[2][1]["usage"]["usd"] > 0
+    assert app.state.agent_guard.status()["answers_today"] == 1
+
+
+def test_stream_reports_errors_as_an_event_and_still_prices_them(client, agent_on):
+    agent_on(*[ModelResponse(parts=[ToolCallPart("search_endpoints", {})], model_name="claude-sonnet-5-5")] * 10)
+    events = sse_events(client.post("/api/agent/stream", json={"message": "x"}).text)
+    assert events[-1][0] == "error" and events[-1][1]["error"] == "agent_error"
+    assert app.state.agent_guard.status()["today_usd"] > 0
+
+
+def test_stream_checks_availability_and_caps_before_streaming(client, monkeypatch, tmp_path):
+    monkeypatch.setattr(code_agent, "available", lambda: False)
+    assert client.post("/api/agent/stream", json={"message": "x"}).status_code == 503
+    monkeypatch.setattr(code_agent, "available", lambda: True)
+    monkeypatch.setattr(app.state, "agent_guard", AgentGuard(tmp_path, daily_usd=0))
+    r = client.post("/api/agent/stream", json={"message": "x"})
+    assert r.status_code == 429 and r.json()["error"] == "daily_cap"

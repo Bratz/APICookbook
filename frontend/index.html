@@ -20,6 +20,8 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-javascript.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-json.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-bash.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-clike.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-java.min.js"></script>
     
     <!-- Marked.js for Markdown parsing -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
@@ -270,7 +272,7 @@
         .tab-content { flex: 1; min-height: 0; overflow: auto; }
 
         /* Tabs and the request-type toggle: keys on a sunken tray, the chosen key pressed */
-        .tabs-container, .request-type-toggle {
+        .tabs-container, .request-type-toggle, .lang-tabs {
             display: flex;
             align-self: flex-start;
             gap: var(--space-2xs);
@@ -281,7 +283,7 @@
             border: var(--rule-hair) solid var(--color-rule);
             border-radius: var(--radius-card);
         }
-        .tab, .request-type-btn {
+        .tab, .request-type-btn, .lang-tab {
             display: inline-flex;
             align-items: center;
             gap: var(--space-xs);
@@ -300,15 +302,15 @@
             cursor: pointer;
             transition: transform var(--dur-micro) var(--ease-out), box-shadow var(--dur-micro) var(--ease-out), color var(--dur-micro) var(--ease-out);
         }
-        .tab:hover, .request-type-btn:hover { color: var(--color-ink); transform: translateY(-1px); }
-        .tab:active, .request-type-btn:active,
-        .tab.active, .request-type-btn.active {
+        .tab:hover, .request-type-btn:hover, .lang-tab:hover { color: var(--color-ink); transform: translateY(-1px); }
+        .tab:active, .request-type-btn:active, .lang-tab:active,
+        .tab.active, .request-type-btn.active, .lang-tab.active {
             transform: translateY(2px);
             box-shadow: var(--shadow-key-press);
             background: var(--color-paper-2);
             color: var(--color-accent);
         }
-        .request-type-btn { height: 28px; font-size: var(--text-xs); }
+        .request-type-btn, .lang-tab { height: 28px; font-size: var(--text-xs); }
 
         /* The one container recipe: hairline, paper, a cut corner where supported */
         .chat-container, .playground-section, .card, .recipe-grid {
@@ -526,6 +528,24 @@
         }
         .basics dt { color: var(--color-graphite-muted); }
         .basics dd { margin: 0; overflow-wrap: anywhere; }
+
+        /* The code-writing agent's answers (milestone 2) */
+        .message.agent { max-width: min(100%, 110ch); }
+        .agent-steps { list-style: none; margin: 0 0 var(--space-sm); padding: 0; display: grid; gap: var(--space-3xs); font-size: var(--text-sm); color: var(--color-muted); }
+        .agent-steps .loading-spinner { margin-right: var(--space-2xs); }
+        .agent-steps code { background: none; padding: 0; color: var(--color-ink-2); }
+        .plan-steps { margin: var(--space-xs) 0 var(--space-md); padding-left: var(--space-lg); display: grid; gap: var(--space-sm); }
+        .plan-step-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-xs); }
+        .plan-step-name { font-family: var(--font-outlier); font-size: var(--text-xs); color: var(--color-muted); overflow-wrap: anywhere; }
+        .plan-step .btn { margin-top: var(--space-2xs); }
+        .lang-tabs { margin-bottom: var(--space-xs); }
+        .agent-code { min-height: 3lh; }
+        .agent-notes { margin-top: var(--space-sm); font-size: var(--text-sm); }
+        .agent-notes ul { margin: var(--space-2xs) 0 0; padding-left: var(--space-lg); }
+        .agent-meta { margin-top: var(--space-xs); font-size: var(--text-xs); color: var(--color-muted); }
+        .choice-row { display: flex; flex-wrap: wrap; gap: var(--space-xs); margin-top: var(--space-xs); }
+        .lang-select { width: auto; flex: none; height: var(--control-h); }
+        .composer-note { margin-top: var(--space-2xs); font-size: var(--text-xs); color: var(--color-muted); }
 
         .knowledge-search-bar {
             padding: var(--space-xs) var(--space-md);
@@ -856,10 +876,6 @@
                     <i data-lucide="code-2" style="width: 16px; height: 16px;" aria-hidden="true"></i>
                     <span>Python Example</span>
                 </button>
-                <button type="button" class="sidebar-item" onclick="searchKnowledgeBase()">
-                    <i data-lucide="search" style="width: 16px; height: 16px;" aria-hidden="true"></i>
-                    <span>Search Knowledge</span>
-                </button>
             </details>
 
             <details class="sidebar-section" open>
@@ -915,7 +931,7 @@
                                 <p><strong>Developer Mode Active!</strong> Quick tips:</p>
                                 <ul class="tips">
                                     <li><kbd>Ctrl+E</kbd> Execute in playground</li>
-                                    <li><kbd>Ctrl+K</kbd> Search knowledge base</li>
+                                    <li><kbd>Ctrl+K</kbd> Focus the question box</li>
                                     <li><kbd>Ctrl+Shift+D</kbd> Toggle dev console</li>
                                     <li>Use <code>call_api</code> tool for all API calls</li>
                                     <li>Use <code>get_api_schema</code> to discover endpoints</li>
@@ -932,24 +948,6 @@
                         </div>
                     </div>
                     
-                    <!-- Knowledge Base Search Bar -->
-                    <div class="knowledge-search-bar">
-                        <div class="flex items-center gap-2">
-                            <i data-lucide="search" class="text-muted" style="width: 16px; height: 16px;" aria-hidden="true"></i>
-                            <input 
-                                type="text" 
-                                id="knowledgeSearchInput" 
-                                class="form-input" 
-                                placeholder="Quick search knowledge base… (Ctrl+K)"
-                                aria-label="Search the knowledge base"
-                                onkeydown="handleKnowledgeSearchKeydown(event)"
-                            >
-                            <button type="button" class="btn btn-secondary btn-sm" onclick="performKnowledgeSearch()">
-                                Search KB
-                            </button>
-                        </div>
-                    </div>
-                    
                     <div class="chat-input-container">
                         <div class="chat-input-wrapper">
                             <textarea 
@@ -961,11 +959,19 @@
                                 onkeydown="handleInputKeydown(event)"
                                 oninput="autoResizeTextarea(this)"
                             ></textarea>
+                            <select id="agentLanguage" class="form-input form-select lang-select" aria-label="Write code in" hidden
+                                    onchange="setAgentLanguage(this.value)">
+                                <option value="curl">curl</option>
+                                <option value="python">Python</option>
+                                <option value="javascript">JavaScript</option>
+                                <option value="java">Java</option>
+                            </select>
                             <button class="btn btn-primary" id="sendButton" onclick="sendMessage()">
                                 <i data-lucide="send" style="width: 16px; height: 16px;" aria-hidden="true"></i>
                                 Send
                             </button>
                         </div>
+                        <p class="composer-note" id="agentNote" hidden>The agent plans BaNCS calls and writes code; it never runs anything. Don’t paste real customer data.</p>
                     </div>
                 </div>
             </div>
@@ -1220,6 +1226,9 @@
                 
                 // Initialize developer features
                 initDeveloperFeatures();
+
+                // Is the code-writing agent switched on here?
+                checkAgent();
 
                 // Code editor for the Playground body (desktop only)
                 setupBodyEditor();
@@ -1519,7 +1528,7 @@
             const shortcuts = `
                 <strong>Keyboard Shortcuts:</strong><br><br>
                 <kbd>Ctrl+E</kbd> Execute in playground<br>
-                <kbd>Ctrl+K</kbd> Search knowledge base<br>
+                <kbd>Ctrl+K</kbd> Focus the question box<br>
                 <kbd>Ctrl+Shift+D</kbd> Toggle developer console<br>
                 <kbd>Enter</kbd> Send message (in chat)<br>
                 <kbd>Shift+Enter</kbd> New line (in chat)
@@ -1859,42 +1868,19 @@
            });
        }
 
-       // Handle knowledge search input
-       function handleKnowledgeSearchKeydown(event) {
-           if (event.key === 'Enter') {
-               event.preventDefault();
-               performKnowledgeSearch();
-           }
-       }
-
-       function performKnowledgeSearch() {
-           const input = document.getElementById('knowledgeSearchInput');
-           const query = input.value.trim();
-           
-           if (query) {
-               searchKnowledgeBase(query);
-               input.value = '';
-           }
-       }
-
        // Setup keyboard shortcuts
        function setupKeyboardShortcuts() {
            document.addEventListener('keydown', function(event) {
                // Ctrl+K or Cmd+K for knowledge search
                if ((event.ctrlKey || event.metaKey) && event.key === 'k') {
                    event.preventDefault();
-                   const input = document.getElementById('knowledgeSearchInput');
-                   if (input) {
-                       input.focus();
-                   } else {
-                       searchKnowledgeBase();
-                   }
+                   document.getElementById('messageInput').focus();
                }
            });
        }
        
        // Send message
-       async function sendMessage() {
+       async function sendMessage(options = {}) {
            const input = document.getElementById('messageInput');
            const message = input.value.trim();
            
@@ -1904,6 +1890,18 @@
            
            input.value = '';
            autoResizeTextarea(input);
+
+           // Typed questions go to the code-writing agent when it is on; it returns false when it is
+           // off, capped or failing, and the search chat below answers instead.
+           if (state.agentAvailable && !options.search) {
+               const sendButton = document.getElementById('sendButton');
+               sendButton.disabled = true;
+               try {
+                   if (await askAgent(message)) return;
+               } finally {
+                   sendButton.disabled = false;
+               }
+           }
            
            // Check if this is a knowledge base query
            const knowledgeKeywords = ['search knowledge', 'find in knowledge', 'knowledge base', 'search for apis'];
@@ -1980,7 +1978,7 @@
        function sendQuickMessage(message) {
            const input = document.getElementById('messageInput');
            input.value = message;
-           sendMessage();
+           sendMessage({ search: true });
        }
        
        // Add message to chat
@@ -2747,12 +2745,12 @@
            return escapeHtml(JSON.stringify(String(value ?? '')));
        }
        
-       function createCodeBlockHTML(code, language = 'json') {
+       function createCodeBlockHTML(code, language = 'json', label = null) {
            const id = 'code-' + Date.now();
            return `
                <div class="code-block">
                    <div class="code-header">
-                       <span>${language.toUpperCase()}</span>
+                       <span>${escapeHtml((label || language).toUpperCase())}</span>
                        <button class="copy-button" onclick="copyCode('${id}')">Copy</button>
                    </div>
                    <pre><code id="${id}" class="language-${language}">${escapeHtml(code)}</code></pre>
@@ -2952,6 +2950,208 @@
                setSchema([]);
                status.textContent = 'No body schema found for this URL; only JSON syntax is checked.';
                status.classList.remove('ok');
+           }
+       }
+
+       // ---------- Code-writing agent (docs/coding-agent-plan.md, milestone 2) ----------
+       const AGENT_LANGS = { curl: { label: 'curl', prism: 'bash' }, python: { label: 'Python', prism: 'python' },
+                             javascript: { label: 'JavaScript', prism: 'javascript' }, java: { label: 'Java', prism: 'java' } };
+       state.agentAvailable = false;
+       state.agentAnswers = [];
+
+       function getAgentLanguage() {
+           try { const v = localStorage.getItem('agentLanguage'); if (AGENT_LANGS[v]) return v; } catch (e) {}
+           return 'curl';
+       }
+
+       function setAgentLanguage(language) {
+           try { localStorage.setItem('agentLanguage', language); } catch (e) {}
+       }
+
+       async function checkAgent() {
+           try {
+               const r = await fetch('/api/agent/status');
+               state.agentAvailable = r.ok && (await r.json()).available === true;
+           } catch (e) {
+               state.agentAvailable = false;
+           }
+           const select = document.getElementById('agentLanguage');
+           select.value = getAgentLanguage();
+           select.hidden = !state.agentAvailable;
+           document.getElementById('agentNote').hidden = !state.agentAvailable;
+           document.getElementById('messageInput').placeholder = state.agentAvailable
+               ? 'Describe a task, e.g. "a customer moved house: update their address"…'
+               : 'Ask about APIs, authentication, code examples…';
+           logToDevConsole(state.agentAvailable ? 'Code agent on' : 'Code agent off: chat uses search', 'info');
+       }
+
+       function describeStep(step) {
+           if (step.tool === 'search_endpoints') return `Searched <code>${escapeHtml(step.query)}</code>`;
+           if (step.tool === 'get_endpoint') return `Read <code>${escapeHtml(step.endpoint)}</code>`;
+           if (step.tool === 'get_body_schema') return `Read the body schema of <code>${escapeHtml(step.endpoint)}</code>`;
+           if (step.tool === 'list_endpoints') return `Browsed <code>${escapeHtml(step.area)}</code>`;
+           return escapeHtml(step.tool);
+       }
+
+       // Ask the agent; true when it answered (or explained an error), false to let the search chat answer.
+       async function askAgent(message) {
+           const language = getAgentLanguage();
+           const messagesContainer = document.getElementById('chatMessages');
+           const el = document.createElement('div');
+           el.className = 'message assistant agent';
+           el.innerHTML = `<div class="message-label">Code agent</div>
+               <div class="message-content"><ul class="agent-steps" aria-live="polite">
+               <li class="agent-working"><span class="loading-spinner"></span>Working on it…</li></ul><div class="agent-body"></div></div>`;
+           messagesContainer.appendChild(el);
+           messagesContainer.scrollTop = messagesContainer.scrollHeight;
+           const steps = el.querySelector('.agent-steps');
+           const body = el.querySelector('.agent-body');
+           const started = performance.now();
+
+           let response;
+           try {
+               response = await fetch('/api/agent/stream', {
+                   method: 'POST', headers: { 'Content-Type': 'application/json' },
+                   body: JSON.stringify({ message, language })
+               });
+           } catch (e) {
+               el.remove();
+               return false;
+           }
+           if (!response.ok) {
+               el.remove();
+               if (response.status === 503) { state.agentAvailable = false; checkAgent(); }
+               if (response.status === 429) {
+                   const data = await response.json().catch(() => ({}));
+                   addMessage((data.message || 'The agent is busy.') + ' Here is what search finds instead:', 'assistant');
+               }
+               return false;
+           }
+
+           const reader = response.body.getReader();
+           const decoder = new TextDecoder();
+           let buffer = '', answered = false;
+           while (true) {
+               const { value, done } = await reader.read();
+               if (done) break;
+               buffer += decoder.decode(value, { stream: true });
+               let cut;
+               while ((cut = buffer.indexOf('\n\n')) >= 0) {
+                   const block = buffer.slice(0, cut);
+                   buffer = buffer.slice(cut + 2);
+                   const event = (block.match(/^event: (.*)$/m) || [])[1];
+                   const raw = (block.match(/^data: (.*)$/m) || [])[1];
+                   if (!event || !raw) continue;
+                   const data = JSON.parse(raw);
+                   if (event === 'step') {
+                       const li = document.createElement('li');
+                       li.innerHTML = describeStep(data);
+                       steps.insertBefore(li, steps.querySelector('.agent-working'));
+                   } else if (event === 'answer') {
+                       answered = true;
+                       renderAgentAnswer(body, data, message, language, performance.now() - started);
+                   } else if (event === 'error') {
+                       answered = true;
+                       body.innerHTML = `<p>${escapeHtml(data.message)}</p>`;
+                   }
+                   messagesContainer.scrollTop = messagesContainer.scrollHeight;
+               }
+           }
+           const working = steps.querySelector('.agent-working');
+           if (working) working.remove();
+           if (!answered) body.innerHTML = '<p>The answer was cut off. Please try again.</p>';
+           return true;
+       }
+
+       function renderAgentAnswer(body, data, question, language, ms) {
+           const answer = data.answer;
+           const id = state.agentAnswers.length;
+           state.agentAnswers.push({ question, answer, code: {} });
+           if (answer.kind === 'clarification') {
+               body.innerHTML = `<p>${escapeHtml(answer.question)}</p><div class="choice-row">${
+                   answer.choices.map((c, i) => `<button type="button" class="btn btn-secondary btn-sm" onclick="answerClarification(${id}, ${i}, this)">${escapeHtml(c)}</button>`).join('')
+               }</div>`;
+               return;
+           }
+           state.agentAnswers[id].code[language] = answer.code;
+           const stepsHtml = answer.steps.map((s, i) => `
+               <li class="plan-step">
+                   <div class="plan-step-head"><span class="method-badge method-${escapeHtml(s.method.toLowerCase())}">${escapeHtml(s.method)}</span><code>${escapeHtml(s.path)}</code></div>
+                   <div class="plan-step-name">${escapeHtml(s.endpoint)}</div>
+                   <p>${escapeHtml(s.purpose)}</p>
+                   ${s.uses_from_previous ? `<p class="text-muted text-small">Uses ${escapeHtml(s.uses_from_previous)}</p>` : ''}
+                   <button type="button" class="btn btn-secondary btn-sm" onclick="openStepInPlayground(${id}, ${i})">Open in Playground</button>
+               </li>`).join('');
+           const tabs = Object.entries(AGENT_LANGS).map(([key, l]) =>
+               `<button type="button" class="lang-tab${key === language ? ' active' : ''}" onclick="showAgentCode(${id}, '${key}', this)">${l.label}</button>`).join('');
+           const assumptions = (answer.assumptions || []).length
+               ? `<p><strong>Assumptions</strong></p><ul>${answer.assumptions.map(a => `<li>${escapeHtml(a)}</li>`).join('')}</ul>` : '';
+           const notes = answer.notes ? `<p>${escapeHtml(answer.notes)}</p>` : '';
+           const cost = data.usage && typeof data.usage.usd === 'number' ? ` for $${data.usage.usd.toFixed(3)}` : '';
+           body.innerHTML = `
+               <ol class="plan-steps">${stepsHtml}</ol>
+               <div class="lang-tabs" role="group" aria-label="Code language">${tabs}</div>
+               <div class="agent-code" id="agentCode${id}"></div>
+               ${assumptions || notes ? `<div class="agent-notes">${notes}${assumptions}</div>` : ''}
+               <p class="agent-meta">Answered in ${Math.round(ms / 1000)} s${cost}. Nothing was run; check the code before using it.</p>`;
+           paintAgentCode(id, language);
+       }
+
+       function paintAgentCode(id, language) {
+           const box = document.getElementById(`agentCode${id}`);
+           const l = AGENT_LANGS[language];
+           box.innerHTML = createCodeBlockHTML(state.agentAnswers[id].code[language], l.prism, l.label);
+           if (typeof Prism !== 'undefined') Prism.highlightAllUnder(box);
+       }
+
+       async function showAgentCode(id, language, button) {
+           button.parentElement.querySelectorAll('.lang-tab').forEach(b => b.classList.toggle('active', b === button));
+           setAgentLanguage(language);
+           document.getElementById('agentLanguage').value = language;
+           const entry = state.agentAnswers[id];
+           if (entry.code[language]) return paintAgentCode(id, language);
+           const box = document.getElementById(`agentCode${id}`);
+           box.innerHTML = `<p class="text-muted text-small"><span class="loading-spinner"></span>Writing it in ${AGENT_LANGS[language].label}…</p>`;
+           try {
+               const r = await fetch('/api/agent/code', {
+                   method: 'POST', headers: { 'Content-Type': 'application/json' },
+                   body: JSON.stringify({ plan: entry.answer, language })
+               });
+               const data = await r.json();
+               if (!r.ok) throw new Error(data.message || data.detail || `HTTP ${r.status}`);
+               entry.code[language] = data.code;
+               paintAgentCode(id, language);
+           } catch (e) {
+               box.innerHTML = `<p class="text-small">${escapeHtml(e.message)}</p>`;
+           }
+       }
+
+       function openStepInPlayground(id, index) {
+           const step = state.agentAnswers[id].answer.steps[index];
+           switchTab('playground', document.querySelector('.tab:nth-child(3)'));
+           setRequestType('api', document.querySelector('.request-type-btn'));
+           clearPlayground();
+           document.getElementById('playgroundMethod').value = step.method;
+           const url = document.getElementById('playgroundUrl');
+           url.value = '/Core' + step.path;
+           url.dispatchEvent(new Event('input'));
+           let bodyText = step.request_body_json || '';
+           try { bodyText = bodyText ? JSON.stringify(JSON.parse(bodyText), null, 2) : ''; } catch (e) {}
+           document.getElementById('playgroundBody').value = bodyText;
+           showNotification(/\{[^}]+\}/.test(step.path)
+               ? 'Fill in the {placeholders} in the URL, then press Execute.'
+               : 'Check the request, then press Execute.', 'info');
+       }
+
+       async function answerClarification(id, index, button) {
+           const entry = state.agentAnswers[id];
+           const choice = entry.answer.choices[index];
+           button.parentElement.querySelectorAll('button').forEach(b => { b.disabled = true; });
+           addMessage(choice, 'user');
+           const followUp = `${entry.question}\n\nAnswer to your question "${entry.answer.question}": ${choice}`;
+           if (!(await askAgent(followUp))) {
+               document.getElementById('messageInput').value = entry.question;
+               sendMessage({ search: true });
            }
        }
 

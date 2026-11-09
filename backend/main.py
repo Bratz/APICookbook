@@ -6,7 +6,7 @@ BERT/PyTorch are now completely optional
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, UploadFile, File, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, HTMLResponse
+from fastapi.responses import FileResponse, JSONResponse, HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 import asyncio
@@ -1799,6 +1799,65 @@ async def agent_chat(request: Request):
         return result, {"answer": result.output.model_dump(), "trace": deps.trace}
 
     return await _guarded_agent_run(request, "chat", run)
+
+
+def _sse(event: str, data: dict) -> str:
+    return f"event: {event}\ndata: {json.dumps(data)}\n\n"
+
+
+@app.post("/api/agent/stream")
+async def agent_stream(request: Request):
+    """The chat's route: the same answer as /api/agent/chat, sent as server-sent events.
+
+    Events: `step` per tool call as it finishes, then `answer` (with usage) or `error`. Availability,
+    caps and the rate limit are checked first and answered as plain JSON, like /api/agent/chat.
+    """
+    body = await request.json()
+    question = str(body.get("message", "")).strip()[:2000]
+    language = body.get("language", "curl")
+    if not question:
+        raise HTTPException(status_code=400, detail="message is required")
+    if language not in code_agent.LANGUAGES:
+        raise HTTPException(status_code=400, detail=f"language must be one of {', '.join(code_agent.LANGUAGES)}")
+    if not code_agent.available():
+        return JSONResponse(status_code=503, content={"error": "agent_unavailable",
+                            "message": "The code-writing agent isn't configured on this server."})
+    guard = app.state.agent_guard
+    blocked = guard.check(_client_ip(request))
+    if blocked:
+        return JSONResponse(status_code=429, content={"error": blocked[0], "message": blocked[1]})
+
+    async def events():
+        started, outcome, spent, tools, tokens, models = time.time(), "disconnected", 0.0, 0, {}, []
+        with capture_run_messages() as messages:
+            try:
+                async for item in code_agent.answer_stream(question, language, app.state.kb, app.state.rag_engine):
+                    if item["type"] == "step":
+                        yield _sse("step", {k: v for k, v in item.items() if k != "type"})
+                        continue
+                    result = item["result"]
+                    usage = _agent_usage(result, time.time() - started)
+                    outcome, spent, tools = "ok", usage["usd"], usage["tool_calls"]
+                    tokens = {k: usage[k] for k in ("input_tokens", "output_tokens", "cache_read_tokens")}
+                    models = sorted({m.model_name for m in result.all_messages() if getattr(m, "model_name", None)})
+                    yield _sse("answer", {"answer": result.output.model_dump(), "usage": usage})
+            except UsageLimitExceeded:
+                outcome, spent = "too_many_steps", code_agent.usd(messages)
+                yield _sse("error", {"error": "too_many_steps",
+                                     "message": "This needed too many steps. Try splitting it into smaller tasks."})
+            except Exception as e:  # refusals after fallback, API errors, invalid output after retries
+                logger.error(f"Agent stream failed: {type(e).__name__}: {e}")
+                outcome, spent = type(e).__name__, code_agent.usd(messages)
+                yield _sse("error", {"error": "agent_error",
+                                     "message": "The agent couldn't answer that. Try rephrasing the task."})
+            finally:  # also runs when the browser disconnects mid-answer: what was spent still counts
+                if outcome == "disconnected":
+                    spent = code_agent.usd(messages)
+                guard.record(kind="stream", usd=spent, outcome=outcome, seconds=time.time() - started,
+                             tools=tools, tokens=tokens, models=models)
+
+    return StreamingResponse(events(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
 @app.post("/api/agent/code")

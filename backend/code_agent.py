@@ -86,7 +86,7 @@ INSTRUCTIONS = f"""You write integration code for the TCS BaNCS banking APIs. Yo
 How to work:
 - Search with search_endpoints, using short task phrases ("cancel cash block", "create customer"). Search once per sub-task; do not repeat a query.
 - Use only endpoints a tool returned. Call get_endpoint for each one you use, and get_body_schema before writing any request body.
-- If the request maps to clearly different call sequences (e.g. "open an account": savings, term deposit or loan), return a Clarification instead of a plan.
+- Decide whether the request is ambiguous before exploring: if it could mean clearly different products or call sequences (e.g. "open an account": savings, term deposit or loan), return a Clarification right away, after at most one search. Never research every option to avoid asking.
 - Otherwise return a Plan: the steps in order, how values flow between them, and code for every step in the requested language.
 
 BaNCS conventions:
@@ -307,6 +307,19 @@ async def answer(question: str, language: str, kb, rag=None):
     result = await agent.run(f"Language: {language}\n\nTask: {question}", deps=deps, model=build_model(),
                              model_settings=MODEL_SETTINGS, usage_limits=LIMITS)
     return result, deps
+
+
+async def answer_stream(question: str, language: str, kb, rag=None):
+    """Like answer(), but yields each tool step as it finishes, then {"type": "done", "result", "deps"}."""
+    deps = AgentDeps(kb=kb, rag=rag, language=language)
+    async with agent.iter(f"Language: {language}\n\nTask: {question}", deps=deps, model=build_model(),
+                          model_settings=MODEL_SETTINGS, usage_limits=LIMITS) as run:
+        sent = 0
+        async for _node in run:
+            while sent < len(deps.trace):
+                yield {"type": "step", **deps.trace[sent]}
+                sent += 1
+    yield {"type": "done", "result": run.result, "deps": deps}
 
 
 async def rewrite(plan: Plan, language: str):

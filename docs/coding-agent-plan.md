@@ -108,7 +108,19 @@ Deployed without a key, the agent answers 503.
 
 Exit: 5 hand-picked tasks give correct steps and compiling code in each language. Measured cost per answer and medium vs high effort are reported. Production gets the key only when this passes.
 
-**2. Streaming chat UI.** The chat renders steps, the plan or the clarifying question, a language picker, and Copy and "Open in Playground". The Search KB bar and sidebar item are removed. The BERT chat answers when the agent is down or capped, and the notice about stored conversations goes under the chat. SSE is checked through both Vercel and Caddy.
+**2. Streaming chat UI. Done locally (2026-11-06).** `POST /api/agent/stream` sends `step`, `answer` and `error` events. Checked in headless Chrome against the real model:
+- steps stream before the answer;
+- the plan renders, with code tabs written on demand and the language remembered;
+- "Open in Playground" fills method, URL and body;
+- "Open an account" asks a question, and picking "Savings account" gives the right plan.
+
+Sidebar quick actions stay on the search chat.
+
+One fix from this run: the prompt now decides on ambiguity before exploring. Previously "Open an account" researched every account type and hit the 12-request limit; now it asks after one search.
+
+Still to check: SSE through Vercel, once the key is on the VM.
+
+**Milestone 2 as planned:** The chat renders steps, the plan or the clarifying question, a language picker, and Copy and "Open in Playground". The Search KB bar and sidebar item are removed. The BERT chat answers when the agent is down or capped, and the notice about stored conversations goes under the chat. SSE is checked through both Vercel and Caddy.
 
 **3. Sessions.** The JSONL session log, resume by session id, history capped at 10 turns, and a daily purge of files older than 30 days.
 
