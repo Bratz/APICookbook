@@ -1,5 +1,5 @@
 # ============================================================================
-# Read-only check of the Build & run sandbox host (instance-20261025-1657, decode fork F1).
+# Read-only check of the Build & run sandbox host (and, from the main VM, the runner) (instance-20261025-1657, decode fork F1).
 # Run it by hand from the Actions tab. It changes nothing on any machine: it only prints
 # what F1's setup has to work with.
 #
@@ -37,6 +37,19 @@ jobs:
             section "ufw";       sudo -n ufw status 2>/dev/null || echo "(ufw not available)"
             section "net: main VM private 10.0.0.49:22";   timeout 4 bash -c '</dev/tcp/10.0.0.49/22' && echo open || echo closed
             section "net: main VM private 10.0.0.49:443";  timeout 4 bash -c '</dev/tcp/10.0.0.49/443' && echo open || echo closed
+            section "net: BaNCS proxy port 10.0.0.49:7601 (F2)"
+            timeout 4 bash -c '</dev/tcp/10.0.0.49/7601' 2>/dev/null; rc=$?
+            case $rc in 0) echo "open (listening)";; 124) echo "dropped (OCI security list?)";; *) echo "reachable (refused: nothing listens yet)";; esac
             section "net: internet (api.anthropic.com)";   curl -s -o /dev/null -w "%{http_code}\n" --max-time 8 https://api.anthropic.com/ || echo unreachable
             section "net: BaNCS demo host";                curl -s -o /dev/null -w "%{http_code}\n" --max-time 8 https://demoapps.tcsbancs.com/ || echo unreachable
             section "listening ports"; ss -tlnp 2>/dev/null | head -15
+
+      - name: From the main VM, the runner's health (read-only)
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VM_HOST }}
+          username: ${{ secrets.VM_USER }}
+          key: ${{ secrets.VM_SSH_KEY }}
+          script: |
+            echo "== net: main VM -> runner 10.0.0.223:7700"
+            curl -s --max-time 6 http://10.0.0.223:7700/health || echo "unreachable (OCI security list, or the runner is down)"
