@@ -1,6 +1,6 @@
 # Forking decode into APICookbook: decisions and plan
 
-Status: F0 and F1 done (2026-11-09), F2 next · Sandbox changed from Modal to a dedicated OCI instance on 2026-11-09 · Decided with the owner in an interview on 2026-11-09 · Upstream: [decodingai-magazine/building-a-coding-agent-from-scratch-course](https://github.com/decodingai-magazine/building-a-coding-agent-from-scratch-course) ("decode", Apache-2.0)
+Status: F0, F1 and F2a done (2026-11-09), F2b next · Sandbox changed from Modal to a dedicated OCI instance on 2026-11-09 · Decided with the owner in an interview on 2026-11-09 · Upstream: [decodingai-magazine/building-a-coding-agent-from-scratch-course](https://github.com/decodingai-magazine/building-a-coding-agent-from-scratch-course) ("decode", Apache-2.0)
 
 ## Intent
 
@@ -116,6 +116,11 @@ Still open, both outside the code:
 - decode gets three read-only tools (`search_endpoints`, `get_endpoint`, `get_body_schema`) and a BaNCS part of its prompt, both active only when the run has `BANCS_PROXY_URL`. The runner passes that on, accepting only the cookbook proxy's prefix.
 - Operator-only routes `/api/build/runs` (start, status with held writes and bank calls, approve or reject, stop) behind `RUNNER_TOKEN` until F3 and F4.
 - *Build smoke* (manual) drives one task through all of it; by default it rejects every write, so no demo data changes.
+
+*F2a result (2026-11-09):* deployed. Inside a worker the proxy is the only open destination. *Build smoke*'s default task ("look up a customer, then try updating a phone number", writes rejected):
+- 15 GETs reached the demo bank through the proxy: 4 returned 200, and 11 returned 400 for "No Data found" on test customers.
+- The agent's `PUT /customerManagement/customer/contact` for customer 100698 was **held, shown and rejected**. It never reached the bank.
+- The agent wrote and ran `amend_phone.py`, explained the rejection without retrying, and finished in 12 requests for **$0.18**, about 9× today's agent. Measuring cost is part of F4 and F5.
 
 **F2b. Live events and visitor routes:** per-step events from `decode run` streamed to cookbook-api; the visitor-facing `/api/build/stream`, `/approve`, `/steer`.
 
