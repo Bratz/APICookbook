@@ -1,6 +1,6 @@
 # Forking decode into APICookbook: decisions and plan
 
-Status: F0–F5 done; F5's replace rule met (2026-11-09), F6 next · Sandbox changed from Modal to a dedicated OCI instance on 2026-11-09 · Decided with the owner in an interview on 2026-11-09 · Upstream: [decodingai-magazine/building-a-coding-agent-from-scratch-course](https://github.com/decodingai-magazine/building-a-coding-agent-from-scratch-course) ("decode", Apache-2.0)
+Status: F0–F6 done (2026-11-09): Build & run is the site's agent · Sandbox changed from Modal to a dedicated OCI instance on 2026-11-09 · Decided with the owner in an interview on 2026-11-09 · Upstream: [decodingai-magazine/building-a-coding-agent-from-scratch-course](https://github.com/decodingai-magazine/building-a-coding-agent-from-scratch-course) ("decode", Apache-2.0)
 
 ## Intent
 
@@ -196,11 +196,21 @@ Still open, both outside the code:
 - **Fixed:** the active tab didn't follow programmatic switches.
 - **Still open:** a full endpoint browser, real multi-step recipes, and a Connect via MCP panel (needs a real MCP endpoint).
 
-**F6. Switch over.**
-- The chat's default goes to Build & run.
-- Remove `backend/code_agent.py`, `/api/agent/chat|code|stream` and their tests.
-- Keep the guard and ledger code, which Build & run reuses.
-- Milestones 3 and 4 of `docs/coding-agent-plan.md` (sessions, evals) are superseded by decode's session log and F5.
+**F6. Switch over** (done 2026-11-09; the owner chose to retire the code agent rather than keep it as a second mode):
+- **Build & run is the chat's one agent.** The composer has no mode switch or language picker. When Build & run is off on a server (no runner token), typed questions fall back to the search chat, and the note says so.
+- **Removed:**
+  - `backend/code_agent.py`, the `/api/agent/chat|stream|code|status` routes, and their guard and `AGENT_*` settings;
+  - `tests/test_agent.py`;
+  - the code agent's UI (plan rendering, per-language code, clarifications);
+  - the Plan & code starter card and "Write code for it";
+  - `pydantic-ai` and `anthropic` from the cookbook image.
+- **The Anthropic key is no longer sent to the main VM;** only the sandbox host calls Claude.
+- **Kept:**
+  - the Swagger lookups, now `backend/api_lookup.py`, used by the proxy's `/_kb/*`, the endpoint cards and the eval (their tests moved to `tests/test_api_lookup.py`);
+  - `agent_guard.py` for Build & run's caps;
+  - the search chat as the fallback.
+- **The eval** (`backend/agent_eval.py`, *Agent eval*) now scores Build & run alone and reads the spec directly instead of starting the app.
+- `docs/coding-agent-plan.md` milestones 3 and 4 (sessions, evals) are superseded by decode's session log and F5.
 
 ## Risks
 

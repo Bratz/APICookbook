@@ -11,8 +11,8 @@ from fastapi.testclient import TestClient
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 os.chdir(PROJECT_ROOT)
 sys.path.insert(0, PROJECT_ROOT)
-# The agent's usage ledger goes to a throwaway folder, never into the repo.
-os.environ["AGENT_DATA_DIR"] = tempfile.mkdtemp(prefix="agent-ledger-")
+# Build & run's usage ledger goes to a throwaway folder, never into the repo.
+os.environ["BUILD_DATA_DIR"] = tempfile.mkdtemp(prefix="build-ledger-")
 
 from backend.main import app  # noqa: E402
 

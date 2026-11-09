@@ -1,4 +1,4 @@
-"""Spend caps and rate limit for the code-writing agent (docs/coding-agent-plan.md: built in milestone 1).
+"""Spend caps and rate limit, used by Build & run (backend/build_routes.py; first built for the retired code agent).
 
 A ledger of every agent run (one JSON line each: time, cost, tokens, tools, outcome; no IP, no text)
 drives daily and monthly USD caps. The per-IP rate limit lives in memory.

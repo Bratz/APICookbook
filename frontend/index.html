@@ -272,7 +272,7 @@
         .tab-content { flex: 1; min-height: 0; overflow: auto; }
 
         /* Tabs and the request-type toggle: keys on a sunken tray, the chosen key pressed */
-        .tabs-container, .request-type-toggle, .lang-tabs {
+        .tabs-container, .request-type-toggle {
             display: flex;
             align-self: flex-start;
             gap: var(--space-2xs);
@@ -283,7 +283,7 @@
             border: var(--rule-hair) solid var(--color-rule);
             border-radius: var(--radius-card);
         }
-        .tab, .request-type-btn, .lang-tab {
+        .tab, .request-type-btn {
             display: inline-flex;
             align-items: center;
             gap: var(--space-xs);
@@ -302,15 +302,15 @@
             cursor: pointer;
             transition: transform var(--dur-micro) var(--ease-out), box-shadow var(--dur-micro) var(--ease-out), color var(--dur-micro) var(--ease-out);
         }
-        .tab:hover, .request-type-btn:hover, .lang-tab:hover { color: var(--color-ink); transform: translateY(-1px); }
-        .tab:active, .request-type-btn:active, .lang-tab:active,
-        .tab.active, .request-type-btn.active, .lang-tab.active {
+        .tab:hover, .request-type-btn:hover { color: var(--color-ink); transform: translateY(-1px); }
+        .tab:active, .request-type-btn:active,
+        .tab.active, .request-type-btn.active {
             transform: translateY(2px);
             box-shadow: var(--shadow-key-press);
             background: var(--color-paper-2);
             color: var(--color-accent);
         }
-        .request-type-btn, .lang-tab { height: 28px; font-size: var(--text-xs); }
+        .request-type-btn { height: 28px; font-size: var(--text-xs); }
 
         /* The one container recipe: hairline, paper, a cut corner where supported */
         .chat-container, .playground-section, .card, .recipe-grid {
@@ -531,20 +531,8 @@
 
         /* The code-writing agent's answers (milestone 2) */
         .message.agent { max-width: min(100%, 110ch); }
-        .agent-steps { list-style: none; margin: 0 0 var(--space-sm); padding: 0; display: grid; gap: var(--space-3xs); font-size: var(--text-sm); color: var(--color-muted); }
-        .agent-steps .loading-spinner { margin-right: var(--space-2xs); }
-        .agent-steps code { background: none; padding: 0; color: var(--color-ink-2); }
-        .plan-steps { margin: var(--space-xs) 0 var(--space-md); padding-left: var(--space-lg); display: grid; gap: var(--space-sm); }
         .plan-step-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-xs); }
-        .plan-step-name { font-family: var(--font-outlier); font-size: var(--text-xs); color: var(--color-muted); overflow-wrap: anywhere; }
-        .plan-step .btn { margin-top: var(--space-2xs); }
-        .lang-tabs { margin-bottom: var(--space-xs); }
-        .agent-code { min-height: 3lh; }
-        .agent-notes { margin-top: var(--space-sm); font-size: var(--text-sm); }
-        .agent-notes ul { margin: var(--space-2xs) 0 0; padding-left: var(--space-lg); }
-        .agent-meta { margin-top: var(--space-xs); font-size: var(--text-xs); color: var(--color-muted); }
         .choice-row { display: flex; flex-wrap: wrap; gap: var(--space-xs); margin-top: var(--space-xs); }
-        .lang-select { width: auto; flex: none; height: var(--control-h); }
         .composer-note { margin-top: var(--space-2xs); font-size: var(--text-xs); color: var(--color-muted); }
 
         /* Developer entry points: starter cards, the agent mode switch, spec-driven endpoint cards */
@@ -553,11 +541,6 @@
         .starter-card h3 { margin: 0; font-size: var(--text-sm); }
         .starter-card p { margin: 0; font-size: var(--text-sm); color: var(--color-ink-2); flex: 1; }
         .starter-card .btn { align-self: flex-start; }
-        .mode-switch { display: inline-flex; margin-bottom: var(--space-2xs); border: var(--rule-hair) solid var(--color-rule-2); border-radius: var(--radius-input); overflow: hidden; }
-        .mode-switch button { border: 0; background: var(--color-paper); color: var(--color-ink-2); font: inherit; font-size: var(--text-sm); padding: var(--space-3xs) var(--space-sm); cursor: pointer; }
-        .mode-switch button + button { border-left: var(--rule-hair) solid var(--color-rule-2); }
-        .mode-switch button[aria-pressed="true"] { background: var(--color-accent-wash); color: var(--color-accent); font-weight: 600; }
-        .mode-switch button:focus-visible { outline: 2px solid var(--color-focus); outline-offset: -2px; }
         .endpoint-search { margin: 0 0 var(--space-xs); }
         .endpoint-search .form-input { height: var(--control-h-sm); font-size: var(--text-sm); }
         .endpoint-card .param-table { width: 100%; border-collapse: collapse; font-size: var(--text-xs); margin: var(--space-xs) 0; }
@@ -910,7 +893,7 @@
                     <i data-lucide="key" style="width: 16px; height: 16px;" aria-hidden="true"></i>
                     <span>Authentication &amp; headers</span>
                 </button>
-                <button type="button" class="sidebar-item" onclick="startTask('plan', 'Check the balance of account 101000000101814', 'python')">
+                <button type="button" class="sidebar-item" onclick="startTask('Write a Python script that checks the balance of account 101000000101814, run it, and show the result')">
                     <i data-lucide="code-2" style="width: 16px; height: 16px;" aria-hidden="true"></i>
                     <span>Python example</span>
                 </button>
@@ -966,22 +949,17 @@
                         <div class="message assistant">
                             <div class="message-label">API Assistant</div>
                             <div class="message-content">
-                                <p><strong>Find TCS BaNCS APIs, get code for a task, or have it built and run for you.</strong></p>
+                                <p><strong>Find TCS BaNCS APIs, or have the code for a task built and run for you.</strong></p>
                                 <div class="starter-grid">
                                     <div class="starter-card">
                                         <h3>Find an endpoint</h3>
                                         <p>Search the 950 endpoints on the left, or browse them by business area. Each one opens with its parameters, body and a curl command.</p>
                                         <button type="button" class="btn btn-secondary btn-sm" onclick="showApiAreas()">Browse API areas</button>
                                     </div>
-                                    <div class="starter-card" data-needs="plan">
-                                        <h3>Plan &amp; code</h3>
-                                        <p>Describe a task. You get the calls in order and code in curl, Python, JavaScript or Java to run yourself.</p>
-                                        <button type="button" class="btn btn-secondary btn-sm" onclick="startTask('plan', 'A customer moved house: update their postal address')">Try: update an address</button>
-                                    </div>
                                     <div class="starter-card" data-needs="build" hidden>
                                         <h3>Build &amp; run</h3>
                                         <p>The agent writes the code, runs it against the demo bank and fixes it until it works. It asks you before any change to bank data.</p>
-                                        <button type="button" class="btn btn-secondary btn-sm" onclick="startTask('build', 'List the first 3 customers and show their IDs and names')">Try: list three customers</button>
+                                        <button type="button" class="btn btn-secondary btn-sm" onclick="startTask('List the first 3 customers and show their IDs and names')">Try: list three customers</button>
                                     </div>
                                 </div>
                                 <p>No sign-in or token: every request goes to the shared BaNCS demo host with three headers, already filled in the Playground.</p>
@@ -996,12 +974,6 @@
                     </div>
                     
                     <div class="chat-input-container">
-                        <div class="mode-switch" id="modeSwitch" role="group" aria-label="What the agent does" hidden>
-                            <button type="button" data-mode="plan" aria-pressed="true" onclick="setMode('plan')"
-                                    title="The agent picks the calls and writes code for you to run">Plan &amp; code</button>
-                            <button type="button" data-mode="build" aria-pressed="false" onclick="setMode('build')"
-                                    title="The agent writes the code, runs it against the demo bank and fixes it">Build &amp; run</button>
-                        </div>
                         <div class="chat-input-wrapper">
                             <textarea 
                                 class="chat-input"
@@ -1012,19 +984,12 @@
                                 onkeydown="handleInputKeydown(event)"
                                 oninput="autoResizeTextarea(this)"
                             ></textarea>
-                            <select id="agentLanguage" class="form-input form-select lang-select" aria-label="Write code in" hidden
-                                    onchange="setAgentLanguage(this.value)">
-                                <option value="curl">curl</option>
-                                <option value="python">Python</option>
-                                <option value="javascript">JavaScript</option>
-                                <option value="java">Java</option>
-                            </select>
                             <button class="btn btn-primary" id="sendButton" onclick="sendMessage()">
                                 <i data-lucide="send" style="width: 16px; height: 16px;" aria-hidden="true"></i>
                                 Send
                             </button>
                         </div>
-                        <p class="composer-note" id="agentNote" hidden>The agent plans BaNCS calls and writes code; it never runs anything. Don’t paste real customer data.</p>
+                        <p class="composer-note" id="agentNote"></p>
                     </div>
                 </div>
             </div>
@@ -1281,7 +1246,6 @@
                 initDeveloperFeatures();
 
                 // Is the code-writing agent switched on here?
-                checkAgent();
                 initBuildMode();
 
                 // Code editor for the Playground body (desktop only)
@@ -1901,25 +1865,15 @@
            input.value = '';
            autoResizeTextarea(input);
 
-           // Build & run (operator preview): write, run and call the bank, with approvals.
-           if (state.buildMode && !options.search) {
+           // Build & run: write, run and call the bank, with approvals. The search chat below answers only
+           // when Build & run is off on this server.
+           if (state.buildMode) {
                const sendButton = document.getElementById('sendButton');
                sendButton.disabled = true;
                try { await runBuild(message); } finally { sendButton.disabled = false; }
                return;
            }
 
-           // Typed questions go to the code-writing agent when it is on; it returns false when it is
-           // off, capped or failing, and the search chat below answers instead.
-           if (state.agentAvailable && !options.search) {
-               const sendButton = document.getElementById('sendButton');
-               sendButton.disabled = true;
-               try {
-                   if (await askAgent(message)) return;
-               } finally {
-                   sendButton.disabled = false;
-               }
-           }
            
            // Check if this is a knowledge base query
            const knowledgeKeywords = ['search knowledge', 'find in knowledge', 'knowledge base', 'search for apis'];
@@ -2960,112 +2914,6 @@
            }
        }
 
-       // ---------- Code-writing agent (docs/coding-agent-plan.md, milestone 2) ----------
-       const AGENT_LANGS = { curl: { label: 'curl', prism: 'bash' }, python: { label: 'Python', prism: 'python' },
-                             javascript: { label: 'JavaScript', prism: 'javascript' }, java: { label: 'Java', prism: 'java' } };
-       state.agentAvailable = false;
-       state.agentAnswers = [];
-
-       function getAgentLanguage() {
-           try { const v = localStorage.getItem('agentLanguage'); if (AGENT_LANGS[v]) return v; } catch (e) {}
-           return 'curl';
-       }
-
-       function setAgentLanguage(language) {
-           try { localStorage.setItem('agentLanguage', language); } catch (e) {}
-       }
-
-       async function checkAgent() {
-           try {
-               const r = await fetch('/api/agent/status');
-               state.agentAvailable = r.ok && (await r.json()).available === true;
-           } catch (e) {
-               state.agentAvailable = false;
-           }
-           document.getElementById('agentLanguage').value = getAgentLanguage();
-           document.querySelectorAll('[data-needs="plan"]').forEach(el => { el.hidden = !state.agentAvailable; });
-           setMode(state.buildMode ? 'build' : 'plan');  // the note, placeholder and language picker follow the mode
-           logToDevConsole(state.agentAvailable ? 'Code agent on' : 'Code agent off: chat uses search', 'info');
-       }
-
-       function describeStep(step) {
-           if (step.tool === 'search_endpoints') return `Searched <code>${escapeHtml(step.query)}</code>`;
-           if (step.tool === 'get_endpoint') return `Read <code>${escapeHtml(step.endpoint)}</code>`;
-           if (step.tool === 'get_body_schema') return `Read the body schema of <code>${escapeHtml(step.endpoint)}</code>`;
-           if (step.tool === 'list_endpoints') return `Browsed <code>${escapeHtml(step.area)}</code>`;
-           return escapeHtml(step.tool);
-       }
-
-       // Ask the agent; true when it answered (or explained an error), false to let the search chat answer.
-       async function askAgent(message) {
-           const language = getAgentLanguage();
-           const messagesContainer = document.getElementById('chatMessages');
-           const el = document.createElement('div');
-           el.className = 'message assistant agent';
-           el.innerHTML = `<div class="message-label">Code agent</div>
-               <div class="message-content"><ul class="agent-steps" aria-live="polite">
-               <li class="agent-working"><span class="loading-spinner"></span>Working on it…</li></ul><div class="agent-body"></div></div>`;
-           messagesContainer.appendChild(el);
-           messagesContainer.scrollTop = messagesContainer.scrollHeight;
-           const steps = el.querySelector('.agent-steps');
-           const body = el.querySelector('.agent-body');
-           const started = performance.now();
-
-           let response;
-           try {
-               response = await fetch('/api/agent/stream', {
-                   method: 'POST', headers: { 'Content-Type': 'application/json' },
-                   body: JSON.stringify({ message, language })
-               });
-           } catch (e) {
-               el.remove();
-               return false;
-           }
-           if (!response.ok) {
-               el.remove();
-               if (response.status === 503) { state.agentAvailable = false; checkAgent(); }
-               if (response.status === 429) {
-                   const data = await response.json().catch(() => ({}));
-                   addMessage((data.message || 'The agent is busy.') + ' Here is what search finds instead:', 'assistant');
-               }
-               return false;
-           }
-
-           const reader = response.body.getReader();
-           const decoder = new TextDecoder();
-           let buffer = '', answered = false;
-           while (true) {
-               const { value, done } = await reader.read();
-               if (done) break;
-               buffer += decoder.decode(value, { stream: true });
-               let cut;
-               while ((cut = buffer.indexOf('\n\n')) >= 0) {
-                   const block = buffer.slice(0, cut);
-                   buffer = buffer.slice(cut + 2);
-                   const event = (block.match(/^event: (.*)$/m) || [])[1];
-                   const raw = (block.match(/^data: (.*)$/m) || [])[1];
-                   if (!event || !raw) continue;
-                   const data = JSON.parse(raw);
-                   if (event === 'step') {
-                       const li = document.createElement('li');
-                       li.innerHTML = describeStep(data);
-                       steps.insertBefore(li, steps.querySelector('.agent-working'));
-                   } else if (event === 'answer') {
-                       answered = true;
-                       renderAgentAnswer(body, data, message, language, performance.now() - started);
-                   } else if (event === 'error') {
-                       answered = true;
-                       body.innerHTML = `<p>${escapeHtml(data.message)}</p>`;
-                   }
-                   messagesContainer.scrollTop = messagesContainer.scrollHeight;
-               }
-           }
-           const working = steps.querySelector('.agent-working');
-           if (working) working.remove();
-           if (!answered) body.innerHTML = '<p>The answer was cut off. Please try again.</p>';
-           return true;
-       }
-
        // ---------------------------------------------------------------- Build & run (decode fork F3/F4)
        // Open to every visitor behind the server's caps. Each run's key comes back from its start call
        // and stays in this page's memory: nobody types or sees a key, and only this tab can watch the
@@ -3081,36 +2929,19 @@
                const r = await fetch('/api/build/status');
                available = r.ok && (await r.json()).available === true;
            } catch (e) {}
-           state.buildAvailable = available;
-           document.getElementById('modeSwitch').hidden = !available;
+           state.buildAvailable = state.buildMode = available;
            document.querySelectorAll('[data-needs="build"]').forEach(el => { el.hidden = !available; });
-           setMode(available && state.buildMode ? 'build' : 'plan');
-       }
-
-       // One composer, two clearly named outcomes: the switch, the note and the placeholder always agree.
-       function setMode(mode) {
-           state.buildMode = mode === 'build' && !!state.buildAvailable;
-           document.querySelectorAll('#modeSwitch button').forEach(b =>
-               b.setAttribute('aria-pressed', String(b.dataset.mode === (state.buildMode ? 'build' : 'plan'))));
-           document.getElementById('agentLanguage').hidden = state.buildMode || !state.agentAvailable;
-           const note = document.getElementById('agentNote');
-           note.hidden = !state.buildMode && !state.agentAvailable;
-           note.textContent = state.buildMode
+           document.getElementById('agentNote').textContent = available
                ? 'Build & run writes the code, runs it in a sandbox and calls the shared demo bank. Every change to bank data waits for your Approve, and approved changes are visible to everyone using the demo.'
-               : 'Plan & code picks the BaNCS calls and writes code for you to run; it doesn’t call the bank. Don’t paste real customer data.';
-           document.getElementById('messageInput').placeholder = state.buildMode
+               : 'Build & run is off on this server right now; the assistant answers from the API documentation.';
+           document.getElementById('messageInput').placeholder = available
                ? 'Describe a task to build and run, e.g. "find a customer and show their accounts"…'
-               : (state.agentAvailable ? 'Describe a task, e.g. "a customer moved house: update their address"…' : 'Ask about APIs, authentication, code examples…');
+               : 'Ask about APIs, authentication, code examples…';
        }
 
-       // A starter card or quick action: pick the mode (and language), fill the box, send.
-       function startTask(mode, text, language) {
+       // A starter card or quick action: fill the box and send.
+       function startTask(text) {
            switchTab('chat', document.querySelector('.tab'));
-           setMode(mode);
-           if (language && !state.buildMode) {
-               document.getElementById('agentLanguage').value = language;
-               setAgentLanguage(language);
-           }
            document.getElementById('messageInput').value = text;
            sendMessage();
        }
@@ -3153,7 +2984,6 @@
                <div class="choice-row">
                    <button type="button" class="btn btn-primary btn-sm" data-act="try">Try in Playground</button>
                    <button type="button" class="btn btn-secondary btn-sm" data-act="copy">Copy curl</button>
-                   <button type="button" class="btn btn-secondary btn-sm" data-act="plan">Write code for it</button>
                    ${state.buildAvailable ? '<button type="button" class="btn btn-secondary btn-sm" data-act="build">Build &amp; run it</button>' : ''}
                </div></div>`);
            el.querySelectorAll('pre code').forEach(b => window.hljs?.highlightElement?.(b));
@@ -3161,8 +2991,7 @@
            el.querySelector('[data-act="copy"]').onclick = async (e) => {
                try { await navigator.clipboard.writeText(ep.curl); e.target.textContent = 'Copied'; } catch (err) {}
            };
-           el.querySelector('[data-act="plan"]').onclick = () => startTask('plan', task);
-           el.querySelector('[data-act="build"]')?.addEventListener('click', () => startTask('build', task + ' against the demo bank and show what it returns'));
+           el.querySelector('[data-act="build"]')?.addEventListener('click', () => startTask(task + ' against the demo bank and show what it returns'));
        }
 
        function tryInPlayground(ep) {
@@ -3383,98 +3212,6 @@
            card.querySelectorAll('button').forEach(b => b.remove());
            card.querySelector('[data-left]').textContent =
                decision === 'approved' ? 'Approved: sent to the bank.' : decision === 'timeout' ? 'Not answered in time: not sent.' : 'Rejected: not sent to the bank.';
-       }
-
-       function renderAgentAnswer(body, data, question, language, ms) {
-           const answer = data.answer;
-           const id = state.agentAnswers.length;
-           state.agentAnswers.push({ question, answer, code: {} });
-           if (answer.kind === 'clarification') {
-               body.innerHTML = `<p>${escapeHtml(answer.question)}</p><div class="choice-row">${
-                   answer.choices.map((c, i) => `<button type="button" class="btn btn-secondary btn-sm" onclick="answerClarification(${id}, ${i}, this)">${escapeHtml(c)}</button>`).join('')
-               }</div>`;
-               return;
-           }
-           state.agentAnswers[id].code[language] = answer.code;
-           const stepsHtml = answer.steps.map((s, i) => `
-               <li class="plan-step">
-                   <div class="plan-step-head"><span class="method-badge method-${escapeHtml(s.method.toLowerCase())}">${escapeHtml(s.method)}</span><code>${escapeHtml(s.path)}</code></div>
-                   <div class="plan-step-name">${escapeHtml(s.endpoint)}</div>
-                   <p>${escapeHtml(s.purpose)}</p>
-                   ${s.uses_from_previous ? `<p class="text-muted text-small">Uses ${escapeHtml(s.uses_from_previous)}</p>` : ''}
-                   <button type="button" class="btn btn-secondary btn-sm" onclick="openStepInPlayground(${id}, ${i})">Open in Playground</button>
-               </li>`).join('');
-           const tabs = Object.entries(AGENT_LANGS).map(([key, l]) =>
-               `<button type="button" class="lang-tab${key === language ? ' active' : ''}" onclick="showAgentCode(${id}, '${key}', this)">${l.label}</button>`).join('');
-           const assumptions = (answer.assumptions || []).length
-               ? `<p><strong>Assumptions</strong></p><ul>${answer.assumptions.map(a => `<li>${escapeHtml(a)}</li>`).join('')}</ul>` : '';
-           const notes = answer.notes ? `<p>${escapeHtml(answer.notes)}</p>` : '';
-           const cost = data.usage && typeof data.usage.usd === 'number' ? ` for $${data.usage.usd.toFixed(3)}` : '';
-           body.innerHTML = `
-               <ol class="plan-steps">${stepsHtml}</ol>
-               <div class="lang-tabs" role="group" aria-label="Code language">${tabs}</div>
-               <div class="agent-code" id="agentCode${id}"></div>
-               ${assumptions || notes ? `<div class="agent-notes">${notes}${assumptions}</div>` : ''}
-               <p class="agent-meta">Answered in ${Math.round(ms / 1000)} s${cost}. Nothing was run; check the code before using it.</p>`;
-           paintAgentCode(id, language);
-       }
-
-       function paintAgentCode(id, language) {
-           const box = document.getElementById(`agentCode${id}`);
-           const l = AGENT_LANGS[language];
-           box.innerHTML = createCodeBlockHTML(state.agentAnswers[id].code[language], l.prism, l.label);
-           if (typeof Prism !== 'undefined') Prism.highlightAllUnder(box);
-       }
-
-       async function showAgentCode(id, language, button) {
-           button.parentElement.querySelectorAll('.lang-tab').forEach(b => b.classList.toggle('active', b === button));
-           setAgentLanguage(language);
-           document.getElementById('agentLanguage').value = language;
-           const entry = state.agentAnswers[id];
-           if (entry.code[language]) return paintAgentCode(id, language);
-           const box = document.getElementById(`agentCode${id}`);
-           box.innerHTML = `<p class="text-muted text-small"><span class="loading-spinner"></span>Writing it in ${AGENT_LANGS[language].label}…</p>`;
-           try {
-               const r = await fetch('/api/agent/code', {
-                   method: 'POST', headers: { 'Content-Type': 'application/json' },
-                   body: JSON.stringify({ plan: entry.answer, language })
-               });
-               const data = await r.json();
-               if (!r.ok) throw new Error(data.message || data.detail || `HTTP ${r.status}`);
-               entry.code[language] = data.code;
-               paintAgentCode(id, language);
-           } catch (e) {
-               box.innerHTML = `<p class="text-small">${escapeHtml(e.message)}</p>`;
-           }
-       }
-
-       function openStepInPlayground(id, index) {
-           const step = state.agentAnswers[id].answer.steps[index];
-           switchTab('playground', document.querySelector('.tab:nth-child(3)'));
-           setRequestType('api', document.querySelector('.request-type-btn'));
-           clearPlayground();
-           document.getElementById('playgroundMethod').value = step.method;
-           const url = document.getElementById('playgroundUrl');
-           url.value = '/Core' + step.path;
-           url.dispatchEvent(new Event('input'));
-           let bodyText = step.request_body_json || '';
-           try { bodyText = bodyText ? JSON.stringify(JSON.parse(bodyText), null, 2) : ''; } catch (e) {}
-           document.getElementById('playgroundBody').value = bodyText;
-           showNotification(/\{[^}]+\}/.test(step.path)
-               ? 'Fill in the {placeholders} in the URL, then press Execute.'
-               : 'Check the request, then press Execute.', 'info');
-       }
-
-       async function answerClarification(id, index, button) {
-           const entry = state.agentAnswers[id];
-           const choice = entry.answer.choices[index];
-           button.parentElement.querySelectorAll('button').forEach(b => { b.disabled = true; });
-           addMessage(choice, 'user');
-           const followUp = `${entry.question}\n\nAnswer to your question "${entry.answer.question}": ${choice}`;
-           if (!(await askAgent(followUp))) {
-               document.getElementById('messageInput').value = entry.question;
-               sendMessage({ search: true });
-           }
        }
 
        // Add animations

@@ -1,10 +1,10 @@
 # ============================================================================
-# F5 (docs/decode-fork-plan.md): the code agent and Build & run on the same 20 BaNCS tasks, scored the
-# same way (backend/agent_eval.py). Manual only; costs real money (~$0.02 + ~$0.15 per task).
+# F5 (docs/decode-fork-plan.md): Build & run on 20 BaNCS tasks with gold call sequences
+# (backend/agent_eval.py). Manual only; costs real money (~$0.10 per task, ~$2 a run).
 # Every Build & run write is held and REJECTED, so no demo data changes.
 #
-# Runs in a ONE-OFF container from the cookbook-api image (`docker compose run`): its own knowledge base
-# and memory, no published ports, no proxy. It drives the LIVE Build & run routes over the Docker
+# Runs in a ONE-OFF container from the cookbook-api image (`docker compose run`): it reads the spec, with
+# no published ports and no proxy. It drives the LIVE Build & run routes over the Docker
 # network with the operator token, so these runs stay out of the visitors' caps.
 # The table lands on this run's summary page; the JSON stays in the cookbook_data volume (/app/data/evals).
 # Secrets: VM_HOST, VM_USER, VM_SSH_KEY.
@@ -14,11 +14,6 @@ name: Agent eval
 on:
   workflow_dispatch:
     inputs:
-      agents:
-        description: "Which agents"
-        type: choice
-        options: ["code,build", "code", "build"]
-        default: "code,build"
       only:
         description: "Task numbers, e.g. 1,12 (empty = all 20)"
         type: string
@@ -43,16 +38,14 @@ jobs:
           chmod 600 ~/.ssh/vm
       - name: Run the eval on the VM
         env:
-          AGENTS: ${{ inputs.agents }}
           ONLY: ${{ inputs.only }}
         run: |
-          case "$AGENTS" in code|build|code,build) ;; *) echo "bad agents"; exit 1 ;; esac
           [[ "$ONLY" =~ ^[0-9,]*$ ]] || { echo "only: digits and commas"; exit 1; }
           ssh -i ~/.ssh/vm -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 "$USER_@$HOST" \
             "cd ~/APICookbook/deploy/oci && sudo docker compose run --rm --no-deps \
                -e BUILD_PROXY_PORT=0 -e EVAL_BUILD_URL=http://cookbook-api:7600/api/build \
-               cookbook-api python -m backend.agent_eval --agents $AGENTS --only '$ONLY'" | tee eval.log
-          sed -n '/^| | Code agent | Build & run |/,$p' eval.log >> "$GITHUB_STEP_SUMMARY"
+               cookbook-api python -m backend.agent_eval --only '$ONLY'" | tee eval.log
+          sed -n '/^| | Build & run |/,$p' eval.log >> "$GITHUB_STEP_SUMMARY"
       - name: Remove the key
         if: always()
         run: rm -f ~/.ssh/vm

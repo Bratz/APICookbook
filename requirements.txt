@@ -1,5 +1,5 @@
 # Versions below are the set the test suite passed with on Python 3.12 (2026-11-06).
-# Python >= 3.11 is required by pydantic-ai; the image and CI use 3.12.15.
+# The image and CI use Python 3.12.15.
 
 # Core Web Framework
 fastapi==0.135.1
@@ -22,10 +22,7 @@ scikit-learn==1.7.2
 mcp==2.3.0
 fastmcp==4.1.6
 
-# Code-writing agent (docs/coding-agent-plan.md): pydantic-ai loop on Claude
-pydantic-ai-slim[anthropic]==2.66.0
-anthropic==2.6.0
-jsonschema==4.26.0  # validates request bodies in the agent's plans
+jsonschema==4.26.0  # the eval checks Build & run's held write bodies against their schema
 
 # Configuration
 python-dotenv==1.2.2

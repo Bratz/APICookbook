@@ -5,8 +5,8 @@ token, ``/r/<token>/...``, so each call belongs to one run and stops working whe
 
     /r/<token>/<BaNCS path>          GET passes through. POST/PUT/PATCH/DELETE are HELD until the
                                      run's visitor approves; reject or a timeout answers 403.
-    /r/<token>/_kb/search?q=...      Read-only API knowledge for the agent's tools, from the same
-    /r/<token>/_kb/endpoint/<name>   knowledge base and code the current code agent uses.
+    /r/<token>/_kb/search?q=...      Read-only API knowledge for the agent's tools (backend/api_lookup.py),
+    /r/<token>/_kb/endpoint/<name>   over the same knowledge base as the site's endpoint cards.
     /r/<token>/_kb/body-schema/<name>
     /r/<token>/_kb/area/<area>
 
@@ -24,7 +24,6 @@ import secrets
 import time
 import uuid
 from dataclasses import dataclass, field
-from types import SimpleNamespace
 from typing import Any, Optional
 
 import httpx
@@ -32,7 +31,7 @@ import uvicorn
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
 
-from backend import code_agent
+from backend import api_lookup
 from backend.config import settings
 
 logger = logging.getLogger(__name__)
@@ -134,26 +133,27 @@ def _run_or_404(token: str) -> ProxyRun:
     return run
 
 
-def _kb_deps() -> Any:
+def _kb() -> tuple[Any, Any]:
     from backend.main import app  # the live knowledge base and RAG engine, loaded at startup
 
     if not getattr(app.state, "kb", None):
         raise HTTPException(status_code=503, detail="the knowledge base is still loading")
-    return SimpleNamespace(deps=code_agent.AgentDeps(kb=app.state.kb, rag=getattr(app.state, "rag_engine", None)))
+    return app.state.kb, getattr(app.state, "rag_engine", None)
 
 
 @proxy_app.get("/r/{token}/_kb/search")
 def kb_search(token: str, q: str) -> Any:
     _run_or_404(token)
-    return code_agent.search_endpoints(_kb_deps(), q[:200])
+    kb, rag = _kb()
+    return api_lookup.search_endpoints(kb, rag, q[:200])
 
 
 @proxy_app.get("/r/{token}/_kb/endpoint/{name}")
 def kb_endpoint(token: str, name: str) -> Any:
     _run_or_404(token)
-    result = code_agent.get_endpoint(_kb_deps(), name)
+    result = api_lookup.get_endpoint(_kb()[0], name)
     if "url_template" in result:  # point the agent at this run's proxy, never the bank's own host
-        result["url_template"] = result["url_template"].replace(code_agent.BASE_URL, f"{public_base(token)}/Core")
+        result["url_template"] = result["url_template"].replace(api_lookup.BASE_URL, f"{public_base(token)}/Core")
     return result
 
 
@@ -165,13 +165,13 @@ def public_base(token: str) -> str:
 @proxy_app.get("/r/{token}/_kb/body-schema/{name}")
 def kb_body_schema(token: str, name: str) -> Any:
     _run_or_404(token)
-    return code_agent.get_body_schema(_kb_deps(), name)  # already compacted to the tool size cap
+    return api_lookup.get_body_schema(_kb()[0], name)  # already compacted to the tool size cap
 
 
 @proxy_app.get("/r/{token}/_kb/area/{area}")
 def kb_area(token: str, area: str) -> Any:
     _run_or_404(token)
-    return code_agent.list_endpoints(_kb_deps(), area)
+    return api_lookup.list_endpoints(_kb()[0], area)
 
 
 @proxy_app.api_route("/r/{token}/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])

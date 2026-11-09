@@ -1,14 +1,14 @@
 """F5's scoring: gold sequences, mapping real calls to Swagger operations, the report. No model calls."""
 
 from backend import agent_eval
-from backend.agent_eval import TASKS, OperationMatcher, Result, body_valid, in_order, python_parses
+from backend.agent_eval import TASKS, OperationMatcher, Result, body_valid, in_order
 
 
 def test_every_gold_operation_exists_in_the_spec(client):
     kb = client.app.state.kb
     missing = sorted(op for _, _, gold in TASKS for step in gold for op in step
                      if (kb.endpoints.get(op) or {}).get("source") != "swagger")
-    assert missing == []  # a typo here would make a task unwinnable for both agents
+    assert missing == []  # a typo here would make a task unwinnable
 
 
 def test_gold_is_matched_in_order_with_extra_calls_allowed():
@@ -32,9 +32,7 @@ def test_real_calls_map_to_their_swagger_operations(client):
     assert matcher.operations("GET", "/Core/accountManagement/account/blockList/1/extra") == set()
 
 
-def test_code_and_body_checks():
-    assert python_parses("import requests\nprint(1)\n")
-    assert not python_parses("def broken(:\n")
+def test_body_checks():
     schema = {"type": "object", "required": ["customerId"], "properties": {"customerId": {"type": "integer"}}}
     assert body_valid(schema, '{"customerId": 7}') is True
     assert body_valid(schema, '{"customerId": "seven"}') is False
@@ -42,18 +40,18 @@ def test_code_and_body_checks():
     assert body_valid(None, "{}") is None
 
 
-def test_the_report_puts_both_agents_side_by_side():
+def test_the_report_summarises_and_lists_every_task():
     results = [
-        Result(agent="code", task=1, kind="read", gold_hit=True, ok=True, usd=0.02, seconds=9),
         Result(agent="build", task=1, kind="read", gold_hit=True, ok=True, gold_get_2xx=True, usd=0.1, seconds=40),
-        Result(agent="code", task=12, kind="write", gold_hit=False, ok=False, note="asked a clarifying question"),
-        Result(agent="build", task=12, kind="write", gold_hit=True, ok=True, write_bodies_valid=False, usd=0.2),
+        Result(agent="build", task=12, kind="write", gold_hit=False, ok=True, write_bodies_valid=False, usd=0.2,
+               note="run ended: failed"),
     ]
 
     text = agent_eval.report(results)
 
-    assert "| Gold sequence hit, all tasks | 1/2 | 2/2 |" in text
-    assert "| … write tasks | 0/1 | 1/1 |" in text
-    assert "| A gold GET answered 2xx (read tasks) | - | 1/1 |" in text
-    assert "| Held write bodies valid against the schema | - | 0/1 |" in text
-    assert "❌ asked a clarifying question" in text
+    assert "| Gold sequence hit, all tasks | 1/2 |" in text
+    assert "| … write tasks | 0/1 |" in text
+    assert "| A gold GET answered 2xx (read tasks) | 1/1 |" in text
+    assert "| Held write bodies valid against the schema | 0/1 |" in text
+    assert "❌ run ended: failed" in text
+    assert "$0.150/task ($0.30)" in text
