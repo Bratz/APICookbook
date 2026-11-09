@@ -254,3 +254,13 @@ def test_cors_rejects_foreign_origin(client):
     r = client.options("/api/chat", headers={"Origin": "https://evil.example.com",
                                              "Access-Control-Request-Method": "POST"})
     assert r.headers.get("access-control-allow-origin") not in ("*", "https://evil.example.com")
+
+
+def test_chat_code_example_uses_core_base_path_and_schema_fields(client):
+    import ast
+    response = client.post("/api/chat", json={"message": "how to update the phone numbers"}).json()["response"]
+    code = response.split("```python\n", 1)[1].split("```", 1)[0]
+    ast.parse(code)  # the example must be valid Python
+    assert f"{settings.api_base_url}/Core/" in code  # Swagger paths sit under the spec's basePath
+    assert "Add your request data here" not in code  # the body comes from the endpoint's schema
+    assert "Fields from the API spec" in code

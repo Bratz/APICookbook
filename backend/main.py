@@ -1532,58 +1532,84 @@ async def chat(message_data: Dict[str, Any]):
             "metadata": {"error": True, "request_id": request_id}
         }
 
+def _example_body(schema: dict, node=None, depth: int = 0):
+    """A skeleton of a request body from its schema: field names with empty values of the right type."""
+    node = schema if node is None else node
+    for _ in range(20):  # follow $refs into the inlined definitions
+        ref = node.get("$ref", "") if isinstance(node, dict) else ""
+        if not ref.startswith("#/definitions/"):
+            break
+        node = schema.get("definitions", {}).get(ref.split("/")[-1], {})
+    kind = node.get("type")
+    if kind == "object" or "properties" in node:
+        if depth >= 3:
+            return {}
+        # ponytail: first 25 fields per object; the biggest BaNCS bodies have hundreds
+        return {k: _example_body(schema, v, depth + 1) for k, v in list(node.get("properties", {}).items())[:25]}
+    if kind == "array":
+        return [_example_body(schema, node.get("items", {}), depth + 1)]
+    return {"integer": 0, "number": 0.0, "boolean": False}.get(kind, "")
+
+
 def generate_code_example(endpoint):
-    """Generate a Python code example for an endpoint"""
+    """Generate a Python code example for an endpoint (the search chat's template; the agent writes real code)."""
+    import pprint
     func_name = endpoint['name'].lower().replace(' ', '_').replace('-', '_')
-    
+    path = endpoint['path']
+    if not path.startswith('/Core/'):  # Swagger paths are relative to the spec's basePath /Core
+        path = '/Core' + path
+    url = settings.api_base_url.rstrip('/') + path
+    headers = (f"""    headers = {{
+        'entity': '{settings.bancs_entity}',
+        'userId': '{settings.bancs_user_id}',
+        'languageCode': '{settings.bancs_language_code}',
+        'Content-Type': 'application/json'
+    }}""")
+    placeholder = "\n# Replace the {placeholders} in the URL with real values." if '{' in path else ""
+
     if endpoint['method'] == 'GET':
         code = f"""import httpx
 
 async def {func_name}():
-    headers = {{
-        'entity': 'GPRDTTSTOU',
-        'userId': '1',
-        'languageCode': '1',
-        'Content-Type': 'application/json'
-    }}
-    
-    url = "https://demoapps.tcsbancs.com{endpoint['path']}"
-    
+{headers}
+
+    url = "{url}"
+
     async with httpx.AsyncClient() as client:
         response = await client.get(url, headers=headers)
         return response.json()
 
-# Usage
+# Usage{placeholder}
 import asyncio
 result = asyncio.run({func_name}())
 print(result)"""
-    
+
     else:  # POST, PUT, PATCH, DELETE
+        kb = getattr(app.state, 'kb', None)
+        schema = kb.resolved_body_schema(endpoint['name']) if kb and hasattr(kb, 'resolved_body_schema') else None
+        if schema:
+            body = "# Fields from the API spec; fill in real values.\ndata = " + pprint.pformat(
+                _example_body(schema), indent=4, width=100, sort_dicts=False)
+        else:
+            body = "data = {\n    # Add your request data here\n}"
         code = f"""import httpx
 
 async def {func_name}(data):
-    headers = {{
-        'entity': 'GPRDTTSTOU',
-        'userId': '1',
-        'languageCode': '1',
-        'Content-Type': 'application/json'
-    }}
-    
-    url = "https://demoapps.tcsbancs.com{endpoint['path']}"
-    
+{headers}
+
+    url = "{url}"
+
     async with httpx.AsyncClient() as client:
         response = await client.{endpoint['method'].lower()}(
-            url, 
+            url,
             headers=headers,
             json=data
         )
         return response.json()
 
-# Usage
+# Usage{placeholder}
 import asyncio
-data = {{
-    # Add your request data here
-}}
+{body}
 result = asyncio.run({func_name}(data))
 print(result)"""
     
