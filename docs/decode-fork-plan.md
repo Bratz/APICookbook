@@ -1,6 +1,6 @@
 # Forking decode into APICookbook: decisions and plan
 
-Status: F0, F1, F2a done; F2b built (2026-11-09) · Sandbox changed from Modal to a dedicated OCI instance on 2026-11-09 · Decided with the owner in an interview on 2026-11-09 · Upstream: [decodingai-magazine/building-a-coding-agent-from-scratch-course](https://github.com/decodingai-magazine/building-a-coding-agent-from-scratch-course) ("decode", Apache-2.0)
+Status: F0–F2 done (2026-11-09), F3 (web UI) next · Sandbox changed from Modal to a dedicated OCI instance on 2026-11-09 · Decided with the owner in an interview on 2026-11-09 · Upstream: [decodingai-magazine/building-a-coding-agent-from-scratch-course](https://github.com/decodingai-magazine/building-a-coding-agent-from-scratch-course) ("decode", Apache-2.0)
 
 ## Intent
 
@@ -127,6 +127,10 @@ Still open, both outside the code:
 - The runner serves the log with a cursor: `GET /runs/<id>/events?after=N`.
 - cookbook-api streams a run live as server-sent events: `GET /api/build/runs/{id}/events` sends `step`, `write` (held), `write_decided`, `bank_call` and finally `done`, with the answer and summary. It pings every 15 s so the proxies along the way keep the stream open.
 - Approve, reject and stop stay at their F2a routes. The routes are still operator-only; visitors get them with F3's UI behind F4's caps.
+- *Result (2026-11-09):* deployed; 2201 decode tests pass on Linux. *Build smoke* read the live stream:
+  - 27 steps, interleaved with 15 bank calls as they happened (GETs, mostly "No Data found" on test customers, until customer 135215 returned 200);
+  - then `PUT /customer/contact` was held, shown and rejected the moment it appeared;
+  - the agent's answer said the write never reached the bank; 14 requests, $0.22.
 - **Deferred: steering** (mid-run corrections). `decode run` has no input channel. It would need the REPL loop's steering queue fed from a file or socket. Stop covers "that's wrong" for now.
 
 **F3. Web UI.**
