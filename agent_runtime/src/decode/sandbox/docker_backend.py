@@ -71,7 +71,7 @@ _GIT_INSTALL_TIMEOUT_S = 180.0
 
 # APICookbook fork (F1): the hardened worker for anonymous visitors' code (``SANDBOX_DOCKER_HARDENED``).
 # No capabilities and no privilege gain, a read-only root (only /workspace and a small /tmp are
-# writable), uid 1000 (the host user that owns the bind-mounted Workspace), and per-session limits.
+# writable), the host uid that owns the bind-mounted Workspace (added in ``_run_args``), and limits.
 # ponytail: fixed limits sized for the 1-OCPU / 6 GB host (2 sessions); make them settings if the
 # host grows.
 WORKSPACE_LABEL = "decode.workspace"
@@ -80,7 +80,6 @@ _HARDENED_ARGS = [
     "--security-opt", "no-new-privileges",
     "--read-only",
     "--tmpfs", "/tmp:rw,nosuid,size=256m",
-    "--user", "1000:1000",
     "-e", "HOME=/tmp",
     "--memory", "1536m",
     "--memory-swap", "1536m",
@@ -314,7 +313,10 @@ class DockerBackend:
         if settings.sandbox_docker_hardened:
             # The label lets the host's runner reap this worker even when ``decode run`` is killed
             # mid-run (a hard stop never reaches ``destroy``).
-            args += [*_HARDENED_ARGS, "--label", f"{WORKSPACE_LABEL}={workspace}"]
+            # Run as the uid/gid that owns the Workspace (this process created it), so the worker can
+            # write there; a fixed uid breaks on hosts whose user isn't 1000.
+            args += [*_HARDENED_ARGS, "--user", f"{os.getuid()}:{os.getgid()}"]
+            args += ["--label", f"{WORKSPACE_LABEL}={workspace}"]
         args += [settings.sandbox_image, "sleep", "infinity"]
         return args
 

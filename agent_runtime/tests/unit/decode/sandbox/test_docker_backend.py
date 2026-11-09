@@ -534,7 +534,7 @@ def test_hardened_worker_runs_under_gvisor_on_the_locked_network(monkeypatch):
     assert ("--runtime", "runsc") in pairs
     assert ("--network", "bancs-only") in pairs
     assert ("--cap-drop", "ALL") in pairs
-    assert ("--user", "1000:1000") in pairs
+    assert ("--user", f"{os.getuid()}:{os.getgid()}") in pairs  # owns the Workspace
     assert ("--pids-limit", "256") in pairs
     assert ("--label", f"decode.workspace={Path('/ws')}") in pairs  # the runner reaps by it
     assert "--read-only" in args

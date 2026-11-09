@@ -6,12 +6,13 @@ set -uo pipefail
 MAIN_VM_IP=10.0.0.49
 PROXY_PORT=7601
 HOST_IP=$(hostname -I | awk '{print $1}')
+RUN_UID="$(id -u ubuntu):$(id -g ubuntu)"   # the runner's user: decode runs workers as it
 failures=0
 
 check() {  # check <expect: open|blocked> <label> <host> <port>
   local expect=$1 label=$2 host=$3 port=$4 code result
   # Inside a hardened gVisor worker on the locked network, exactly as decode starts one.
-  docker run --rm --runtime runsc --network bancs-only --cap-drop ALL --read-only --user 1000:1000 \
+  docker run --rm --runtime runsc --network bancs-only --cap-drop ALL --read-only --user "$RUN_UID" \
     decode-session:latest timeout 5 bash -c "</dev/tcp/$host/$port" 2>/dev/null
   code=$?
   # 0 = connected; 124 = timed out (a DROP); anything else = refused or rejected, which still proves
@@ -38,6 +39,14 @@ check blocked "this host's SSH ($HOST_IP:22)"           "$HOST_IP" 22
 check blocked "this host's runner ($HOST_IP:7700)"      "$HOST_IP" 7700
 check blocked "the internet (1.1.1.1:443)"              1.1.1.1 443
 check blocked "the BaNCS demo host directly (:443)"     "$(getent hosts demoapps.tcsbancs.com | awk '{print $1}')" 443
+# The Workspace a worker writes in is a host directory the runner's user owns, bind-mounted.
+ws=$(sudo -u ubuntu mktemp -d)
+if docker run --rm --runtime runsc --cap-drop ALL --read-only --user "$RUN_UID" -v "$ws:/workspace" -w /workspace      decode-session:latest bash -c 'echo ok > probe.txt && cat probe.txt' >/dev/null 2>&1; then
+  echo "PASS  worker can write its Workspace (uid $RUN_UID)"
+else
+  echo "FAIL  worker cannot write its Workspace (uid $RUN_UID)"; failures=$((failures + 1))
+fi
+rm -rf "$ws"
 echo "== runner health: $(curl -s --max-time 5 "http://$HOST_IP:7700/health" || echo unreachable)"
 
 [ "$failures" -eq 0 ] && echo "ALL CHECKS PASSED" || { echo "$failures CHECK(S) FAILED"; exit 1; }

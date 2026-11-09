@@ -259,7 +259,7 @@ class Settings(BaseSettings):
     # A pre-created docker network for the worker (the host's locked one, whose only destination is
     # the BaNCS proxy); empty keeps docker's default bridge, as upstream.
     sandbox_docker_network: str = ""
-    # Hardened worker: no capabilities, read-only root, a non-root user, resource limits, and no
+    # Hardened worker: no capabilities, read-only root, the Workspace owner's uid, limits, and no
     # per-session apt install (the image bakes git, and the locked network blocks apt anyway).
     # Off keeps upstream's worker byte-identical.
     sandbox_docker_hardened: bool = False

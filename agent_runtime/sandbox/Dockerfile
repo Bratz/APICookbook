@@ -1,7 +1,7 @@
 # The Build & run session image: what a visitor's code runs in (decode fork F1).
 # Built on the sandbox host (aarch64) by .github/workflows/sandbox-host-setup.yml as decode-session:latest.
 #
-# The worker runs hardened (SANDBOX_DOCKER_HARDENED): uid 1000, read-only root, no capabilities and
+# The worker runs hardened (SANDBOX_DOCKER_HARDENED): as the Workspace owner's uid, read-only root, no capabilities and
 # no network except the BaNCS proxy. So everything a generated client needs is baked in here: the
 # container cannot apt-get or pip install at run time.
 FROM python:3.12-slim-bookworm
