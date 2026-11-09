@@ -6,6 +6,7 @@ log and Workspace are separate), because decode keeps per-process state (the bas
 
     POST   /runs          {"task", "model"?, "proxy_url"?}  → 202 {"id"} · 429 when all slots are busy
     GET    /runs/<id>     → {"id", "status", "exit_code", "answer", "summary", "stderr_tail"}
+    GET    /runs/<id>/events?after=N  → {"status", "events": [...from line N], "next"}  (F2b)
     DELETE /runs/<id>     → stop it (process group killed, its worker container removed)
     GET    /health        → {"ok", "active", "max"}  (no token: a liveness probe)
 
@@ -47,6 +48,8 @@ _STOP_GRACE_S = 5.0
 _KEEP_RUN_DIRS_S = 86_400.0
 _TAIL_CHARS = 4000
 _RUN_PATH = re.compile(r"^/runs/([0-9a-f]{32})$")
+_EVENTS_PATH = re.compile(r"^/runs/([0-9a-f]{32})/events(?:\?after=(\d{1,6}))?$")
+_MAX_EVENTS_PER_READ = 200
 
 
 @dataclass
@@ -85,6 +88,7 @@ class Runner:
             directory.mkdir(parents=True)
             argv = [*_decode_cmd(), "run", task, "--max-requests", str(self.max_requests)]
             argv += ["--summary-json", str(directory / "summary.json")]
+            argv += ["--events-jsonl", str(directory / "events.jsonl")]
             if model:
                 argv += ["--model", model]
             with (
@@ -135,6 +139,23 @@ class Runner:
             "summary": summary,
             "stderr_tail": _read(run.directory / "stderr.txt")[-_TAIL_CHARS:],
         }
+
+    def events(self, run_id: str, after: int = 0) -> dict[str, object] | None:
+        """The run's step log from line ``after`` on (a cursor: pass back ``next``)."""
+        run = self._runs.get(run_id)
+        if run is None:
+            return None
+        # Status first: a run that is already finished has written its last line.
+        status = run.status
+        lines = _read(run.directory / "events.jsonl").splitlines()
+        page = lines[after : after + _MAX_EVENTS_PER_READ]
+        events = []
+        for line in page:
+            try:
+                events.append(json.loads(line))
+            except ValueError:
+                break  # a line still being written: stop here and send it next time
+        return {"status": status, "events": events, "next": after + len(events)}
 
     def _watch(self, run: Run) -> None:
         try:
@@ -239,8 +260,12 @@ def make_handler(runner: Runner, token: str) -> type[BaseHTTPRequestHandler]:
                 return
             if not self._authorized():
                 return
-            match = _RUN_PATH.match(self.path)
-            body = runner.get(match.group(1)) if match else None
+            events = _EVENTS_PATH.match(self.path)
+            if events:
+                body = runner.events(events.group(1), int(events.group(2) or 0))
+            else:
+                match = _RUN_PATH.match(self.path)
+                body = runner.get(match.group(1)) if match else None
             self._send(200, body) if body else self._send(404, {"error": "no such run"})
 
         def do_POST(self) -> None:

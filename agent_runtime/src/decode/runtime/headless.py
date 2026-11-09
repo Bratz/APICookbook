@@ -47,6 +47,7 @@ from decode.entities import events
 from decode.entities.permissions import PermissionDecision, PermissionRequest
 from decode.permissions.gate import PermissionGate
 from decode.permissions.types import PermissionMode
+from decode.runtime.events import event_writer
 from decode.runtime.summary import (
     ExitReason,
     build_summary,
@@ -222,6 +223,7 @@ async def _run_task(
     session_id: str,
     max_requests: int | None = None,
     state: _RunState | None = None,
+    events_jsonl: Path | None = None,
 ) -> str:
     """Run ONE task to completion through the bypass agent and return its final text (ADR-0019 §1).
 
@@ -249,7 +251,11 @@ async def _run_task(
         # the ``with`` would only ever run on the completed path.
         with capture_run_messages() as messages:
             state.messages = messages
-            result = await agent.run(task, deps=deps, usage_limits=_usage_limits(max_requests))
+            # APICookbook fork F2b: the step log the website streams; without it the call is upstream's.
+            extra = {"event_stream_handler": event_writer(events_jsonl)} if events_jsonl else {}
+            result = await agent.run(
+                task, deps=deps, usage_limits=_usage_limits(max_requests), **extra
+            )
         observability.record_output(span, result.output)
     output = result.output
     if not isinstance(output, str):
@@ -269,6 +275,7 @@ def run_headless_task(
     local: bool = False,
     max_requests: int | None = None,
     summary_json: Path | None = None,
+    events_jsonl: Path | None = None,
 ) -> str:
     """Run ``task`` headlessly and return the agent's final text — the whole runtime (ADR-0019 §1).
 
@@ -310,6 +317,7 @@ def run_headless_task(
                 session_id=session_id,
                 max_requests=max_requests,
                 state=state,
+                events_jsonl=events_jsonl,
             )
         )
     except UsageLimitExceeded:

@@ -1,6 +1,6 @@
 # Forking decode into APICookbook: decisions and plan
 
-Status: F0, F1 and F2a done (2026-11-09), F2b next · Sandbox changed from Modal to a dedicated OCI instance on 2026-11-09 · Decided with the owner in an interview on 2026-11-09 · Upstream: [decodingai-magazine/building-a-coding-agent-from-scratch-course](https://github.com/decodingai-magazine/building-a-coding-agent-from-scratch-course) ("decode", Apache-2.0)
+Status: F0, F1, F2a done; F2b built (2026-11-09) · Sandbox changed from Modal to a dedicated OCI instance on 2026-11-09 · Decided with the owner in an interview on 2026-11-09 · Upstream: [decodingai-magazine/building-a-coding-agent-from-scratch-course](https://github.com/decodingai-magazine/building-a-coding-agent-from-scratch-course) ("decode", Apache-2.0)
 
 ## Intent
 
@@ -122,7 +122,12 @@ Still open, both outside the code:
 - The agent's `PUT /customerManagement/customer/contact` for customer 100698 was **held, shown and rejected**. It never reached the bank.
 - The agent wrote and ran `amend_phone.py`, explained the rejection without retrying, and finished in 12 requests for **$0.18**, about 9× today's agent. Measuring cost is part of F4 and F5.
 
-**F2b. Live events and visitor routes:** per-step events from `decode run` streamed to cookbook-api; the visitor-facing `/api/build/stream`, `/approve`, `/steer`.
+**F2b. Live events** (built 2026-11-09):
+- `decode run --events-jsonl` appends each tool call and result as a JSON line, through pydantic-ai's `event_stream_handler` (the loop is unchanged).
+- The runner serves the log with a cursor: `GET /runs/<id>/events?after=N`.
+- cookbook-api streams a run live as server-sent events: `GET /api/build/runs/{id}/events` sends `step`, `write` (held), `write_decided`, `bank_call` and finally `done`, with the answer and summary. It pings every 15 s so the proxies along the way keep the stream open.
+- Approve, reject and stop stay at their F2a routes. The routes are still operator-only; visitors get them with F3's UI behind F4's caps.
+- **Deferred: steering** (mid-run corrections). `decode run` has no input channel. It would need the REPL loop's steering queue fed from a file or socket. Stop covers "that's wrong" for now.
 
 **F3. Web UI.**
 - A "Build & run" mode in the chat: live steps, file tree and contents, command output, Approve and Reject for each bank write, a steering box and Stop.

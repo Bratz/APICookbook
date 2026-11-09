@@ -147,3 +147,35 @@ def test_the_build_routes_are_off_without_a_runner_token(client, monkeypatch):
 
     assert client.post("/api/build/runs", json={"task": "t"}).status_code == 503
     assert build_routes._RUNS == {}
+
+
+@pytest.mark.anyio
+async def test_the_stream_merges_steps_writes_and_bank_calls_then_ends(monkeypatch):
+    run = build_proxy.new_run()
+    held = build_proxy.HeldWrite(id="w1", method="POST", path="/Core/customer", body_preview="{}")
+    run.writes["w1"] = held
+    run.calls.append({"method": "GET", "path": "/Core/a", "status": 200})
+    run.calls.append({"method": "POST", "path": "/Core/customer", "write_id": "w1"})  # still waiting
+    pages = iter([
+        {"status": "running", "events": [{"type": "tool_call", "tool": "bash"}], "next": 1},
+        {"status": "completed", "events": [], "next": 1},
+    ])
+
+    async def fake_runner(method, path, json=None):
+        if path.endswith("/events?after=0") or path.endswith("/events?after=1"):
+            page = next(pages)
+            if page["status"] == "completed":  # the visitor approved in between
+                build_proxy.decide(run.token, "w1", approve=True)
+                run.calls[1].update(decision="approved", status=201)
+            return httpx.Response(200, json=page)
+        return httpx.Response(200, json={"status": "completed", "exit_code": 0, "answer": "done", "summary": {}})
+
+    monkeypatch.setattr(build_routes, "_call_runner", fake_runner)
+    monkeypatch.setattr(build_routes, "STREAM_POLL_S", 0)
+
+    chunks = [c async for c in build_routes.stream_run("r1", run.token)]
+    kinds = [c.split("\n", 1)[0].removeprefix("event: ") for c in chunks]
+
+    assert kinds == ["step", "write", "bank_call", "write_decided", "bank_call", "done"]
+    assert '"answer": "done"' in chunks[-1]
+    assert not run.alive  # the stream ends the run's token with it

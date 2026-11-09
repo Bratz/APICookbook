@@ -111,6 +111,12 @@ def pending(token: str) -> list[dict[str, Any]]:
     return [w.public() for w in run.writes.values() if w.decision is None] if run else []
 
 
+def writes(token: str) -> list[dict[str, Any]]:
+    """Every write the run made, held or decided, oldest first."""
+    run = RUNS.get(token)
+    return [w.public() for w in run.writes.values()] if run else []
+
+
 def calls(token: str) -> list[dict[str, Any]]:
     run = RUNS.get(token)
     return list(run.calls) if run else []

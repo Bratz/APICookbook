@@ -26,6 +26,10 @@ _FAKE_DECODE = (
     "if 'sleep' in args[1]: time.sleep(30)\n"
     "summary = args[args.index('--summary-json') + 1]\n"
     "open(summary, 'w').write(json.dumps({'exit_reason': 'completed', 'task': args[1]}))\n"
+    "events = open(args[args.index('--events-jsonl') + 1], 'w')\n"
+    "events.write(json.dumps({'type': 'tool_call', 'tool': 'bash'}) + chr(10))\n"
+    "events.write(json.dumps({'type': 'tool_result', 'tool': 'bash', 'ok': True}) + chr(10))\n"
+    "events.close()\n"
     "print(('answer for ' + args[1] + ' via ' + os.environ.get('BANCS_PROXY_URL', '')).strip())\n"
 )
 
@@ -129,3 +133,16 @@ def test_only_the_cookbook_proxys_per_run_address_is_passed_on(server, runner):
     code, body = _call(f"{server}/runs", "POST", {"task": "use the bank", "proxy_url": good})
     assert code == 202
     assert _wait(runner, body["id"])["answer"].strip() == f"answer for use the bank via {good}"
+
+
+def test_a_runs_steps_stream_through_a_cursor(server, runner):
+    code, body = _call(f"{server}/runs", "POST", {"task": "two steps"})
+    _wait(runner, body["id"])
+
+    code, first = _call(f"{server}/runs/{body['id']}/events")
+    assert code == 200
+    assert [e["type"] for e in first["events"]] == ["tool_call", "tool_result"]
+    assert first["next"] == 2 and first["status"] == "completed"
+
+    _, rest = _call(f"{server}/runs/{body['id']}/events?after=2")
+    assert rest["events"] == [] and rest["next"] == 2  # nothing new past the cursor

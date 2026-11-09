@@ -314,6 +314,15 @@ def cli(ctx: click.Context) -> None:
     help="Write this run's summary (session id, exit reason, requests, tokens, cost, hand-back "
     "branch, output) as ONE JSON object at PATH; parent dirs are created. Nothing else changes.",
 )
+@click.option(
+    "--events-jsonl",
+    "events_jsonl",
+    default=None,
+    metavar="PATH",
+    type=click.Path(dir_okay=False, path_type=Path),
+    help="Append each step (tool call, tool result) to PATH as one JSON line while the run works, "
+    "so a watcher can stream it. Nothing else changes.",
+)
 def run(
     task: str | None,
     model: str | None,
@@ -321,6 +330,7 @@ def run(
     local: bool,
     max_requests: int | None,
     summary_json: Path | None,
+    events_jsonl: Path | None,
 ) -> None:
     """Run a single TASK headlessly, then print the agent's answer (ADR-0019 §1).
 
@@ -406,6 +416,7 @@ def run(
             local=local,
             max_requests=max_requests,
             summary_json=summary_json,
+            events_jsonl=events_jsonl,
         )
     except UsageLimitExceeded as exc:
         # The request ceiling (``--max-requests`` / ``RUNTIME_MAX_REQUESTS``) fired: the run did

@@ -7,18 +7,24 @@ token can start a run.
 
     POST   /api/build/runs                        {"task"}  → {"id"}
     GET    /api/build/runs/{id}                   the runner's status + held writes + the bank calls
+    GET    /api/build/runs/{id}/events            the run live, as server-sent events (F2b):
+           step (each tool call / result) · write (held, waiting) · write_decided · bank_call · done
     POST   /api/build/runs/{id}/writes/{write}    {"approve": true|false}
     DELETE /api/build/runs/{id}                   stop it
 """
 
 from __future__ import annotations
 
+import asyncio
 import hmac
+import json
 import os
-from typing import Any
+import time
+from typing import Any, AsyncIterator
 
 import httpx
 from fastapi import APIRouter, Header, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from backend import build_proxy
@@ -111,3 +117,56 @@ async def stop(run_id: str, authorization: str = Header("")) -> dict[str, Any]:
     build_proxy.end_run(token)
     response = await _call_runner("DELETE", f"/runs/{run_id}")
     return {"id": run_id, "stopping": response.status_code == 200}
+
+
+STREAM_POLL_S = 1.0
+STREAM_MAX_S = 20 * 60  # past the runner's own 15-minute limit
+STREAM_PING_S = 15.0
+
+
+def _sse(event: str, data: Any) -> str:
+    return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+
+async def stream_run(run_id: str, token: str) -> AsyncIterator[str]:
+    """One run, live: its steps from the runner and its bank traffic from the proxy, until it ends."""
+    cursor, writes_seen, decided_seen, calls_sent = 0, set(), set(), 0
+    started = last_sent = time.monotonic()
+    while time.monotonic() - started < STREAM_MAX_S:
+        response = await _call_runner("GET", f"/runs/{run_id}/events?after={cursor}")
+        page = response.json() if response.status_code == 200 else {"status": "unknown", "events": [], "next": cursor}
+        out = [_sse("step", e) for e in page["events"]]
+        cursor = page["next"]
+        for write in build_proxy.writes(token):
+            if write["id"] not in writes_seen:
+                writes_seen.add(write["id"])
+                out.append(_sse("write", write))
+            if write["decision"] and write["id"] not in decided_seen:
+                decided_seen.add(write["id"])
+                out.append(_sse("write_decided", write))
+        calls = build_proxy.calls(token)
+        while calls_sent < len(calls) and ("status" in calls[calls_sent] or "decision" in calls[calls_sent]):
+            out.append(_sse("bank_call", calls[calls_sent]))  # in order, once each has an outcome
+            calls_sent += 1
+        for chunk in out:
+            yield chunk
+        if out:
+            last_sent = time.monotonic()
+        if page["status"] not in ("running", "unknown") and not page["events"]:
+            build_proxy.end_run(token)
+            final = (await _call_runner("GET", f"/runs/{run_id}")).json()
+            yield _sse("done", {k: final.get(k) for k in ("status", "exit_code", "answer", "summary")})
+            return
+        if time.monotonic() - last_sent > STREAM_PING_S:
+            yield ": ping\n\n"  # keeps Vercel's and Caddy's idle timers from closing the stream
+            last_sent = time.monotonic()
+        await asyncio.sleep(STREAM_POLL_S)
+    yield _sse("done", {"status": "stream_timeout"})
+
+
+@router.get("/runs/{run_id}/events")
+async def events(run_id: str, authorization: str = Header("")) -> StreamingResponse:
+    _authorize(authorization)
+    token = _token(run_id)
+    return StreamingResponse(stream_run(run_id, token), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
