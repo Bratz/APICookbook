@@ -547,6 +547,27 @@
         .lang-select { width: auto; flex: none; height: var(--control-h); }
         .composer-note { margin-top: var(--space-2xs); font-size: var(--text-xs); color: var(--color-muted); }
 
+        /* Build & run (decode fork F3): live steps, bank calls, held-write cards */
+        .build-toggle[aria-pressed="true"] { background: var(--color-accent-wash); border-color: var(--color-accent); color: var(--color-accent); }
+        .build-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-xs); margin-bottom: var(--space-xs); }
+        .build-log { list-style: none; margin: 0 0 var(--space-sm); padding: 0; display: grid; gap: var(--space-3xs); font-size: var(--text-sm); color: var(--color-muted); }
+        .build-log li { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-2xs); min-width: 0; }
+        .build-log code { background: none; padding: 0; color: var(--color-ink-2); overflow-wrap: anywhere; }
+        .build-log .mark { flex: none; width: 1.2em; text-align: center; }
+        .build-log .txt { flex: 1; min-width: 0; }
+        .build-log .mark.ok { color: var(--color-success); }
+        .build-log .mark.fail { color: var(--color-error); }
+        .build-log details { flex-basis: 100%; margin-left: 1.4em; }
+        .build-log details pre { max-height: 14lh; overflow: auto; font-size: var(--text-xs); margin: var(--space-3xs) 0 0; }
+        .build-log .bank { color: var(--color-ink-2); }
+        .write-card { margin: var(--space-xs) 0; padding: var(--space-sm); border: var(--rule-hair) solid var(--color-warning); border-radius: var(--radius-card); background: var(--color-paper-2); }
+        .write-card.decided { border-color: var(--color-rule-2); }
+        .write-card h4 { margin: 0 0 var(--space-2xs); font-size: var(--text-sm); }
+        .write-card pre { max-height: 12lh; overflow: auto; font-size: var(--text-xs); margin: var(--space-2xs) 0; }
+        .write-card .write-status { font-size: var(--text-xs); color: var(--color-muted); }
+        .build-key-form { display: flex; flex-wrap: wrap; gap: var(--space-xs); margin-top: var(--space-xs); }
+        .build-key-form .form-input { flex: 1; min-width: 12em; }
+
         .knowledge-search-bar {
             padding: var(--space-xs) var(--space-md);
             border-top: var(--rule-hair) solid var(--color-rule);
@@ -793,6 +814,8 @@
             .tab span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
             .tab { padding: 0 var(--space-sm); }
             .chat-input { min-height: 64px; }
+            .chat-input-wrapper { flex-wrap: wrap; justify-content: flex-end; }
+            .chat-input-wrapper .chat-input { flex-basis: 100%; }  /* buttons wrap below, not squeeze it */
             .header .btn-ghost[aria-label="Keyboard shortcuts"] { display: none; }
             .form-input, .chat-input { font-size: 16px; }
             .chat-messages { padding: var(--space-md); }
@@ -966,6 +989,10 @@
                                 <option value="javascript">JavaScript</option>
                                 <option value="java">Java</option>
                             </select>
+                            <button type="button" class="btn btn-secondary build-toggle" id="buildToggle" hidden aria-pressed="false"
+                                    onclick="toggleBuildMode()" title="Write the code, run it in a sandbox, and call the demo bank">
+                                Build &amp; run
+                            </button>
                             <button class="btn btn-primary" id="sendButton" onclick="sendMessage()">
                                 <i data-lucide="send" style="width: 16px; height: 16px;" aria-hidden="true"></i>
                                 Send
@@ -1229,6 +1256,7 @@
 
                 // Is the code-writing agent switched on here?
                 checkAgent();
+                initBuildMode();
 
                 // Code editor for the Playground body (desktop only)
                 setupBodyEditor();
@@ -1890,6 +1918,14 @@
            
            input.value = '';
            autoResizeTextarea(input);
+
+           // Build & run (operator preview): write, run and call the bank, with approvals.
+           if (state.buildMode && !options.search) {
+               const sendButton = document.getElementById('sendButton');
+               sendButton.disabled = true;
+               try { await runBuild(message); } finally { sendButton.disabled = false; }
+               return;
+           }
 
            // Typed questions go to the code-writing agent when it is on; it returns false when it is
            // off, capped or failing, and the search chat below answers instead.
@@ -3061,6 +3097,222 @@
            if (working) working.remove();
            if (!answered) body.innerHTML = '<p>The answer was cut off. Please try again.</p>';
            return true;
+       }
+
+       // ---------------------------------------------------------------- Build & run (decode fork F3)
+       // Operator preview: the /api/build routes need the runner token until F4's caps, so the mode is
+       // hidden unless that key was saved in this browser (open the page with #build to enter it).
+       state.buildMode = false;
+       const BUILD_KEY = 'buildKey';
+       const PROXY_RE = /https?:\/\/10\.0\.0\.49:7601\/r\/[A-Za-z0-9_-]+/g;
+
+       function buildKey() { try { return localStorage.getItem(BUILD_KEY) || ''; } catch (e) { return ''; } }
+       function maskProxy(text) { return String(text ?? '').replace(PROXY_RE, '$BANK'); }
+
+       function initBuildMode() {
+           const toggle = document.getElementById('buildToggle');
+           toggle.hidden = !buildKey();
+           if (location.hash === '#build' && !buildKey() && !document.querySelector('.build-key-form')) askBuildKey();
+       }
+       window.addEventListener('hashchange', initBuildMode);  // adding #build to an open page works too
+
+       function askBuildKey(note) {
+           const el = document.createElement('div');
+           el.className = 'message assistant';
+           el.innerHTML = `<div class="message-label">Build &amp; run</div><div class="message-content">
+               <p>${note ? escapeHtml(note) + ' ' : ''}Build &amp; run is in operator preview. Enter the operator key to turn it on in this browser.</p>
+               <form class="build-key-form" onsubmit="saveBuildKey(event, this)">
+                   <input class="form-input" type="password" autocomplete="off" aria-label="Operator key" required minlength="32">
+                   <button class="btn btn-primary" type="submit">Save key</button>
+               </form></div>`;
+           document.getElementById('chatMessages').appendChild(el);
+           el.querySelector('input').focus();
+       }
+
+       function saveBuildKey(event, form) {
+           event.preventDefault();
+           try { localStorage.setItem(BUILD_KEY, form.querySelector('input').value.trim()); } catch (e) {}
+           form.closest('.message').remove();
+           initBuildMode();
+           if (!state.buildMode) toggleBuildMode();
+       }
+
+       function toggleBuildMode() {
+           if (!buildKey()) { askBuildKey(); return; }
+           state.buildMode = !state.buildMode;
+           document.getElementById('buildToggle').setAttribute('aria-pressed', String(state.buildMode));
+           document.getElementById('agentLanguage').hidden = state.buildMode || !state.agentAvailable;
+           const note = document.getElementById('agentNote');
+           note.hidden = !state.buildMode && !state.agentAvailable;
+           note.textContent = state.buildMode
+               ? 'Build & run writes the code, runs it in a sandbox and calls the shared demo bank. Every change to bank data waits for your Approve.'
+               : 'The agent plans BaNCS calls and writes code; it never runs anything. Don’t paste real customer data.';
+           document.getElementById('messageInput').placeholder = state.buildMode
+               ? 'Describe a task to build and run, e.g. "find a customer and show their accounts"…'
+               : (state.agentAvailable ? 'Describe a task, e.g. "a customer moved house: update their address"…' : 'Ask about APIs, authentication, code examples…');
+       }
+
+       async function buildFetch(path, options = {}) {
+           const response = await fetch('/api/build' + path, { ...options,
+               headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + buildKey(), ...(options.headers || {}) } });
+           if (response.status === 401) {
+               try { localStorage.removeItem(BUILD_KEY); } catch (e) {}
+               state.buildMode = false; initBuildMode(); toggleBuildMode();
+               throw new Error('The operator key was not accepted.');
+           }
+           return response;
+       }
+
+       function describeBuildCall(step) {
+           let args = {};
+           try { args = JSON.parse(step.args || '{}'); } catch (e) {}
+           const t = step.tool;
+           if (t === 'search_endpoints') return `Searched the API for <code>${escapeHtml(args.query)}</code>`;
+           if (t === 'get_endpoint') return `Read <code>${escapeHtml(args.name)}</code>`;
+           if (t === 'get_body_schema') return `Read the body schema of <code>${escapeHtml(args.name)}</code>`;
+           if (t === 'write') return `Wrote <code>${escapeHtml(args.path || args.file_path)}</code>`;
+           if (t === 'edit') return `Edited <code>${escapeHtml(args.path || args.file_path)}</code>`;
+           if (t === 'read') return `Read <code>${escapeHtml(args.path || args.file_path)}</code>`;
+           if (t === 'bash') return `Ran <code>${escapeHtml(maskProxy(args.command).slice(0, 220))}</code>`;
+           if (t === 'todo_write') return 'Updated its plan';
+           if (t === 'agent') return 'Asked helpers to explore';
+           return escapeHtml(t);
+       }
+
+       async function runBuild(task) {
+           const container = document.getElementById('chatMessages');
+           const el = document.createElement('div');
+           el.className = 'message assistant agent';
+           el.innerHTML = `<div class="message-label">Build &amp; run</div><div class="message-content">
+               <div class="build-head"><span class="text-small text-muted" data-status><span class="loading-spinner"></span> Starting a sandbox…</span>
+               <button type="button" class="btn btn-secondary btn-sm" data-stop hidden>Stop</button></div>
+               <ul class="build-log" aria-live="polite"></ul><div class="build-writes"></div><div class="agent-body"></div></div>`;
+           container.appendChild(el);
+           const log = el.querySelector('.build-log'), writes = el.querySelector('.build-writes'), body = el.querySelector('.agent-body');
+           const status = el.querySelector('[data-status]'), stop = el.querySelector('[data-stop]');
+           const scroll = () => { container.scrollTop = container.scrollHeight; };
+           const started = performance.now();
+           scroll();
+
+           let runId;
+           try {
+               const r = await buildFetch('/runs', { method: 'POST', body: JSON.stringify({ task }) });
+               const data = await r.json().catch(() => ({}));
+               if (r.status === 429) throw new Error('Both sandboxes are busy. Try again in a minute.');
+               if (!r.ok) throw new Error(data.detail || `The run could not start (${r.status}).`);
+               runId = data.id;
+           } catch (e) {
+               status.textContent = e.message; return;
+           }
+           status.innerHTML = '<span class="loading-spinner"></span> Working in the sandbox…';
+           stop.hidden = false;
+           stop.onclick = async () => { stop.disabled = true; status.textContent = 'Stopping…';
+               try { await buildFetch(`/runs/${runId}`, { method: 'DELETE' }); } catch (e) {} };
+
+           const calls = {};
+           let final = null;
+           try {
+               const response = await buildFetch(`/runs/${runId}/events`);
+               if (!response.ok) throw new Error(`The live view could not open (${response.status}).`);
+               const reader = response.body.getReader(), decoder = new TextDecoder();
+               let buffer = '';
+               while (!final) {
+                   const { value, done } = await reader.read();
+                   if (done) break;
+                   buffer += decoder.decode(value, { stream: true });
+                   let cut;
+                   while ((cut = buffer.indexOf('\n\n')) >= 0) {
+                       const block = buffer.slice(0, cut); buffer = buffer.slice(cut + 2);
+                       const event = (block.match(/^event: (.*)$/m) || [])[1], raw = (block.match(/^data: (.*)$/m) || [])[1];
+                       if (!event || !raw) continue;
+                       const data = JSON.parse(raw);
+                       if (event === 'step' && data.type === 'tool_call') {
+                           const li = document.createElement('li');
+                           li.innerHTML = `<span class="mark">…</span><span class="txt">${describeBuildCall(data)}</span>`;
+                           log.appendChild(li); calls[data.id] = li;
+                       } else if (event === 'step' && data.type === 'tool_result') {
+                           const li = calls[data.id];
+                           if (li) {
+                               const mark = li.querySelector('.mark');
+                               mark.textContent = data.ok ? '✓' : '✗'; mark.className = 'mark ' + (data.ok ? 'ok' : 'fail');
+                               if (data.output && !['search_endpoints', 'get_endpoint', 'get_body_schema', 'todo_write'].includes(data.tool)) {
+                                   li.insertAdjacentHTML('beforeend', `<details><summary class="text-small">Output</summary><pre>${escapeHtml(maskProxy(data.output))}</pre></details>`);
+                               }
+                           }
+                       } else if (event === 'bank_call') {
+                           const li = document.createElement('li');
+                           li.className = 'bank';
+                           const outcome = data.decision && data.decision !== 'approved' ? `not sent (${escapeHtml(data.decision)})` : escapeHtml(data.status ?? '');
+                           li.innerHTML = `<span class="mark">⇄</span><span class="method-badge method-${escapeHtml(data.method.toLowerCase())}">${escapeHtml(data.method)}</span><code>${escapeHtml(data.path)}</code><span>${outcome}</span>`;
+                           log.appendChild(li);
+                       } else if (event === 'write') {
+                           writes.appendChild(renderHeldWrite(runId, data));
+                       } else if (event === 'write_decided') {
+                           const card = writes.querySelector(`[data-write="${CSS.escape(data.id)}"]`);
+                           if (card) settleWriteCard(card, data.decision);
+                       } else if (event === 'done') {
+                           final = data;
+                       }
+                       scroll();
+                   }
+               }
+           } catch (e) {
+               status.textContent = e.message;
+           }
+           stop.hidden = true;
+           if (!final) { if (!status.textContent.trim()) status.textContent = 'The live view was cut off.'; return; }
+           const summary = final.summary || {};
+           const secs = Math.round((performance.now() - started) / 1000);
+           const cost = typeof summary.cost_usd === 'number' ? ` for $${summary.cost_usd.toFixed(2)}` : '';
+           status.textContent = final.status === 'completed' ? `Done in ${secs} s${cost}.`
+               : final.status === 'stopped' ? 'Stopped.' : `The run ended: ${final.status}.`;
+           if (final.answer) {
+               body.innerHTML = DOMPurify.sanitize(marked.parse(maskProxy(final.answer)));
+               body.querySelectorAll('pre code').forEach(b => window.hljs?.highlightElement?.(b));
+           }
+           writes.querySelectorAll('.write-card:not(.decided)').forEach(card => settleWriteCard(card, 'rejected'));
+           scroll();
+       }
+
+       function renderHeldWrite(runId, write) {
+           const card = document.createElement('div');
+           card.className = 'write-card';
+           card.dataset.write = write.id;
+           let pretty = write.body || '';
+           try { pretty = JSON.stringify(JSON.parse(pretty), null, 2); } catch (e) {}
+           card.innerHTML = `<h4>The code wants to change bank data</h4>
+               <div class="plan-step-head"><span class="method-badge method-${escapeHtml(write.method.toLowerCase())}">${escapeHtml(write.method)}</span><code>${escapeHtml(write.path)}</code></div>
+               ${pretty ? `<pre>${escapeHtml(pretty)}</pre>` : ''}
+               <div class="choice-row"><button type="button" class="btn btn-primary btn-sm" data-approve>Approve</button>
+               <button type="button" class="btn btn-secondary btn-sm" data-reject>Reject</button>
+               <span class="write-status" data-left></span></div>`;
+           const left = card.querySelector('[data-left]');
+           const deadline = Date.now() + 120000 - (write.waiting_s || 0) * 1000;
+           const tick = () => {
+               if (card.classList.contains('decided')) return;
+               const s = Math.max(0, Math.round((deadline - Date.now()) / 1000));
+               left.textContent = s ? `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')} left, then it counts as rejected` : 'Timed out';
+               if (s) setTimeout(tick, 1000);
+           };
+           tick();
+           const decide = async (approve) => {
+               card.querySelectorAll('button').forEach(b => b.disabled = true);
+               try {
+                   const r = await buildFetch(`/runs/${runId}/writes/${write.id}`, { method: 'POST', body: JSON.stringify({ approve }) });
+                   settleWriteCard(card, r.ok ? (await r.json()).decision : 'rejected');
+               } catch (e) { left.textContent = e.message; }
+           };
+           card.querySelector('[data-approve]').onclick = () => decide(true);
+           card.querySelector('[data-reject]').onclick = () => decide(false);
+           return card;
+       }
+
+       function settleWriteCard(card, decision) {
+           if (card.classList.contains('decided')) return;
+           card.classList.add('decided');
+           card.querySelectorAll('button').forEach(b => b.remove());
+           card.querySelector('[data-left]').textContent =
+               decision === 'approved' ? 'Approved: sent to the bank.' : decision === 'timeout' ? 'Not answered in time: not sent.' : 'Rejected: not sent to the bank.';
        }
 
        function renderAgentAnswer(body, data, question, language, ms) {

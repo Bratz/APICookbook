@@ -1,6 +1,6 @@
 # Forking decode into APICookbook: decisions and plan
 
-Status: F0–F2 done (2026-11-09), F3 (web UI) next · Sandbox changed from Modal to a dedicated OCI instance on 2026-11-09 · Decided with the owner in an interview on 2026-11-09 · Upstream: [decodingai-magazine/building-a-coding-agent-from-scratch-course](https://github.com/decodingai-magazine/building-a-coding-agent-from-scratch-course) ("decode", Apache-2.0)
+Status: F0–F2 done, F3 built as an operator preview (2026-11-09) · Sandbox changed from Modal to a dedicated OCI instance on 2026-11-09 · Decided with the owner in an interview on 2026-11-09 · Upstream: [decodingai-magazine/building-a-coding-agent-from-scratch-course](https://github.com/decodingai-magazine/building-a-coding-agent-from-scratch-course) ("decode", Apache-2.0)
 
 ## Intent
 
@@ -133,8 +133,18 @@ Still open, both outside the code:
   - the agent's answer said the write never reached the bank; 14 requests, $0.22.
 - **Deferred: steering** (mid-run corrections). `decode run` has no input channel. It would need the REPL loop's steering queue fed from a file or socket. Stop covers "that's wrong" for now.
 
-**F3. Web UI.**
-- A "Build & run" mode in the chat: live steps, file tree and contents, command output, Approve and Reject for each bank write, a steering box and Stop.
+**F3. Web UI** (built 2026-11-09, operator preview):
+- A **Build & run** toggle in the chat composer. It is hidden unless the operator key is saved in that browser: open the site with `#build` to enter it. The key lives in `localStorage` and is cleared on a 401.
+- Live view, from the F2b stream:
+  - each tool call as a step, ticked or crossed on its result, with collapsible output;
+  - bank calls with method badges;
+  - each held write as an amber card with the formatted body, **Approve / Reject** and a 2-minute countdown;
+  - a **Stop** button;
+  - the answer as sanitised markdown, then time and cost.
+- The run's proxy URL and token are shown as `$BANK` everywhere.
+- On phones the composer's buttons wrap below the text box.
+- Tried against a local mock of the stream (approve and reject paths, desktop and 375 px).
+- Opening it to visitors waits for F4: caps on this mode, a per-visitor run key in place of the operator key, and the shared-data notice.
 
 **F4. Guardrails** (needed before public launch):
 - per-IP and USD caps for this mode;
