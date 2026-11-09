@@ -1,3 +1,8 @@
+> **APICookbook fork.** This is upstream's memory file, kept for history. The fork removed the TUI,
+> Kitaru, `remote/`, web_fetch and skills, made Claude the default, and runs on a hardened Docker
+> sandbox host: see `NOTICE`, `docs/adr/0024-apicookbook-fork.md` and APICookbook's
+> `docs/decode-fork-plan.md` before trusting anything below.
+
 # decode
 
 **decode** — terminal **coding agent** ("agentic harness") built step by step as an educational open-source course (Apache-2.0). Single Python package `decode` (Python 3.12+, `cli-tool-python` shape): Click entrypoint launches a TUI (`prompt_toolkit` input + `Rich` output — a module *inside* the package, not a separate service); Pydantic-AI ReAct loop drives file/bash/web/MCP tools; pluggable inference (Gemini / OpenRouter / Modal); local + remote sandboxing; Opik observability; Kitaru session recording + replay. Depth references name **squid scaffold specs** (in `iusztinpaul/squid` plugin, not this repo) — read via plugin cache; package depth: `python-backend` + `cli-tool-python`.

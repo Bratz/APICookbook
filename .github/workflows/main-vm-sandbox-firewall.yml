@@ -1,0 +1,84 @@
+# ============================================================================
+# On the SHARED main VM (vam-portal-vm, 10.0.0.49): accept nothing NEW from the Build & run
+# sandbox host (10.0.0.223) except the BaNCS proxy port. decode fork F1.
+#
+# Why: the two instances share a subnet, so today the sandbox host can open the main VM's SSH,
+# HTTPS and every published port. These rules sit on the main VM, so even a fully compromised
+# sandbox host cannot remove them. Replies to connections the main VM opens (cookbook-api calling
+# the runner on 10.0.0.223:7700) still pass: only NEW connections from the sandbox host are dropped.
+#
+# Applied to INPUT (host processes, sshd) and DOCKER-USER (docker-published ports, e.g. Caddy's 443),
+# and re-applied after every docker start by a systemd unit. Manual only: run it deliberately.
+# mode=remove takes the rules and the unit away again.
+# Secrets: VM_HOST, VM_USER, VM_SSH_KEY (the deploy's).
+# ============================================================================
+name: Main VM sandbox firewall
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "apply or remove"
+        type: choice
+        options: [apply, remove]
+        default: apply
+
+jobs:
+  firewall:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Firewall rules on the main VM
+        uses: appleboy/ssh-action@v1
+        env:
+          MODE: ${{ inputs.mode }}
+        with:
+          host: ${{ secrets.VM_HOST }}
+          username: ${{ secrets.VM_USER }}
+          key: ${{ secrets.VM_SSH_KEY }}
+          envs: MODE
+          script: |
+            set -euo pipefail
+            if [ "$MODE" = remove ]; then
+              sudo systemctl disable --now decode-sandbox-guard.service 2>/dev/null || true
+              for chain in INPUT DOCKER-USER; do
+                while sudo iptables -D "$chain" -s 10.0.0.223 -j SANDBOX-IN 2>/dev/null; do :; done
+              done
+              sudo iptables -F SANDBOX-IN 2>/dev/null || true
+              sudo iptables -X SANDBOX-IN 2>/dev/null || true
+              sudo rm -f /usr/local/sbin/decode-sandbox-guard.sh /etc/systemd/system/decode-sandbox-guard.service
+              sudo systemctl daemon-reload
+              echo "removed"; exit 0
+            fi
+            sudo tee /usr/local/sbin/decode-sandbox-guard.sh >/dev/null <<'EOF'
+            #!/usr/bin/env bash
+            # From the Build & run sandbox host (10.0.0.223): only the BaNCS proxy port, plus replies.
+            set -euo pipefail
+            iptables -N SANDBOX-IN 2>/dev/null || iptables -F SANDBOX-IN
+            iptables -A SANDBOX-IN -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN
+            iptables -A SANDBOX-IN -p tcp --dport 7601 -j RETURN
+            iptables -A SANDBOX-IN -j DROP
+            for chain in INPUT DOCKER-USER; do
+              iptables -C "$chain" -s 10.0.0.223 -j SANDBOX-IN 2>/dev/null || iptables -I "$chain" 1 -s 10.0.0.223 -j SANDBOX-IN
+            done
+            EOF
+            sudo chmod 755 /usr/local/sbin/decode-sandbox-guard.sh
+            sudo tee /etc/systemd/system/decode-sandbox-guard.service >/dev/null <<'EOF'
+            [Unit]
+            Description=Drop new connections from the Build & run sandbox host (decode fork)
+            After=docker.service
+            PartOf=docker.service
+
+            [Service]
+            Type=oneshot
+            RemainAfterExit=yes
+            ExecStart=/usr/local/sbin/decode-sandbox-guard.sh
+
+            [Install]
+            WantedBy=multi-user.target docker.service
+            EOF
+            sudo systemctl daemon-reload
+            sudo systemctl enable decode-sandbox-guard.service
+            sudo systemctl restart decode-sandbox-guard.service
+            echo "== applied"; sudo iptables -S SANDBOX-IN
+            echo "== hooks"; sudo iptables -S INPUT | grep SANDBOX-IN; sudo iptables -S DOCKER-USER | grep SANDBOX-IN

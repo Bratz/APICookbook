@@ -247,11 +247,33 @@ class Settings(BaseSettings):
     # ``sandbox_mode`` selects the ``CommandExecutor`` for the whole process (chosen once at
     # startup); ``none`` (default) keeps the host ``LocalExecutor``, byte-unchanged. An unavailable
     # backend is a friendly startup / pre-flight error (presence, not correctness).
-    sandbox_mode: Literal["none", "modal"] = "none"  # APICookbook fork: Docker backend removed
+    sandbox_mode: Literal["none", "docker", "modal"] = "none"
     # The worker image (docker pulls it; modal maps it via ``Image.from_registry``). Must include
     # ``bash``. The uv variant of python-slim means both sandboxes run python via ``uv`` out of the
     # box (skill payloads say ``uv run …``). git is NOT in the slim base, so each backend adds it.
     sandbox_image: str = "ghcr.io/astral-sh/uv:python3.12-bookworm-slim"
+    # --- APICookbook fork (F1): the docker worker on the public sandbox host ---
+    # The OCI runtime for the worker container: "runsc" (gVisor) on the sandbox host; empty keeps
+    # docker's default (runc), as upstream.
+    sandbox_docker_runtime: str = ""
+    # A pre-created docker network for the worker (the host's locked one, whose only destination is
+    # the BaNCS proxy); empty keeps docker's default bridge, as upstream.
+    sandbox_docker_network: str = ""
+    # Hardened worker: no capabilities, read-only root, a non-root user, resource limits, and no
+    # per-session apt install (the image bakes git, and the locked network blocks apt anyway).
+    # Off keeps upstream's worker byte-identical.
+    sandbox_docker_hardened: bool = False
+    # --- APICookbook fork (F1): the runner on the sandbox host (``python -m decode.runner``) ---
+    # The shared secret cookbook-api sends as ``Authorization: Bearer …``; empty refuses to start.
+    runner_token: SecretStr = SecretStr("")
+    # Concurrent runs (1 OCPU sandbox host → 2); a start past the cap is refused with 429.
+    runner_max_runs: int = Field(2, gt=0)
+    # A run's wall-clock limit (seconds) and model-request cap, whatever the task asks for.
+    runner_run_timeout_s: float = Field(900.0, gt=0)
+    runner_max_requests: int = Field(40, gt=0)
+    # Where each run's directory (its harness home, workspace, answer and summary) lives; a run
+    # directory older than a day is deleted when the next run starts.
+    runner_runs_dir: Path = Path("/var/lib/decode/runs")
     # The git identity preconfigured in the sandbox so a model ``git commit`` succeeds. Defaults to
     # the same identity the hand-back stamps its capture commit with (``sandbox/handback.py``);
     # override to author as yourself or a bot, set both empty to skip.

@@ -369,3 +369,16 @@ def test_without_the_flag_the_runner_gets_no_summary_path(monkeypatch, _provider
 
     assert CliRunner().invoke(cli, ["run", "do it"]).exit_code == 0
     assert captured["summary_json"] is None
+
+
+def test_run_sandbox_docker_unreachable_is_a_friendly_line_no_agent(monkeypatch, _provider_ok):
+    monkeypatch.setattr(cli_mod.settings, "sandbox_mode", "docker")
+    monkeypatch.setattr(cli_mod, "_docker_daemon_reachable", lambda: False)
+    _no_runner_tripwire(monkeypatch)
+
+    result = CliRunner().invoke(cli, ["run", "list the files"])
+
+    assert result.exit_code != 0
+    assert "SANDBOX_MODE=docker" in result.stderr
+    assert "Docker daemon" in result.stderr
+    assert "Traceback" not in result.stderr

@@ -570,3 +570,52 @@ def test_provider_config_error_anthropic_missing_key_names_the_var(mocker):
 def test_provider_config_error_anthropic_present_returns_none(mocker):
     _select_provider(mocker, "anthropic", anthropic_api_key=SecretStr("test-key"))
     assert cli_mod._provider_config_error() is None
+
+
+def test_sandbox_config_error_docker_unreachable_returns_the_docker_line(mocker):
+    mocker.patch.object(cli_mod.settings, "sandbox_mode", "docker")
+    mocker.patch("decode.cli._docker_daemon_reachable", return_value=False)
+
+    msg = cli_mod._sandbox_config_error()
+
+    assert msg is not None
+    assert "SANDBOX_MODE=docker" in msg
+    assert "Docker daemon" in msg
+    assert ".env.example" in msg
+
+
+def test_sandbox_config_error_docker_reachable_returns_none(mocker):
+    """Presence, not correctness: a reachable-but-fake docker probe passes the guard (AC)."""
+    mocker.patch.object(cli_mod.settings, "sandbox_mode", "docker")
+    mocker.patch("decode.cli._docker_daemon_reachable", return_value=True)
+
+    assert cli_mod._sandbox_config_error() is None
+
+
+def test_docker_daemon_reachable_true_on_zero_exit(mocker):
+    mocker.patch("decode.cli.subprocess.run", return_value=mocker.Mock(returncode=0))
+
+    assert cli_mod._docker_daemon_reachable() is True
+
+
+def test_docker_daemon_reachable_false_on_nonzero_exit(mocker):
+    mocker.patch("decode.cli.subprocess.run", return_value=mocker.Mock(returncode=1))
+
+    assert cli_mod._docker_daemon_reachable() is False
+
+
+def test_docker_daemon_reachable_false_when_binary_missing(mocker):
+    mocker.patch("decode.cli.subprocess.run", side_effect=FileNotFoundError)
+
+    assert cli_mod._docker_daemon_reachable() is False
+
+
+def test_docker_daemon_reachable_false_on_timeout(mocker):
+    import subprocess
+
+    mocker.patch(
+        "decode.cli.subprocess.run",
+        side_effect=subprocess.TimeoutExpired(cmd="docker info", timeout=1.0),
+    )
+
+    assert cli_mod._docker_daemon_reachable() is False

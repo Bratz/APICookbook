@@ -47,10 +47,12 @@ from decode.entities import events
 from decode.entities.permissions import PermissionDecision, PermissionRequest
 from decode.harness.runner import TurnContext
 from decode.permissions.gate import PermissionGate
+from decode.sandbox import docker_backend, modal_backend
+from decode.sandbox.docker_backend import DockerBackend
 from decode.sandbox.executor import FileStat, SandboxExecutor, WorkspaceEscape
 from decode.sandbox.handback import ShipResult, ship_workspace
 from decode.sandbox.modal_backend import ModalBackend
-from decode.sandbox.workspace import prepare_workspace
+from decode.sandbox.workspace import GIT_TOKEN_ENV, prepare_workspace, sandbox_git_token
 from decode.tools import bash as bash_mod
 from decode.tools import files as files_mod
 from decode.tools.askuser import deny_user_question_resolver
@@ -531,6 +533,12 @@ def test_sandbox_mode_selects_the_matching_executor_class(monkeypatch: pytest.Mo
     bash_mod.reset_executor()
     assert isinstance(bash_mod._get_executor(), LocalExecutor)
 
+    monkeypatch.setattr(bash_mod.settings, "sandbox_mode", "docker")
+    bash_mod.reset_executor()
+    docker_executor = bash_mod._get_executor()
+    assert isinstance(docker_executor, SandboxExecutor)
+    assert isinstance(docker_executor._backend, DockerBackend)
+
     monkeypatch.setattr(bash_mod.settings, "sandbox_mode", "modal")
     bash_mod.reset_executor()
     modal_executor = bash_mod._get_executor()
@@ -792,6 +800,7 @@ def test_handback_git_runs_host_side_never_through_the_sandbox_seam(mocker, tmp_
     for seam in (
         "SandboxExecutor",
         "SandboxBackend",
+        "DockerBackend",
         "ModalBackend",
         "select_executor",
     ):
@@ -800,6 +809,47 @@ def test_handback_git_runs_host_side_never_through_the_sandbox_seam(mocker, tmp_
 
 # 5. Git-token injection (ONE mechanism, both backends) · replay-safety config · REPL-free (none
 #    imports no sandbox module; importing ``decode.cli`` imports no kitaru).
+
+_CRED_SECRET = "ghp_capstone_secret_token_value"
+
+
+def test_the_git_token_is_direct_injected_in_both_backends(monkeypatch, tmp_path: Path) -> None:
+    """One knob, one mechanism, two backends: ``SANDBOX_GIT_TOKEN`` → ``$GITHUB_TOKEN`` (ADR-0016 §2).
+
+    The symmetry the ADR bought, asserted offline: **both** backends read the same resolved token and
+    configure the **same** git credential helper (one constant, imported by both). Docker hands the value
+    to the container through the docker **client's env** — the argv only names the var, so no ``ps`` and
+    no rendered error can read it; modal hands it over as a ``modal.Secret`` (the SDK-level assertion is
+    ``test_modal_backend``'s, with its faked modal). Neither carries the token in a command line.
+    """
+    monkeypatch.setattr(settings, "sandbox_git_token", SecretStr(_CRED_SECRET))
+
+    # The two backends share ONE helper line and ONE token gate — that IS the "one mechanism" claim.
+    assert docker_backend.GIT_CREDENTIAL_HELPER is modal_backend.GIT_CREDENTIAL_HELPER
+    assert sandbox_git_token() == _CRED_SECRET
+
+    # docker: ``-e GITHUB_TOKEN`` is value-less in the argv; the value rides the client env only.
+    run_args = DockerBackend()._run_args(tmp_path)
+    assert run_args.count("-e") == 1 and GIT_TOKEN_ENV in run_args
+    assert not any(_CRED_SECRET in arg for arg in run_args)  # SECURITY: never in an argv
+    run_env = docker_backend._run_env()
+    assert run_env is not None and run_env[GIT_TOKEN_ENV] == _CRED_SECRET
+    setup = docker_backend._git_setup_command()
+    assert setup.endswith(docker_backend.GIT_CREDENTIAL_HELPER)
+    assert _CRED_SECRET not in setup  # the helper reads $GITHUB_TOKEN at push time, never the value
+
+
+def test_no_token_means_no_credential_machinery_anywhere() -> None:
+    """Unset (the default) → no env var, no helper, and a ``docker run`` argv byte-identical to before.
+
+    The property that keeps the default path clean: opting out of ``SANDBOX_GIT_TOKEN`` leaves the
+    sandbox with **no credentials at all** — hand-back still ships the work, host-side (ADR-0016 §4).
+    """
+    args = DockerBackend()._run_args(Path("/ws"))
+
+    assert "-e" not in args
+    assert docker_backend._run_env() is None
+    assert "credential.helper" not in docker_backend._git_setup_command()
 
 
 # The bypass agent's replay-safety checkpoint config (a ``{"cache": False}`` ``bash`` checkpoint so a
@@ -831,7 +881,7 @@ def test_none_mode_agent_imports_no_sandbox_executor_module() -> None:
         "build_agent(); "
         "b._get_executor(); "
         "leaked = [m for m in "
-        "('decode.sandbox.executor', "
+        "('decode.sandbox.docker_backend', 'decode.sandbox.executor', "
         "'decode.sandbox.modal_backend') if m in sys.modules]; "
         "assert not leaked, leaked; "
         "print('OK')"
@@ -926,6 +976,15 @@ def _branch_exists(repo: Path, branch: str) -> bool:
 # and reaps its container / sandbox / network in a ``finally`` so the suite leaves no infra litter.
 
 
+def _docker_available() -> bool:
+    """True if a local docker daemon answers a fast ``docker info`` probe (else the docker smokes SKIP)."""
+    try:
+        result = subprocess.run(["docker", "info"], capture_output=True, timeout=5.0, check=False)
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return False
+    return result.returncode == 0
+
+
 def _modal_credentials_present() -> bool:
     """True if modal account credentials are present (presence only; else the modal smokes SKIP)."""
     if os.environ.get("MODAL_TOKEN_ID") and os.environ.get("MODAL_TOKEN_SECRET"):
@@ -933,6 +992,7 @@ def _modal_credentials_present() -> bool:
     return (Path.home() / ".modal.toml").exists()
 
 
+_DOCKER_AVAILABLE = _docker_available()
 _MODAL_AVAILABLE = _modal_credentials_present()
 
 # A real remote-sandbox cold start (image pull + spawn + bootstrap upload) can take a while.
@@ -970,6 +1030,85 @@ def _wait_until_gone(name_or_id: str, timeout_s: float = 5.0) -> bool:
             return True
         time.sleep(0.2)
     return not _container_exists(name_or_id)
+
+
+@pytest.mark.skipif(not _DOCKER_AVAILABLE, reason="the docker daemon is not reachable")
+async def test_real_docker_isolated_workspace_roundtrip_and_handback(tmp_path: Path) -> None:
+    """The real Docker isolated Workspace, end to end — else SKIP (ADR-0012 §2-4, §8).
+
+    One session container over a bind-mounted ``--repo`` clone: (1) ``bash`` AND the file backend see the
+    cloned file — one truthful tree; (2) a ``bash``-written file is host-visible in ``.decode/sandbox``
+    (the mount); (3) fresh-exec — ``cd`` / ``export`` do NOT persist; (4) a timeout kills only the command,
+    the container + fs survive; (5) the host-side git **hand-back** secures + pushes ``decode/<id>`` to the
+    local origin; (6) ``aclose`` removes the container. Reaps in a ``finally`` so the suite stays hermetic.
+    """
+    source = _make_git_repo(tmp_path / "source", content="cloned-into-workspace\n")
+    home = tmp_path / "home"
+    workspace = _clone_workspace(source, home)  # host-side clone at <home>/.decode/sandbox
+    executor = SandboxExecutor(DockerBackend())
+    container_id: str | None = None
+    try:
+        await executor.start(workspace)  # bind-mount the cloned Workspace at /workspace
+        container_id = executor._backend._container_id
+        assert container_id is not None and _container_exists(container_id)
+
+        # 1. One truthful tree: bash AND the file backend both see the cloned file.
+        seen = await executor.run("cat README.md", cwd=workspace, timeout_s=30.0)
+        assert seen.exit_code == 0 and "cloned-into-workspace" in seen.stdout
+        assert (
+            await executor._backend.read_bytes("README.md")
+        ).decode() == "cloned-into-workspace\n"
+
+        # 2. A bash-written file is host-visible on the mount (.decode/sandbox).
+        await executor.run("echo agent-made > new.txt", cwd=workspace, timeout_s=30.0)
+        assert (workspace / "new.txt").read_text(encoding="utf-8").strip() == "agent-made"
+
+        # 3. Fresh-exec: the filesystem persists but cd/export do NOT carry over.
+        await executor.run("export CAP=1 && cd /tmp", cwd=workspace, timeout_s=30.0)
+        fresh = await executor.run("echo [$CAP]; pwd", cwd=workspace, timeout_s=30.0)
+        assert "[]" in fresh.stdout and "/workspace" in fresh.stdout
+
+        # 4. A timeout kills only the command; the container + fs survive (no reset note).
+        timed = await executor.run("sleep 100", cwd=workspace, timeout_s=1.0)
+        assert timed.timed_out is True and timed.note == ""
+        after = await executor.run("cat new.txt", cwd=workspace, timeout_s=30.0)
+        assert "agent-made" in after.stdout
+
+        # 5. The git hand-back secures + pushes decode/<id> to the local origin, host-side.
+        result = ship_workspace(home, repo=str(source), session_id="dckr0000-9999")
+        assert result.pushed is True and result.branch == "decode/dckr0000"
+        assert "new.txt" in _git_out(source, "ls-tree", "-r", "--name-only", "decode/dckr0000")
+
+        # 6. aclose stops + removes the session container.
+        await executor.aclose()
+        assert _wait_until_gone(container_id), "aclose must stop and remove the session container"
+    finally:
+        await executor.aclose()  # idempotent safety net — no leaked container
+
+
+@pytest.mark.skipif(not _DOCKER_AVAILABLE, reason="the docker daemon is not reachable")
+async def test_real_docker_workspace_has_git(tmp_path: Path) -> None:
+    """git is available AND identity-configured in the default docker Workspace — else SKIP.
+
+    The slim base image ships no git (ADR-0012); ``DockerBackend.create`` installs it AND sets the
+    ``SANDBOX_GIT_USER_*`` identity (default ``decode``) best-effort for an unwired worker, so a model
+    ``git commit`` works. Proven end to end: ``git --version`` exits 0 and ``git config user.name`` is the
+    configured identity. Reaps in ``finally``.
+    """
+    workspace = tmp_path / ".decode" / "sandbox"
+    workspace.mkdir(parents=True)
+    executor = SandboxExecutor(DockerBackend())
+    try:
+        await executor.start(
+            workspace
+        )  # create() installs + configures git before the first command
+        result = await executor.run("git --version", cwd=workspace, timeout_s=60.0)
+        assert result.exit_code == 0, result.stderr or result.stdout
+        assert "git version" in result.stdout
+        ident = await executor.run("git config --global user.name", cwd=workspace, timeout_s=30.0)
+        assert ident.stdout.strip() == settings.sandbox_git_user_name  # the preconfigured identity
+    finally:
+        await executor.aclose()
 
 
 def _host_workspace_with_marker(tmp_path: Path, *, content: str = "bootstrapped\n") -> Path:
@@ -1159,3 +1298,40 @@ async def test_real_modal_revival_re_bootstraps_from_host_state(
 
 
 # --- The real docker git-token injection (ADR-0016 §2) ------------------------------------------
+
+_DOCKER_TOKEN = "dummy-token-not-real"
+
+
+@pytest.mark.skipif(not _DOCKER_AVAILABLE, reason="the docker daemon is not reachable")
+async def test_real_docker_injects_the_git_token_into_the_worker(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """SANDBOX_GIT_TOKEN reaches a REAL docker worker as $GITHUB_TOKEN + git's helper — else SKIP.
+
+    The docker half of the one-mechanism claim (ADR-0016 §2), proven against a live daemon WITHOUT any
+    GitHub call: a DUMMY token set on ``Settings`` shows up as ``$GITHUB_TOKEN`` inside the container
+    (docker filled the value-less ``-e GITHUB_TOKEN`` from the client's env) and ``git config
+    credential.helper`` is wired to read it, so a real ``git push`` would authenticate. The modal twin is
+    :func:`test_real_modal_injects_the_git_token_into_the_sandbox`. Reaps the container in ``finally``.
+    """
+    monkeypatch.setattr(settings, "sandbox_git_token", SecretStr(_DOCKER_TOKEN))
+    monkeypatch.setattr(settings, "sandbox_workspace_dir", tmp_path / ".decode" / "sandbox")
+    workspace = tmp_path / ".decode" / "sandbox"
+    workspace.mkdir(parents=True)
+    executor = SandboxExecutor(DockerBackend())
+    worker_id: str | None = None
+    try:
+        await executor.start(workspace)  # docker run + the per-session git/gh install
+        worker_id = executor._backend._container_id
+
+        env = await executor.run("printenv GITHUB_TOKEN", cwd=workspace, timeout_s=60.0)
+        assert env.stdout.strip() == _DOCKER_TOKEN  # the client env reached the container env
+
+        helper = await executor.run(
+            "git config --global credential.helper", cwd=workspace, timeout_s=60.0
+        )
+        assert "GITHUB_TOKEN" in helper.stdout  # the helper reads the runtime token at push time
+    finally:
+        await executor.aclose()
+
+    assert worker_id is None or _wait_until_gone(worker_id)  # no docker litter left behind

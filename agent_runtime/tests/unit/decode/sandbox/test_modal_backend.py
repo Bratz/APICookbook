@@ -727,11 +727,17 @@ async def test_list_dir_on_a_missing_path_matches_dockerbackend(
     # raise FileNotFoundError on BOTH backends — docker's pathlib ``iterdir`` raises it, and modal must
     # normalize its SandboxFilesystemNotFoundError to match (read_bytes/stat/remove already did; list_dir
     # was the missed op). Before the fix modal leaked SandboxFilesystemNotFoundError here.
+    from decode.sandbox.docker_backend import DockerBackend
+
     modal_backend = ModalBackend()
     await modal_backend.create(workspace)
+    docker_backend = DockerBackend()
+    docker_backend._workspace = tmp_path  # pathlib file ops need no daemon, just a workspace root
 
     with pytest.raises(FileNotFoundError):
         await modal_backend.list_dir("no-such-dir")
+    with pytest.raises(FileNotFoundError):
+        await docker_backend.list_dir("no-such-dir")
 
 
 async def test_file_ops_require_a_created_sandbox():

@@ -1,0 +1,105 @@
+# ============================================================================
+# Set up the Build & run sandbox host (instance-20261025-1657, decode fork F1), prove its
+# isolation, and do one end-to-end run. Manual only; idempotent, so re-run it to deploy changes.
+#
+#   1. agent_runtime/sandbox/setup-host.sh: docker + gVisor, the locked worker network and its
+#      firewall, the code at this commit, the session image, the runner service
+#   2. /etc/decode/runner.env: the runner's config and secrets (piped over SSH, never in an argv)
+#   3. agent_runtime/sandbox/verify-host.sh: network checks from inside a real worker
+#   4. agent_runtime/sandbox/smoke-run.sh: one run through the runner (skipped when smoke_task is empty)
+#
+# Secrets: SANDBOX_HOST, SANDBOX_USER, SANDBOX_SSH_KEY, ANTHROPIC_API_KEY, RUNNER_TOKEN
+# (RUNNER_TOKEN: a random string of at least 32 characters; cookbook-api uses the same one in F2).
+# ============================================================================
+name: Sandbox host setup
+
+on:
+  workflow_dispatch:
+    inputs:
+      smoke_task:
+        description: "One task to run end to end after setup (empty = skip)"
+        type: string
+        default: "Write a Python script that prints the sum of the numbers 1 to 100, run it, and report the output."
+
+concurrency:
+  group: sandbox-host
+  cancel-in-progress: false
+
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      HOST: ${{ secrets.SANDBOX_HOST }}
+      USER_: ${{ secrets.SANDBOX_USER }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the secrets exist
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          RUNNER_TOKEN: ${{ secrets.RUNNER_TOKEN }}
+        run: |
+          [ -n "$HOST" ] && [ -n "$USER_" ] || { echo "SANDBOX_HOST / SANDBOX_USER missing"; exit 1; }
+          [ -n "$ANTHROPIC_API_KEY" ] || { echo "ANTHROPIC_API_KEY missing"; exit 1; }
+          [ ${#RUNNER_TOKEN} -ge 32 ] || { echo "RUNNER_TOKEN missing or shorter than 32 characters"; exit 1; }
+
+      - name: SSH key
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "${{ secrets.SANDBOX_SSH_KEY }}" > ~/.ssh/sandbox
+          chmod 600 ~/.ssh/sandbox
+          echo 'r() { ssh -i ~/.ssh/sandbox -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 -o ServerAliveInterval=15 "$USER_@$HOST" "$@"; }' > ~/r.sh
+
+      - name: 1. Set up the host
+        run: |
+          . ~/r.sh
+          r 'cat > /tmp/setup-host.sh' < agent_runtime/sandbox/setup-host.sh
+          r "sudo REPO_SHA=$GITHUB_SHA bash /tmp/setup-host.sh"
+
+      - name: 2. Write the runner's config and secrets
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          RUNNER_TOKEN: ${{ secrets.RUNNER_TOKEN }}
+        run: |
+          . ~/r.sh
+          {
+            echo "ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY"
+            echo "RUNNER_TOKEN=$RUNNER_TOKEN"
+            echo "LLM_PROVIDER=anthropic"
+            echo "SANDBOX_MODE=docker"
+            echo "SANDBOX_IMAGE=decode-session:latest"
+            echo "SANDBOX_DOCKER_RUNTIME=runsc"
+            echo "SANDBOX_DOCKER_NETWORK=bancs-only"
+            echo "SANDBOX_DOCKER_HARDENED=true"
+            echo "LSP_DIAGNOSTICS_ON_EDIT=false"
+            echo "RUNNER_RUNS_DIR=/var/lib/decode/runs"
+          } | r 'sudo install -d -m 750 -o root -g ubuntu /etc/decode &&
+                 sudo bash -c "umask 027; cat > /etc/decode/runner.env" &&
+                 sudo chown root:ubuntu /etc/decode/runner.env &&
+                 sudo systemctl restart decode-runner.service'
+          for i in $(seq 1 20); do
+            r 'curl -sf --max-time 3 "http://$(hostname -I | cut -d" " -f1):7700/health"' && exit 0
+            sleep 3
+          done
+          r 'sudo journalctl -u decode-runner -n 40 --no-pager'
+          exit 1
+
+      - name: 3. Verify the isolation from inside a worker
+        run: |
+          . ~/r.sh
+          r 'cat > /tmp/verify-host.sh' < agent_runtime/sandbox/verify-host.sh
+          r 'sudo bash /tmp/verify-host.sh'
+
+      - name: 4. Smoke run
+        if: inputs.smoke_task != ''
+        env:
+          TASK: ${{ inputs.smoke_task }}
+        run: |
+          . ~/r.sh
+          r 'cat > /tmp/smoke-run.sh' < agent_runtime/sandbox/smoke-run.sh
+          jq -n --arg task "$TASK" '{task: $task}' | r 'sudo bash /tmp/smoke-run.sh'
+
+      - name: Remove the key
+        if: always()
+        run: rm -f ~/.ssh/sandbox ~/r.sh

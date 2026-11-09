@@ -90,7 +90,7 @@ async def _start_client(root: Path) -> LspClient | None:
 # --- the four async Code Intelligence ops (best-effort: value object | None | UNAVAILABLE) ------
 
 
-async def definition(cwd: Path, path: str, line: int, column: int) -> Location | None | Unavailable:
+async def definition(cwd: Path, path: str, line: int, column: int) -> Location | Unavailable | None:
     """Where is the symbol at ``(path, line, column)`` defined? (1-based in and out.)"""
     client = await _get_client(cwd)
     if client is None:
@@ -114,7 +114,7 @@ async def references(cwd: Path, path: str, line: int, column: int) -> list[Locat
         return UNAVAILABLE
 
 
-async def hover(cwd: Path, path: str, line: int, column: int) -> str | None | Unavailable:
+async def hover(cwd: Path, path: str, line: int, column: int) -> str | Unavailable | None:
     """The hover text for the symbol at ``(path, line, column)`` (1-based)."""
     client = await _get_client(cwd)
     if client is None:

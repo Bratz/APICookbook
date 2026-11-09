@@ -1,0 +1,25 @@
+# The decode fork's tests (agent_runtime/) on Linux, where its POSIX-only parts (signals, bash
+# tasks, the docker backend) run. The cookbook's own tests stay in deploy-oci.yml.
+name: agent_runtime tests
+
+on:
+  push:
+    branches: [main]
+    paths: ["agent_runtime/**", ".github/workflows/agent-runtime-tests.yml"]
+  pull_request:
+    paths: ["agent_runtime/**"]
+  workflow_dispatch:
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: agent_runtime
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --frozen
+      - run: uv run ruff check src tests evals
+      - run: uv run pytest tests/unit -q -p no:cacheprovider

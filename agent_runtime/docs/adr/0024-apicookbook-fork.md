@@ -40,3 +40,21 @@ recording/replay is dropped, and web fetch and skills are not offered to anonymo
   every sync.
 - Still to do in later milestones: the Modal deployment (F1), the approval proxy for BaNCS writes (F2),
   the web UI (F3), guardrails (F4) and BaNCS evals that report without Opik (F5).
+
+## Amendment, 2026-11-09 (F1): the sandbox moves from Modal to a dedicated OCI instance
+
+The owner chose a free, dedicated OCI instance (`instance-20261025-1657`, A1.Flex, 1 OCPU, 6 GB, in
+the main VM's subnet) over a Modal account. So:
+
+1. **The Docker backend is restored** from upstream and can run the worker hardened: gVisor
+   (`runsc`), no capabilities, read-only root, uid 1000, CPU/memory/PID limits, and a docker network
+   whose only destination is the BaNCS proxy on the main VM. All three settings default off, so
+   upstream's Docker tests still describe the default worker.
+2. **`remote/` (the Modal headless app) is removed.** Its role goes to `decode.runner`, a stdlib HTTP
+   service on the host's private address that starts one `decode run` subprocess per task (decode
+   keeps per-process state, so runs can't share a process). It caps concurrent runs (429 past the
+   cap), enforces a wall-clock limit, and removes a killed run's worker by its label.
+3. The Modal sandbox backend stays, inert, like the unused providers.
+4. Per-step live events are not in F1: `decode run` returns the answer and a summary. They arrive
+   in F2 with approvals, which need the same loop.
+

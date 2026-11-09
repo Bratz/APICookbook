@@ -87,13 +87,14 @@ Two design points the answers imply:
 
 *F0 result (2026-11-09):* every kept `decode` unit test matches upstream's result. On Windows the remaining failures also fail on upstream: bash-driven eval tests, the Modal backend's `signal.SIGKILL`, and path separators. The Linux run is in F1. pydantic-ai 2.66 changed one thing we depended on: a tool retry now arrives as `ToolReturnPart(outcome="retried")`, not `RetryPromptPart`. Compaction and the test models were updated to match. What stays inert until F5 is listed in `agent_runtime/NOTICE`.
 
-**F1. Sandbox host.** On `instance-20261025-1657` (Ubuntu 24.04 after a boot-volume replacement; checked by the manual *Sandbox host check* workflow).
-- **Restore decode's Docker backend** from upstream, with containers run under **gVisor** (`runsc`): no privileges, read-only root except the workspace, CPU, memory and PID limits, one throwaway container per session. Remove the Modal backend and `remote/`.
-- **Session image:** Python, Node, JDK 21 and curl for aarch64, plus the LSP servers.
+**F1. Sandbox host.** On `instance-20261025-1657` (upgraded in place to Ubuntu 22.04 by *Sandbox host upgrade*; inspected by *Sandbox host check*).
+- **Restore decode's Docker backend** from upstream, with containers run under **gVisor** (`runsc`): no privileges, read-only root except the workspace, CPU, memory and PID limits, one throwaway container per session. Remove `remote/`; the Modal backend stays inert.
+- **Session image** (`agent_runtime/sandbox/Dockerfile`): Python 3.12 with requests and httpx, Node, JDK 17, curl, git and jq, for aarch64. LSP diagnostics are off on the host for now.
 - **Container network:** a Docker network whose only allowed destination is `10.0.0.49:<proxy port>`, enforced in the host's `DOCKER-USER` chain. No internet, no DNS beyond what the proxy needs, no other `10.0.0.x` address.
-- **Runner:** a small service on `10.0.0.223` that starts `decode run` for a session, streams its events, and passes approvals and steering in. Its firewall accepts only cookbook-api's address. It holds the Anthropic key; the containers never see it. Concurrency is capped at 2 runs (1 OCPU), with a queue.
+- **Runner:** a small service on `10.0.0.223` that (`decode.runner`) starts one `decode run` subprocess per task and returns its answer and summary. Its firewall accepts only cookbook-api's address, and every call needs a bearer token (`RUNNER_TOKEN`). It holds the Anthropic key; the containers never see it. 2 runs at once (1 OCPU); a start past that gets 429 and cookbook-api retries. Live per-step events move to F2, which needs the same loop for approvals.
 - **Main VM side** (a separate step on the shared VM; you approve it): firewall rules dropping all traffic from `10.0.0.223` except the proxy port, in both `INPUT` and `DOCKER-USER`. Today the sandbox host can reach the main VM's SSH and HTTPS ports; after this it can't.
-- **Setup by GitHub Actions** (secrets `SANDBOX_HOST`, `SANDBOX_USER`, `SANDBOX_SSH_KEY`), as for the main VM. The workflow is manual and idempotent.
+- **Setup by GitHub Actions:** *Sandbox host setup* (manual, idempotent) runs `agent_runtime/sandbox/setup-host.sh`, writes the runner's secrets, runs `verify-host.sh` inside a real worker, and does one smoke run. Secrets: `SANDBOX_HOST`, `SANDBOX_USER`, `SANDBOX_SSH_KEY`, `ANTHROPIC_API_KEY`, `RUNNER_TOKEN`.
+- **Linux CI** for `agent_runtime/` (*agent_runtime tests*). `agent_runtime/` changes no longer redeploy the cookbook.
 - **Done when:** one run started from a script completes end to end, the network rules are proved from inside a container (the proxy reachable; the internet, `10.0.0.49:22` and `:443` refused), and the fork's test suite passes on Linux.
 
 **F2. Proxy with approvals.**

@@ -17,7 +17,8 @@ name: Test and deploy to OCI VM
 on:
   push:
     branches: [main]
-    paths-ignore: ["**.md"]
+    # agent_runtime/ and the sandbox host's workflows never reach this image (see .dockerignore).
+    paths-ignore: ["**.md", "agent_runtime/**", ".github/workflows/sandbox-*.yml", ".github/workflows/agent-runtime-*.yml"]
   workflow_dispatch:
     inputs:
       prune_all_build_cache:

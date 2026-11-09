@@ -12,6 +12,7 @@ init_logger()
 
 import logging  # noqa: E402
 import os  # noqa: E402
+import subprocess  # noqa: E402
 from pathlib import Path  # noqa: E402
 
 import click  # noqa: E402
@@ -41,6 +42,13 @@ _MODAL_PROXY_TOKENS_MESSAGE = (
     "and MODAL_PROXY_TOKEN_SECRET, or neither for an --unauthenticated endpoint (see .env.example)."
 )
 
+# Docker daemon reachability guard — presence only; fires in both the REPL and the headless
+# pre-flight (ADR-0011 §1).
+_SANDBOX_DOCKER_UNREACHABLE_MESSAGE = (
+    "Decode: SANDBOX_MODE=docker but the Docker daemon is not reachable — start Docker and retry "
+    "(see .env.example)."
+)
+
 # Modal credential presence guard — no network call, no ``modal`` import (ADR-0011 §1).
 _SANDBOX_MODAL_NO_CREDENTIALS_MESSAGE = (
     "Decode: SANDBOX_MODE=modal but Modal credentials are missing — run `modal token set …` "
@@ -51,10 +59,13 @@ _SANDBOX_MODAL_NO_CREDENTIALS_MESSAGE = (
 # exists in a sandbox mode (ADR-0012 §3).
 _SANDBOX_REPO_NONE_MODE_MESSAGE = (
     "Decode: --repo/SANDBOX_REPO clones a repo into the isolated sandbox Workspace, which only exists "
-    "in a sandbox mode — set SANDBOX_MODE=modal, or drop --repo/SANDBOX_REPO "
+    "in a sandbox mode — set SANDBOX_MODE=docker or SANDBOX_MODE=modal, or drop --repo/SANDBOX_REPO "
     "(see .env.example)."
 )
 
+
+# Deliberately short: a healthy local daemon answers near-instantly, and startup must not hang on it.
+_DOCKER_PROBE_TIMEOUT_S = 5.0
 
 # Friendly line when ``decode run`` is invoked with RUNTIME_ENABLED=false (ADR-0019 §1).
 _RUNTIME_DISABLED_MESSAGE = (
@@ -140,6 +151,24 @@ def _context_window_notice(model: str | None = None) -> str | None:
     )
 
 
+def _docker_daemon_reachable() -> bool:
+    """True if the local Docker daemon answers a fast ``docker info`` probe (ADR-0011 §1).
+
+    Shells out to the docker CLI (no SDK). Reachability, not correctness: a missing binary, a
+    non-zero exit, or a probe timeout all mean "not reachable" — never a crash.
+    """
+    try:
+        result = subprocess.run(
+            ["docker", "info"],
+            capture_output=True,
+            timeout=_DOCKER_PROBE_TIMEOUT_S,
+            check=False,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return False
+    return result.returncode == 0
+
+
 def _modal_credentials_present() -> bool:
     """True if Modal account credentials are present — no network call, no ``modal`` import (ADR-0011 §1).
 
@@ -168,6 +197,10 @@ def _sandbox_config_error() -> str | None:
     ``none`` (the default) runs no probe.
     """
     mode = settings.sandbox_mode
+    if mode == "docker":
+        if not _docker_daemon_reachable():
+            return _SANDBOX_DOCKER_UNREACHABLE_MESSAGE
+        return None
     if mode == "modal":
         if not _modal_credentials_present():
             return _SANDBOX_MODAL_NO_CREDENTIALS_MESSAGE
@@ -255,7 +288,7 @@ def cli(ctx: click.Context) -> None:
     default=None,
     metavar="URL-OR-PATH",
     help="Clone this repo (a URL or a local path) into the isolated sandbox Workspace; overrides "
-    "SANDBOX_REPO. Requires SANDBOX_MODE=modal.",
+    "SANDBOX_REPO. Requires a sandbox mode (SANDBOX_MODE=docker|modal).",
 )
 @click.option(
     "--local",

@@ -14,12 +14,10 @@ Removed
   the `evals kitaru` commands, the KITARU_* settings, the Kitaru Worker task-input branch);
   kitaru and kitaru-pydantic-ai.
 - `evals mine` (evals/harness/mine.py), whose Opik trace reader needs Kitaru's importer.
-- The Docker sandbox backend (src/decode/sandbox/docker_backend.py), its daemon guard in cli.py,
-  and SANDBOX_MODE=docker.
 - The web_fetch tool (src/decode/tools/web.py); markdownify.
 - Skills (src/decode/skills/, src/decode/tools/skills.py).
 - Learning memory on exit (src/decode/memory/extract.py).
-- The `decode remote` laptop commands (src/decode/remote/cli.py).
+- The Modal headless app and the `decode remote` commands (src/decode/remote/).
 - Course material not copied: assets/, tasks/, index.html, running_the_code/, .decode/skills/,
   importers/, evaluators/, scripts/, Makefile, uv.lock (regenerated).
 
@@ -30,9 +28,15 @@ Changed
 - The event renderer moved from src/decode/tui/render.py to src/decode/render.py;
   InputIntent moved from src/decode/tui/app.py to src/decode/harness/queue.py.
 - one_line() moved from runtime/recording.py to runtime/summary.py.
+- The Docker backend can run the worker hardened for anonymous visitors (SANDBOX_DOCKER_RUNTIME,
+  SANDBOX_DOCKER_NETWORK, SANDBOX_DOCKER_HARDENED; all off by default, keeping upstream's worker).
 - Tests for removed modules deleted; affected tests updated.
+
+Added
+- src/decode/runner.py: a private HTTP runner that starts `decode run` per visitor task on the
+  sandbox host, with a slot cap, a wall-clock limit and worker cleanup.
+- sandbox/: the session image and the sandbox host's setup, verify and smoke-run scripts.
 
 Left inert (removed with the generic eval cases in F5): the skills_dir and web_fetch_timeout_s
 settings, sandbox.workspace.seed_skills (a no-op without a skills directory), the
-skill_dispatch regression case, and the benchmark's `--sandbox docker` choice (its trials now fail
-Settings validation; F5 replaces the benchmark).
+skill_dispatch regression case, and the Modal sandbox backend (src/decode/sandbox/modal_backend.py).

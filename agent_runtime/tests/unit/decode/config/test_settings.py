@@ -514,7 +514,7 @@ def test_a_retired_credential_proxy_key_in_a_dotenv_is_ignored(tmp_path, monkeyp
     assert not hasattr(s, "sandbox_proxy_image")
 
 
-@pytest.mark.parametrize("mode", ["none", "modal"])
+@pytest.mark.parametrize("mode", ["none", "docker", "modal"])
 def test_sandbox_mode_accepts_each_valid_literal(monkeypatch, mode):
     monkeypatch.setenv("SANDBOX_MODE", mode)
     s = Settings(_env_file=None)

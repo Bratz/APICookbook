@@ -117,6 +117,17 @@ def test_get_executor_docker_selects_via_the_seam_and_memoizes(monkeypatch):
     assert calls["n"] == 1  # select_executor ran exactly once
 
 
+def test_get_executor_docker_returns_a_real_sandbox_executor(monkeypatch):
+    # Through the REAL select_executor (not faked): docker mode yields a SandboxExecutor (over a
+    # DockerBackend). Construction is inert, so no daemon is needed here (ADR-0012 §2).
+    from decode.sandbox.executor import SandboxExecutor
+
+    monkeypatch.setattr(bash_mod.settings, "sandbox_mode", "docker")
+    bash_mod.reset_executor()
+
+    assert isinstance(bash_mod._get_executor(), SandboxExecutor)
+
+
 def test_get_executor_modal_returns_a_real_sandbox_executor(monkeypatch):
     # Through the REAL select_executor: modal mode yields a SandboxExecutor over a ModalBackend (inert —
     # no creds needed; the remote sandbox + modal import are lazy on first run, ADR-0012 §2).
@@ -491,7 +502,7 @@ async def test_bash_routes_through_the_selected_docker_executor(monkeypatch, tmp
 
 
 async def test_bash_renders_a_daemon_loss_without_raising(monkeypatch, tmp_path):
-    """sandbox backend down (fork: modal stands in for upstream's docker): ``bash`` returns a rendered failure, never lets it escape.
+    """docker mode, daemon down: ``bash`` returns a rendered failure, never lets it escape.
 
     The tool-boundary never-crash contract: when the docker backend cannot be created (daemon down),
     :meth:`SandboxExecutor.run` catches the infra failure and returns a rendered :class:`ExecResult`
@@ -500,11 +511,11 @@ async def test_bash_renders_a_daemon_loss_without_raising(monkeypatch, tmp_path)
     turn. A real ``SandboxExecutor(DockerBackend())`` is used with only the backend's ``create`` patched
     to raise (as a dead daemon makes ``docker run`` fail), so no daemon is needed.
     """
+    from decode.sandbox.docker_backend import DockerBackend
     from decode.sandbox.executor import SandboxExecutor
-    from decode.sandbox.modal_backend import ModalBackend
 
-    monkeypatch.setattr(bash_mod.settings, "sandbox_mode", "modal")
-    backend = ModalBackend()
+    monkeypatch.setattr(bash_mod.settings, "sandbox_mode", "docker")
+    backend = DockerBackend()
     monkeypatch.setattr(
         backend,
         "create",
@@ -549,11 +560,29 @@ def test_none_mode_agent_imports_no_sandbox_executor_module():
         "build_agent(); "
         "b._get_executor(); "  # selects the none-mode executor (must not import the sandbox pkg)
         "leaked = [m for m in "
-        "('decode.sandbox.executor', "
+        "('decode.sandbox.docker_backend', 'decode.sandbox.executor', "
         "'decode.sandbox.modal_backend') if m in sys.modules]; "
         "assert not leaked, leaked; "
         "print('OK')"
     )
     result = _run_isolated(code, mode="none")
+    assert result.returncode == 0, result.stderr
+    assert "OK" in result.stdout
+
+
+def test_docker_mode_repl_agent_imports_no_kitaru_or_modal():
+    """A docker-mode REPL agent (build + select) stays kitaru-free and never imports the modal SDK."""
+    code = (
+        "import sys; "
+        "import decode.tools.bash as b; "
+        "from decode.agent.factory import build_agent; "
+        "build_agent(); "
+        "b._get_executor(); "  # selects docker → SandboxExecutor(DockerBackend()) (inert, no daemon)
+        "leaked = sorted(m for m in sys.modules "
+        "if m == 'kitaru' or m.startswith('kitaru.') or m == 'modal' or m.startswith('modal.')); "
+        "assert not leaked, leaked; "
+        "print('OK')"
+    )
+    result = _run_isolated(code, mode="docker")
     assert result.returncode == 0, result.stderr
     assert "OK" in result.stdout
