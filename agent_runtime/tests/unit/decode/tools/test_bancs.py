@@ -69,3 +69,5 @@ def test_the_prompt_names_the_proxy_base_and_the_approval_rule(monkeypatch):
     # F5 finding: an unattended run must find real records and act, never stop to ask.
     assert "do not call ask_user" in text and "find a REAL one yourself" in text
     assert "MAKE the call" in text
+    # F5 finding: the one remaining miss called a path the spec does not have.
+    assert "must be the `url_template` of an operation get_endpoint returned" in text
