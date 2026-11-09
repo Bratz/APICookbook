@@ -1,6 +1,6 @@
 # Forking decode into APICookbook: decisions and plan
 
-Status: F0 done (2026-11-09), F1 next · Decided with the owner in an interview on 2026-11-09 · Upstream: [decodingai-magazine/building-a-coding-agent-from-scratch-course](https://github.com/decodingai-magazine/building-a-coding-agent-from-scratch-course) ("decode", Apache-2.0)
+Status: F0 done (2026-11-09), F1 next · Sandbox changed from Modal to a dedicated OCI instance on 2026-11-09 · Decided with the owner in an interview on 2026-11-09 · Upstream: [decodingai-magazine/building-a-coding-agent-from-scratch-course](https://github.com/decodingai-magazine/building-a-coding-agent-from-scratch-course) ("decode", Apache-2.0)
 
 ## Intent
 
@@ -15,8 +15,8 @@ This **replaces** today's code agent (`backend/code_agent.py`), which writes cod
 | Where it runs | Inside the APICookbook website |
 | What it may do | Write files and run code; send **any** BaNCS call, including POST/PUT/DELETE |
 | Who may use it | **Anyone, with caps**: no sign-in |
-| Sandbox | **Modal**: one container per visitor session |
-| Agent loop | **Whole agent on Modal** (decode's `remote/` and headless runtime); cookbook-api relays events |
+| Sandbox | **A dedicated OCI instance** (`instance-20261025-1657`, A1.Flex, 1 OCPU, 6 GB, same subnet as the main VM): one gVisor container per visitor session. Replaced Modal on 2026-11-09: no new vendor or bill. |
+| Agent loop | **Whole agent on the sandbox host**: a small runner there starts `decode run` per session; cookbook-api relays events |
 | Approvals | Files and commands run without asking inside the sandbox; **every bank write waits for the visitor's Approve** |
 | Kitaru | **Removed**, so the fork uses pydantic-ai 2.66 like the rest of the repo |
 | Tracing | **OpenTelemetry, no vendor**: logfire spans kept, pointed at a collector chosen later; off until configured |
@@ -37,7 +37,7 @@ Sizes are decode's source as of 2026-11-09 (about 630 KB in `src/decode`).
 | `agent/` (loop, factory, deps, context window) | 52 KB | **Keep.** Add Anthropic to the factory and drop the other providers. Keep decode's retry budgets. |
 | `tools/` files, bash, exec, todo, ask-user, truncate, registry, approval | ~85 KB | **Keep** |
 | `tools/agent.py` + `orchestration.py` (subagents) | 32 KB | **Keep** |
-| `tools/lsp.py` + `services/lsp/` | 29 KB | **Keep.** Language servers go into the Modal image. |
+| `tools/lsp.py` + `services/lsp/` | 29 KB | **Keep.** Language servers go into the session image. |
 | `tools/web.py` | 10 KB | **Remove**, with the `markdownify` dependency |
 | `skills/` + `tools/skills.py` | 18 KB | **Remove** |
 | `permissions/` | 13 KB | **Keep, slimmed.** One policy: allow inside the sandbox, ask for bank writes. The four modes go. |
@@ -45,15 +45,15 @@ Sizes are decode's source as of 2026-11-09 (about 630 KB in `src/decode`).
 | `memory/` | 15 KB | **Keep loading only.** Remove `extract.py` (learning on exit). |
 | `context/` (compaction, session log) | 27 KB | **Keep** |
 | `harness/` (runner, queue, decisions) | 11 KB | **Keep.** The steering queue gets a web input. |
-| `sandbox/` executor, workspace, handback, Modal backend | 58 KB | **Keep** |
-| `sandbox/docker_backend.py` | 19 KB | **Remove** |
-| `remote/` app, headless, image | 54 KB | **Keep**: this is "whole agent on Modal" |
+| `sandbox/` executor, workspace, handback | 58 KB | **Keep.** The Modal backend in it goes in F1. |
+| `sandbox/docker_backend.py` | 19 KB | Removed in F0; **restored in F1** with gVisor, when the sandbox moved from Modal to the OCI instance |
+| `remote/` app, headless, image | 54 KB | Kept in F0; **removed in F1** (Modal-only). The runner on the sandbox host takes its place. |
 | `remote/cli.py` | 12 KB | **Remove**; the website starts runs, not a CLI |
 | `runtime/` headless, summary, task inputs | 32 KB | **Keep** |
 | `runtime/recording.py` (Kitaru) | 14 KB | **Remove**, with `kitaru` and `kitaru-pydantic-ai` |
 | `observability/` | 19 KB | **Adapt.** Keep the OpenTelemetry spans and drop the Opik-specific parts. Cost goes into APICookbook's usage ledger. |
 | `tui/` | 53 KB | **Remove**, with `prompt-toolkit`. The event renderer `tui/render.py` is kept as `decode/render.py`, since the capstone tests and logs use it, so `rich` stays. |
-| `cli.py` | 26 KB | **Trim**, not remove (found in F0): the Modal runner calls `decode run` as a subprocess. It keeps `run` and `sessions`; the REPL path goes. |
+| `cli.py` | 26 KB | **Trim**, not remove (found in F0): the runner calls `decode run` as a subprocess. It keeps `run` and `sessions`; the REPL path goes. |
 | `config/` | 22 KB | **Keep.** Anthropic settings replace the other providers'. |
 | `evals/` harness and regression framework | — | **Keep.** Replace the generic tasks with BaNCS gold call sequences; report to a file and GitHub Actions instead of Opik. |
 | `tests/` | 2.6 MB | **Keep** those for kept modules; delete the rest |
@@ -65,18 +65,17 @@ Result: about 470 KB of the 630 KB of source stays. Dependencies removed: `kitar
 ## Architecture
 
 ```
-Browser ── POST /api/build/stream ──▶ cookbook-api (VM) ── starts/feeds ──▶ Modal: decode headless run
-   ▲  live events (steps, files, output, approval requests)        │   loop + Claude (key: Modal secret)
-   └────────────────────────────────────────────────────────────────┘   tools in the session sandbox
-Browser ── POST /api/build/{run}/approve | /steer ──▶ cookbook-api ──▶ Modal (Queue/Dict) ──▶ the run
+Browser ── POST /api/build/stream ──▶ cookbook-api (main VM, 10.0.0.49) ── private HTTP ──▶ runner (sandbox host, 10.0.0.223)
+   ▲  live events (steps, files, output, approval requests)                 │  decode run per session (loop + Claude)
+   └─────────────────────────────────────────────────────────────────────────┘  tools in that session's gVisor container
+Browser ── POST /api/build/{run}/approve | /steer ──▶ cookbook-api ──▶ runner ──▶ the run
 
-Sandbox network: ONLY cookbook-api's BaNCS proxy (no internet, not the bank directly)
+Sandbox containers' network: ONLY 10.0.0.49:<proxy port> (no internet, no other address)
 cookbook-api proxy: GET passes through; POST/PUT/DELETE held until the visitor approves in the browser
 ```
-
 Two design points the answers imply:
 1. **Bank writes are approved at the proxy, not by trusting the agent.** The bash tool could run `curl -X POST` directly, so the sandbox's network is locked to APICookbook's own BaNCS proxy (the Playground's allow-listed proxy, extended). The proxy holds every write as a pending request until the visitor approves it. decode's approval flow becomes the message the visitor sees, but the proxy is what enforces it.
-2. **"Whole agent on Modal" needs a two-way channel** for approvals and steering. Modal's Queue or Dict (or a small webhook) carries messages from the browser, through cookbook-api, to the running agent, and events back. This is the main piece decode doesn't already have.
+2. **The agent runs away from the website, so it needs a two-way channel** for approvals and steering. The runner on the sandbox host exposes a small private HTTP API (start, events, approve, steer, stop) that only cookbook-api can reach. This is the main piece decode doesn't already have.
 
 ## Milestones
 
@@ -88,21 +87,25 @@ Two design points the answers imply:
 
 *F0 result (2026-11-09):* every kept `decode` unit test matches upstream's result. On Windows the remaining failures also fail on upstream: bash-driven eval tests, the Modal backend's `signal.SIGKILL`, and path separators. The Linux run is in F1. pydantic-ai 2.66 changed one thing we depended on: a tool retry now arrives as `ToolReturnPart(outcome="retried")`, not `RetryPromptPart`. Compaction and the test models were updated to match. What stays inert until F5 is listed in `agent_runtime/NOTICE`.
 
-**F1. Modal.**
-- A Modal app running the headless agent with the Modal sandbox backend: image with Python, Node, JDK and the LSP servers; the Anthropic key as a Modal secret.
-- Network locked to the APICookbook proxy.
-- One run triggered from a script, end to end.
+**F1. Sandbox host.** On `instance-20261025-1657` (Ubuntu 24.04 after a boot-volume replacement; checked by the manual *Sandbox host check* workflow).
+- **Restore decode's Docker backend** from upstream, with containers run under **gVisor** (`runsc`): no privileges, read-only root except the workspace, CPU, memory and PID limits, one throwaway container per session. Remove the Modal backend and `remote/`.
+- **Session image:** Python, Node, JDK 21 and curl for aarch64, plus the LSP servers.
+- **Container network:** a Docker network whose only allowed destination is `10.0.0.49:<proxy port>`, enforced in the host's `DOCKER-USER` chain. No internet, no DNS beyond what the proxy needs, no other `10.0.0.x` address.
+- **Runner:** a small service on `10.0.0.223` that starts `decode run` for a session, streams its events, and passes approvals and steering in. Its firewall accepts only cookbook-api's address. It holds the Anthropic key; the containers never see it. Concurrency is capped at 2 runs (1 OCPU), with a queue.
+- **Main VM side** (a separate step on the shared VM; you approve it): firewall rules dropping all traffic from `10.0.0.223` except the proxy port, in both `INPUT` and `DOCKER-USER`. Today the sandbox host can reach the main VM's SSH and HTTPS ports; after this it can't.
+- **Setup by GitHub Actions** (secrets `SANDBOX_HOST`, `SANDBOX_USER`, `SANDBOX_SSH_KEY`), as for the main VM. The workflow is manual and idempotent.
+- **Done when:** one run started from a script completes end to end, the network rules are proved from inside a container (the proxy reachable; the internet, `10.0.0.49:22` and `:443` refused), and the fork's test suite passes on Linux.
 
 **F2. Proxy with approvals.**
 - The BaNCS proxy holds writes pending approval.
 - Routes: `POST /api/build/stream`, `/approve`, `/steer`.
-- The Modal channel for approvals and steering.
+- The runner channel for approvals and steering.
 
 **F3. Web UI.**
 - A "Build & run" mode in the chat: live steps, file tree and contents, command output, Approve and Reject for each bank write, a steering box and Stop.
 
 **F4. Guardrails** (needed before public launch):
-- per-IP and USD caps for this mode, with Modal cost included;
+- per-IP and USD caps for this mode;
 - limits per run (wall time, steps, subagents, sandbox CPU and memory);
 - a notice that bank writes change shared demo data;
 - a way to reset or monitor the demo data.
@@ -121,8 +124,9 @@ Two design points the answers imply:
 ## Risks
 
 - **Anyone can run code and change shared demo data.** The sandbox protects our servers, but not the demo bank's data from other visitors. Mitigations: approval per write, caps, per-run limits, monitoring. The same machinery would make sign-in easy to add later.
-- **Cost.** Subagents, test-and-fix loops and Modal compute make a Build & run answer cost many times today's $0.02. Because it replaces the cheap agent, every chat question now pays that price: simple lookups ("which endpoint updates an address?") too. The $5/day cap buys far fewer answers. Measure in F1, then decide the caps, and whether Build & run should skip the sandbox when no code needs running.
+- **Cost.** Subagents and test-and-fix loops make a Build & run answer cost many times today's $0.02. Because it replaces the cheap agent, every chat question now pays that price: simple lookups ("which endpoint updates an address?") too. The $5/day cap buys far fewer answers. Sandbox compute is a fixed, free instance, so the cost is Claude's tokens. Measure in F1, then decide the caps, and whether Build & run should skip the sandbox when no code needs running.
 - **Prompt injection.** API responses and file contents the agent reads could try to steer it. The proxy-enforced approvals and the network lock keep the damage inside the sandbox and demo data.
 - **Diverging from upstream.** A vendored, slimmed fork won't pull course updates easily. Record the upstream commit and our deletions in `NOTICE` and an ADR.
 - **The pydantic-ai jump (2.46 to 2.66)** may break decode code in the loop and deferred-tool handling. F0 surfaces it.
-- **Modal account, token and billing** need setting up, plus whatever the demo host allows from Modal's IP addresses.
+- **One small sandbox host.** 1 OCPU runs about 2 sessions at once; the rest queue. The Always Free A1 allowance (4 OCPUs, 24 GB across instances) may leave room to grow it for free.
+- **The sandbox host shares a subnet with the main VM.** A host compromise (a gVisor and Docker escape) would put it next to VAM and the other apps; the main VM's firewall rules above limit what it could reach.

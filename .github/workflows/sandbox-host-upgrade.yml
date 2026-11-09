@@ -1,0 +1,79 @@
+# ============================================================================
+# Upgrade the Build & run sandbox host (instance-20261025-1657) to the next Ubuntu LTS,
+# in place, with Ubuntu's own upgrader. Manual only. Nothing runs on that host yet, so a
+# failed upgrade costs nothing: recreate the instance.
+#
+# The upgrade runs as a systemd unit ON the host, so a dropped SSH connection cannot kill it
+# halfway; this job only starts it, polls it, reboots and reports.
+#
+# Secrets: SANDBOX_HOST, SANDBOX_USER, SANDBOX_SSH_KEY (as for sandbox-host-check.yml).
+# ============================================================================
+name: Sandbox host upgrade
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: sandbox-host
+  cancel-in-progress: false
+
+jobs:
+  upgrade:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      HOST: ${{ secrets.SANDBOX_HOST }}
+      USER_: ${{ secrets.SANDBOX_USER }}
+    steps:
+      - name: SSH key
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "${{ secrets.SANDBOX_SSH_KEY }}" > ~/.ssh/sandbox
+          chmod 600 ~/.ssh/sandbox
+
+      - name: Upgrade
+        run: |
+          r() { ssh -i ~/.ssh/sandbox -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 \
+                    -o ServerAliveInterval=15 "$USER_@$HOST" "$@"; }
+          wait_up() {  # after a reboot: wait until SSH answers again (max 10 min)
+            sleep 20
+            for i in $(seq 1 60); do r true 2>/dev/null && return 0; sleep 10; done
+            echo "host did not come back after reboot"; return 1
+          }
+          reboot_host() { r 'sudo systemd-run --on-active=3 /bin/systemctl reboot' || true; wait_up; }
+
+          echo "== before"; r '. /etc/os-release; echo "$PRETTY_NAME"'
+
+          echo "== 1. bring the current release fully up to date"
+          r 'sudo DEBIAN_FRONTEND=noninteractive apt-get update -q &&
+             sudo DEBIAN_FRONTEND=noninteractive apt-get -yq \
+               -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold full-upgrade &&
+             sudo apt-get -yq install update-manager-core'
+          if r 'test -f /var/run/reboot-required'; then echo "rebooting first"; reboot_host; fi
+
+          echo "== 2. start the release upgrade on the host"
+          r 'sudo sed -i "s/^Prompt=.*/Prompt=lts/" /etc/update-manager/release-upgrades'
+          r 'sudo systemctl reset-failed dist-upgrade 2>/dev/null; sudo systemctl stop dist-upgrade 2>/dev/null; true'
+          r 'sudo systemd-run --unit=dist-upgrade --remain-after-exit \
+               --setenv=DEBIAN_FRONTEND=noninteractive \
+               /usr/bin/do-release-upgrade -f DistUpgradeViewNonInteractive'
+
+          echo "== 3. wait for it (max 90 min)"
+          for i in $(seq 1 180); do
+            state=$(r 'systemctl show dist-upgrade -p SubState --value' 2>/dev/null || echo unknown)
+            [ "$state" = "running" ] || [ "$state" = "unknown" ] || break
+            [ $((i % 6)) -eq 0 ] && echo "still upgrading ($((i / 2)) min)"
+            sleep 30
+          done
+          result=$(r 'systemctl show dist-upgrade -p Result --value')
+          echo "upgrader finished: state=$state result=$result"
+          echo "== upgrader log (tail)"; r 'sudo tail -n 25 /var/log/dist-upgrade/main.log 2>/dev/null' || true
+          [ "$result" = "success" ] || { echo "the upgrade failed; see the log above"; exit 1; }
+
+          echo "== 4. reboot into the new release"
+          reboot_host
+          echo "== after"; r '. /etc/os-release; echo "$PRETTY_NAME"; uname -r'
+
+      - name: Remove the key
+        if: always()
+        run: rm -f ~/.ssh/sandbox
