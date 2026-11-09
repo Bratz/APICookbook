@@ -5,6 +5,8 @@ asyncio.Event, exactly as in production, where the proxy shares the app's loop).
 """
 
 import asyncio
+import pathlib
+import tempfile
 
 import httpx
 import pytest
@@ -133,20 +135,82 @@ async def test_the_knowledge_endpoints_point_the_agent_at_its_proxy(client, prox
     assert "demoapps" not in endpoint["url_template"]  # never the bank's own host
 
 
-def test_the_build_routes_need_the_runner_token(client, monkeypatch):
+RUN_ID = "r" * 32
+
+
+@pytest.fixture
+def open_build(monkeypatch, tmp_path):
+    """Build & run open to visitors, against a fake runner, with a fresh ledger (1 run/hour/IP)."""
     monkeypatch.setenv("RUNNER_TOKEN", "x" * 40)
+    monkeypatch.setenv("BUILD_PUBLIC", "true")
+    monkeypatch.setattr(build_routes, "_GUARD",
+                        build_routes.AgentGuard(tmp_path, per_hour=1, daily_usd=5, monthly_usd=50))
+    build_routes._RUNS.clear()
+
+    async def fake_runner(method, path, json=None):
+        if method == "POST":
+            return httpx.Response(202, json={"id": RUN_ID})
+        return httpx.Response(200, json={"status": "running"})
+
+    async def no_watcher(run_id):
+        return None
+
+    monkeypatch.setattr(build_routes, "_call_runner", fake_runner)
+    monkeypatch.setattr(build_routes, "_settle_when_done", no_watcher)
+    return build_routes._GUARD
+
+
+def test_a_visitor_starts_a_run_and_gets_its_own_hidden_key(client, open_build):
+    started = client.post("/api/build/runs", json={"task": "list customers"})
+
+    assert started.status_code == 202
+    run_id, key = started.json()["id"], started.json()["key"]
+    assert run_id == RUN_ID and len(key) >= 32
+    assert client.get(f"/api/build/runs/{run_id}", headers={"X-Run-Key": key}).status_code == 200
+    # Another tab, or someone who only guessed the id, sees nothing.
+    assert client.get(f"/api/build/runs/{run_id}").status_code == 404
+    assert client.get(f"/api/build/runs/{run_id}", headers={"X-Run-Key": "x" * 32}).status_code == 404
+    assert client.delete(f"/api/build/runs/{run_id}", headers={"X-Run-Key": "nope"}).status_code == 404
+
+
+def test_the_per_ip_cap_answers_in_build_and_runs_own_words(client, open_build):
+    assert client.post("/api/build/runs", json={"task": "a"}).status_code == 202
+
+    refused = client.post("/api/build/runs", json={"task": "b"})
+
+    assert refused.status_code == 429
+    assert refused.json()["message"] == "You have started 1 runs in the last hour; please try again later."
+    # The operator skips the per-IP limit (the USD caps still bind everyone through the ledger).
+    assert client.post("/api/build/runs", json={"task": "c"},
+                       headers={"Authorization": "Bearer " + "x" * 40}).status_code == 202
+
+
+def test_starting_is_closed_unless_the_mode_is_public(client, open_build, monkeypatch):
+    monkeypatch.setenv("BUILD_PUBLIC", "false")
 
     assert client.post("/api/build/runs", json={"task": "t"}).status_code == 401
-    assert client.post("/api/build/runs", json={"task": "t"},
-                       headers={"Authorization": "Bearer wrong"}).status_code == 401
-    assert client.get("/api/build/runs/abc", headers={"Authorization": "Bearer " + "x" * 40}).status_code == 404
+    assert client.get("/api/build/status").json()["available"] is False
 
 
 def test_the_build_routes_are_off_without_a_runner_token(client, monkeypatch):
     monkeypatch.delenv("RUNNER_TOKEN", raising=False)
 
     assert client.post("/api/build/runs", json={"task": "t"}).status_code == 503
-    assert build_routes._RUNS == {}
+    assert client.get("/api/build/status").json()["available"] is False
+
+
+@pytest.mark.anyio
+async def test_a_runs_cost_is_recorded_once_and_its_token_ends(open_build):
+    proxy = build_proxy.new_run()
+    build_routes._RUNS["s" * 32] = build_routes.BuildRun(token=proxy.token, key="k" * 32)
+    final = {"status": "completed", "summary": {"cost_usd": 0.21, "input_tokens": 9, "output_tokens": 1}}
+
+    await build_routes.settle("s" * 32, final)
+    await build_routes.settle("s" * 32, final)  # the stream and the watcher may both finish it
+
+    assert open_build.status()["today_usd"] == 0.21
+    assert len(open_build.ledger.read_text(encoding="utf-8").splitlines()) == 1
+    assert not proxy.alive
 
 
 @pytest.mark.anyio
@@ -173,6 +237,8 @@ async def test_the_stream_merges_steps_writes_and_bank_calls_then_ends(monkeypat
     monkeypatch.setattr(build_routes, "_call_runner", fake_runner)
     monkeypatch.setattr(build_routes, "STREAM_POLL_S", 0)
 
+    monkeypatch.setattr(build_routes, "_GUARD", build_routes.AgentGuard(pathlib.Path(tempfile.mkdtemp())))
+    build_routes._RUNS["r1"] = build_routes.BuildRun(token=run.token, key="k" * 32)
     chunks = [c async for c in build_routes.stream_run("r1", run.token)]
     kinds = [c.split("\n", 1)[0].removeprefix("event: ") for c in chunks]
 

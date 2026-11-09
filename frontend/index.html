@@ -565,8 +565,6 @@
         .write-card h4 { margin: 0 0 var(--space-2xs); font-size: var(--text-sm); }
         .write-card pre { max-height: 12lh; overflow: auto; font-size: var(--text-xs); margin: var(--space-2xs) 0; }
         .write-card .write-status { font-size: var(--text-xs); color: var(--color-muted); }
-        .build-key-form { display: flex; flex-wrap: wrap; gap: var(--space-xs); margin-top: var(--space-xs); }
-        .build-key-form .form-input { flex: 1; min-width: 12em; }
 
         .knowledge-search-bar {
             padding: var(--space-xs) var(--space-md);
@@ -3099,68 +3097,42 @@
            return true;
        }
 
-       // ---------------------------------------------------------------- Build & run (decode fork F3)
-       // Operator preview: the /api/build routes need the runner token until F4's caps, so the mode is
-       // hidden unless that key was saved in this browser (open the page with #build to enter it).
+       // ---------------------------------------------------------------- Build & run (decode fork F3/F4)
+       // Open to every visitor behind the server's caps. Each run's key comes back from its start call
+       // and stays in this page's memory: nobody types or sees a key, and only this tab can watch the
+       // run, approve its writes or stop it.
        state.buildMode = false;
-       const BUILD_KEY = 'buildKey';
        const PROXY_RE = /https?:\/\/10\.0\.0\.49:7601\/r\/[A-Za-z0-9_-]+/g;
 
-       function buildKey() { try { return localStorage.getItem(BUILD_KEY) || ''; } catch (e) { return ''; } }
        function maskProxy(text) { return String(text ?? '').replace(PROXY_RE, '$BANK'); }
 
-       function initBuildMode() {
-           const toggle = document.getElementById('buildToggle');
-           toggle.hidden = !buildKey();
-           if (location.hash === '#build' && !buildKey() && !document.querySelector('.build-key-form')) askBuildKey();
-       }
-       window.addEventListener('hashchange', initBuildMode);  // adding #build to an open page works too
-
-       function askBuildKey(note) {
-           const el = document.createElement('div');
-           el.className = 'message assistant';
-           el.innerHTML = `<div class="message-label">Build &amp; run</div><div class="message-content">
-               <p>${note ? escapeHtml(note) + ' ' : ''}Build &amp; run is in operator preview. Enter the operator key to turn it on in this browser.</p>
-               <form class="build-key-form" onsubmit="saveBuildKey(event, this)">
-                   <input class="form-input" type="password" autocomplete="off" aria-label="Operator key" required minlength="32">
-                   <button class="btn btn-primary" type="submit">Save key</button>
-               </form></div>`;
-           document.getElementById('chatMessages').appendChild(el);
-           el.querySelector('input').focus();
-       }
-
-       function saveBuildKey(event, form) {
-           event.preventDefault();
-           try { localStorage.setItem(BUILD_KEY, form.querySelector('input').value.trim()); } catch (e) {}
-           form.closest('.message').remove();
-           initBuildMode();
-           if (!state.buildMode) toggleBuildMode();
+       async function initBuildMode() {
+           let available = false;
+           try {
+               const r = await fetch('/api/build/status');
+               available = r.ok && (await r.json()).available === true;
+           } catch (e) {}
+           document.getElementById('buildToggle').hidden = !available;
+           if (!available && state.buildMode) toggleBuildMode();
        }
 
        function toggleBuildMode() {
-           if (!buildKey()) { askBuildKey(); return; }
            state.buildMode = !state.buildMode;
            document.getElementById('buildToggle').setAttribute('aria-pressed', String(state.buildMode));
            document.getElementById('agentLanguage').hidden = state.buildMode || !state.agentAvailable;
            const note = document.getElementById('agentNote');
            note.hidden = !state.buildMode && !state.agentAvailable;
            note.textContent = state.buildMode
-               ? 'Build & run writes the code, runs it in a sandbox and calls the shared demo bank. Every change to bank data waits for your Approve.'
+               ? 'Build & run writes the code, runs it in a sandbox and calls the shared demo bank. Every change to bank data waits for your Approve, and approved changes are visible to everyone using the demo.'
                : 'The agent plans BaNCS calls and writes code; it never runs anything. Don’t paste real customer data.';
            document.getElementById('messageInput').placeholder = state.buildMode
                ? 'Describe a task to build and run, e.g. "find a customer and show their accounts"…'
                : (state.agentAvailable ? 'Describe a task, e.g. "a customer moved house: update their address"…' : 'Ask about APIs, authentication, code examples…');
        }
 
-       async function buildFetch(path, options = {}) {
-           const response = await fetch('/api/build' + path, { ...options,
-               headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + buildKey(), ...(options.headers || {}) } });
-           if (response.status === 401) {
-               try { localStorage.removeItem(BUILD_KEY); } catch (e) {}
-               state.buildMode = false; initBuildMode(); toggleBuildMode();
-               throw new Error('The operator key was not accepted.');
-           }
-           return response;
+       function buildFetch(path, options = {}, runKey = '') {
+           return fetch('/api/build' + path, { ...options,
+               headers: { 'Content-Type': 'application/json', ...(runKey ? { 'X-Run-Key': runKey } : {}) } });
        }
 
        function describeBuildCall(step) {
@@ -3194,25 +3166,24 @@
            const started = performance.now();
            scroll();
 
-           let runId;
+           let runId, runKey;
            try {
                const r = await buildFetch('/runs', { method: 'POST', body: JSON.stringify({ task }) });
                const data = await r.json().catch(() => ({}));
-               if (r.status === 429) throw new Error('Both sandboxes are busy. Try again in a minute.');
-               if (!r.ok) throw new Error(data.detail || `The run could not start (${r.status}).`);
-               runId = data.id;
+               if (!r.ok) throw new Error(data.message || data.detail || `The run could not start (${r.status}).`);
+               runId = data.id; runKey = data.key;
            } catch (e) {
                status.textContent = e.message; return;
            }
            status.innerHTML = '<span class="loading-spinner"></span> Working in the sandbox…';
            stop.hidden = false;
            stop.onclick = async () => { stop.disabled = true; status.textContent = 'Stopping…';
-               try { await buildFetch(`/runs/${runId}`, { method: 'DELETE' }); } catch (e) {} };
+               try { await buildFetch(`/runs/${runId}`, { method: 'DELETE' }, runKey); } catch (e) {} };
 
            const calls = {};
            let final = null;
            try {
-               const response = await buildFetch(`/runs/${runId}/events`);
+               const response = await buildFetch(`/runs/${runId}/events`, {}, runKey);
                if (!response.ok) throw new Error(`The live view could not open (${response.status}).`);
                const reader = response.body.getReader(), decoder = new TextDecoder();
                let buffer = '';
@@ -3246,7 +3217,7 @@
                            li.innerHTML = `<span class="mark">⇄</span><span class="method-badge method-${escapeHtml(data.method.toLowerCase())}">${escapeHtml(data.method)}</span><code>${escapeHtml(data.path)}</code><span>${outcome}</span>`;
                            log.appendChild(li);
                        } else if (event === 'write') {
-                           writes.appendChild(renderHeldWrite(runId, data));
+                           writes.appendChild(renderHeldWrite(runId, runKey, data));
                        } else if (event === 'write_decided') {
                            const card = writes.querySelector(`[data-write="${CSS.escape(data.id)}"]`);
                            if (card) settleWriteCard(card, data.decision);
@@ -3274,7 +3245,7 @@
            scroll();
        }
 
-       function renderHeldWrite(runId, write) {
+       function renderHeldWrite(runId, runKey, write) {
            const card = document.createElement('div');
            card.className = 'write-card';
            card.dataset.write = write.id;
@@ -3298,7 +3269,7 @@
            const decide = async (approve) => {
                card.querySelectorAll('button').forEach(b => b.disabled = true);
                try {
-                   const r = await buildFetch(`/runs/${runId}/writes/${write.id}`, { method: 'POST', body: JSON.stringify({ approve }) });
+                   const r = await buildFetch(`/runs/${runId}/writes/${write.id}`, { method: 'POST', body: JSON.stringify({ approve }) }, runKey);
                    settleWriteCard(card, r.ok ? (await r.json()).decision : 'rejected');
                } catch (e) { left.textContent = e.message; }
            };

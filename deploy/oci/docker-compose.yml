@@ -50,6 +50,12 @@ services:
       BUILD_PROXY_BASE: http://10.0.0.49:7601
       RUNNER_URL: http://10.0.0.223:7700
       RUNNER_TOKEN: ${RUNNER_TOKEN:-}
+      # Open to every visitor (decided 2026-11-09), behind this mode's own caps and ledger.
+      BUILD_PUBLIC: "true"
+      BUILD_RATE_PER_HOUR: "3"
+      BUILD_DAILY_CAP_USD: "5"
+      BUILD_MONTHLY_CAP_USD: "50"
+      BUILD_DATA_DIR: /app/data/build
 
 volumes:
   cookbook_models:

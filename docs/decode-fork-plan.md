@@ -1,6 +1,6 @@
 # Forking decode into APICookbook: decisions and plan
 
-Status: F0–F2 done, F3 built as an operator preview (2026-11-09) · Sandbox changed from Modal to a dedicated OCI instance on 2026-11-09 · Decided with the owner in an interview on 2026-11-09 · Upstream: [decodingai-magazine/building-a-coding-agent-from-scratch-course](https://github.com/decodingai-magazine/building-a-coding-agent-from-scratch-course) ("decode", Apache-2.0)
+Status: F0–F3 done; F4 open to visitors with caps (2026-11-09), F5 next · Sandbox changed from Modal to a dedicated OCI instance on 2026-11-09 · Decided with the owner in an interview on 2026-11-09 · Upstream: [decodingai-magazine/building-a-coding-agent-from-scratch-course](https://github.com/decodingai-magazine/building-a-coding-agent-from-scratch-course) ("decode", Apache-2.0)
 
 ## Intent
 
@@ -146,11 +146,13 @@ Still open, both outside the code:
 - Tried against a local mock of the stream (approve and reject paths, desktop and 375 px).
 - Opening it to visitors waits for F4: caps on this mode, a per-visitor run key in place of the operator key, and the shared-data notice.
 
-**F4. Guardrails** (needed before public launch):
-- per-IP and USD caps for this mode;
-- limits per run (wall time, steps, subagents, sandbox CPU and memory);
-- a notice that bank writes change shared demo data;
-- a way to reset or monitor the demo data.
+**F4. Guardrails** (decided 2026-11-09: open to every visitor, with caps):
+- **No key to type.** Starting a run returns a random per-run key that the page keeps in memory and sends as `X-Run-Key`. Only that tab can watch the run, approve its writes or stop it; everyone else gets 404. The operator's `RUNNER_TOKEN` still works on every run and skips the per-IP limit.
+- **Caps for this mode,** with their own ledger (`/app/data/build`): 3 runs per hour per IP, $5 a day, $50 a month. Past a cap, a start answers 429 with a plain message.
+- **A watcher per run** records its cost and ends its proxy token when it finishes, even if nobody is watching.
+- **Per-run limits,** from F1 and F2a: 15 minutes of wall time, 40 model requests, 300 bank calls, 1.5 GB, one core, and 2 runs at once on the host.
+- **The composer note** says approved changes are visible to everyone using the demo.
+- **Still open:** a way to monitor or reset the demo data (*Build smoke* with `reject` is the safe check for now), and alerts when the ledger nears its caps.
 
 **F5. Evals.**
 - BaNCS tasks with gold call sequences, plus "the code ran and the GET calls returned 2xx".

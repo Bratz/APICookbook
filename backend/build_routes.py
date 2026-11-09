@@ -1,11 +1,16 @@
-"""Build & run routes (docs/decode-fork-plan.md, F2a): start a run on the sandbox host, see its held
-bank writes, approve or reject them.
+"""Build & run routes (docs/decode-fork-plan.md, F2a-F4): start a run on the sandbox host, watch it
+live, approve or reject its bank writes, stop it.
 
-F2a is operator-only: every route needs ``Authorization: Bearer <RUNNER_TOKEN>``, the secret the
-runner already requires. Visitors arrive in F3 (UI) behind F4's caps; until then nobody without the
-token can start a run.
+Who may do what (F4, decided 2026-11-09: every visitor, with caps):
+- **Starting a run** is open to every visitor when ``BUILD_PUBLIC=true``, behind this mode's own caps
+  (``BUILD_RATE_PER_HOUR`` per IP, ``BUILD_DAILY_CAP_USD``, ``BUILD_MONTHLY_CAP_USD``, a ledger apart
+  from the code agent's). The operator's ``Authorization: Bearer <RUNNER_TOKEN>`` skips the per-IP limit.
+- **Everything about one run** needs that run's key: a random secret the start response hands back and
+  the page keeps in memory (``X-Run-Key``). Nobody types it; only the browser that started a run can
+  watch it, approve its writes or stop it. The operator token works on every run.
 
-    POST   /api/build/runs                        {"task"}  → {"id"}
+    GET    /api/build/status                      {"available", caps}
+    POST   /api/build/runs                        {"task"}  → {"id", "key"}
     GET    /api/build/runs/{id}                   the runner's status + held writes + the bank calls
     GET    /api/build/runs/{id}/events            the run live, as server-sent events (F2b):
            step (each tool call / result) · write (held, waiting) · write_decided · bank_call · done
@@ -19,34 +24,75 @@ import asyncio
 import hmac
 import json
 import os
+import secrets
 import time
-from typing import Any, AsyncIterator
+from dataclasses import dataclass, field
+from typing import Any, AsyncIterator, Optional
 
 import httpx
-from fastapi import APIRouter, Header, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, Header, HTTPException, Request
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from backend import build_proxy
+from backend.agent_guard import AgentGuard
 
 router = APIRouter(prefix="/api/build")
 
-# runner run id -> this run's proxy token. ponytail: in memory, so a cookbook-api restart forgets
-# runs in flight (their tokens die with them, which fails safe); persisted when F3 needs history.
-_RUNS: dict[str, str] = {}
+SETTLE_POLL_S = 10.0  # how often a run's watcher asks the runner whether it has finished
+_CAP_MESSAGES = {
+    "monthly_cap": "Build & run has reached this month's budget. The code agent still answers.",
+    "daily_cap": "Build & run has reached today's budget; it resets at 00:00 UTC. The code agent still answers.",
+    "rate_limited": "You have started {n} runs in the last hour; please try again later.",
+}
+
+
+@dataclass
+class BuildRun:
+    token: str  # the run's proxy token
+    key: str  # the run's own secret, held by the browser that started it
+    started: float = field(default_factory=time.time)
+    settled: bool = False
+
+
+# runner run id -> run. ponytail: in memory, so a cookbook-api restart forgets runs in flight (their
+# tokens and keys die with them, which fails safe; the runner still stops them at its time limit).
+_RUNS: dict[str, BuildRun] = {}
+_GUARD: Optional[AgentGuard] = None
+
+
+def _guard() -> AgentGuard:
+    global _GUARD
+    if _GUARD is None:
+        _GUARD = AgentGuard(os.getenv("BUILD_DATA_DIR", "data/build"),
+                            per_hour=int(os.getenv("BUILD_RATE_PER_HOUR", "3")),
+                            daily_usd=float(os.getenv("BUILD_DAILY_CAP_USD", "5")),
+                            monthly_usd=float(os.getenv("BUILD_MONTHLY_CAP_USD", "50")))
+    return _GUARD
 
 
 def _runner() -> tuple[str, str]:
     url, token = os.getenv("RUNNER_URL", "http://10.0.0.223:7700"), os.getenv("RUNNER_TOKEN", "")
     if len(token) < 32:
-        raise HTTPException(status_code=503, detail="Build & run is not configured (RUNNER_TOKEN)")
+        raise HTTPException(status_code=503, detail="Build & run is not configured on this server.")
     return url.rstrip("/"), token
 
 
-def _authorize(authorization: str) -> None:
+def _public() -> bool:
+    return os.getenv("BUILD_PUBLIC", "").lower() == "true"
+
+
+def _is_operator(authorization: str) -> bool:
     _, token = _runner()
-    if not hmac.compare_digest(authorization.encode(), f"Bearer {token}".encode()):
-        raise HTTPException(status_code=401, detail="unauthorized")
+    return hmac.compare_digest(authorization.encode(), f"Bearer {token}".encode())
+
+
+def _run_for(run_id: str, authorization: str, run_key: str) -> BuildRun:
+    """The run, if the caller is the operator or holds this run's key; 404 otherwise (no probing)."""
+    run = _RUNS.get(run_id)
+    if run is None or not (_is_operator(authorization) or hmac.compare_digest(run_key.encode(), run.key.encode())):
+        raise HTTPException(status_code=404, detail="no such run")
+    return run
 
 
 async def _call_runner(method: str, path: str, json: Any = None) -> httpx.Response:
@@ -59,11 +105,37 @@ async def _call_runner(method: str, path: str, json: Any = None) -> httpx.Respon
         raise HTTPException(status_code=502, detail=f"the sandbox host did not answer: {type(exc).__name__}")
 
 
-def _token(run_id: str) -> str:
-    token = _RUNS.get(run_id)
-    if token is None:
-        raise HTTPException(status_code=404, detail="no such run")
-    return token
+def _client_ip(request: Request) -> str:
+    forwarded = request.headers.get("x-forwarded-for", "")  # Vercel and Caddy put the visitor first
+    return forwarded.split(",")[0].strip() or (request.client.host if request.client else "unknown")
+
+
+async def settle(run_id: str, final: dict[str, Any]) -> None:
+    """Once per run: record what it cost in the build ledger and end its proxy token."""
+    run = _RUNS.get(run_id)
+    if run is None or run.settled:
+        return
+    run.settled = True
+    build_proxy.end_run(run.token)
+    summary = final.get("summary") or {}
+    _guard().record(kind="build", usd=float(summary.get("cost_usd") or 0), outcome=str(final.get("status")),
+                    seconds=time.time() - run.started, tools=len(build_proxy.calls(run.token)),
+                    tokens={k: summary.get(k) for k in ("input_tokens", "output_tokens") if summary.get(k) is not None})
+
+
+async def _settle_when_done(run_id: str) -> None:
+    """The run's watcher: its cost is counted even if nobody watches it to the end."""
+    deadline = time.time() + 25 * 60
+    while time.time() < deadline:
+        await asyncio.sleep(SETTLE_POLL_S)
+        try:
+            response = await _call_runner("GET", f"/runs/{run_id}")
+        except HTTPException:
+            continue
+        if response.status_code == 200 and response.json().get("status") != "running":
+            await settle(run_id, response.json())
+            return
+    await settle(run_id, {"status": "unknown"})
 
 
 class StartRequest(BaseModel):
@@ -74,47 +146,66 @@ class Decision(BaseModel):
     approve: bool
 
 
+@router.get("/status")
+async def build_status() -> dict[str, Any]:
+    try:
+        _runner()
+        available = _public()
+    except HTTPException:
+        available = False
+    return {"available": available, **_guard().status()}
+
+
 @router.post("/runs", status_code=202)
-async def start(body: StartRequest, authorization: str = Header("")) -> dict[str, Any]:
-    _authorize(authorization)
+async def start(body: StartRequest, request: Request, authorization: str = Header("")) -> Any:
+    if not _is_operator(authorization):
+        if not _public():
+            raise HTTPException(status_code=401, detail="Build & run is not open on this server.")
+        blocked = _guard().check(_client_ip(request))
+        if blocked:
+            message = _CAP_MESSAGES.get(blocked[0], blocked[1]).format(n=_guard().per_hour)
+            return JSONResponse(status_code=429, content={"error": blocked[0], "message": message})
     proxy = build_proxy.new_run()
     response = await _call_runner("POST", "/runs",
                                   {"task": body.task, "proxy_url": build_proxy.public_base(proxy.token)})
     if response.status_code != 202:
         build_proxy.end_run(proxy.token)
-        raise HTTPException(status_code=response.status_code, detail=response.json().get("error", "runner refused"))
+        busy = response.status_code == 429
+        return JSONResponse(status_code=429 if busy else 502, content={
+            "error": "busy" if busy else "runner_refused",
+            "message": "Both sandboxes are busy. Try again in a minute." if busy else "The sandbox could not start the run."})
     run_id = response.json()["id"]
-    _RUNS[run_id] = proxy.token
-    return {"id": run_id}
+    _RUNS[run_id] = BuildRun(token=proxy.token, key=secrets.token_urlsafe(24))
+    asyncio.create_task(_settle_when_done(run_id))
+    return {"id": run_id, "key": _RUNS[run_id].key}
 
 
 @router.get("/runs/{run_id}")
-async def status(run_id: str, authorization: str = Header("")) -> dict[str, Any]:
-    _authorize(authorization)
-    token = _token(run_id)
+async def status(run_id: str, authorization: str = Header(""), x_run_key: str = Header("")) -> dict[str, Any]:
+    run = _run_for(run_id, authorization, x_run_key)
     response = await _call_runner("GET", f"/runs/{run_id}")
     if response.status_code != 200:
         raise HTTPException(status_code=response.status_code, detail="the runner does not know this run")
-    run = response.json()
-    if run.get("status") != "running":
-        build_proxy.end_run(token)  # the token dies with the run: no more bank calls on it
-    return {**run, "pending_writes": build_proxy.pending(token), "bank_calls": build_proxy.calls(token)}
+    final = response.json()
+    if final.get("status") != "running":
+        await settle(run_id, final)
+    return {**final, "pending_writes": build_proxy.pending(run.token), "bank_calls": build_proxy.calls(run.token)}
 
 
 @router.post("/runs/{run_id}/writes/{write_id}")
-async def decide(run_id: str, write_id: str, body: Decision, authorization: str = Header("")) -> dict[str, Any]:
-    _authorize(authorization)
-    write = build_proxy.decide(_token(run_id), write_id, body.approve)
+async def decide(run_id: str, write_id: str, body: Decision, authorization: str = Header(""),
+                 x_run_key: str = Header("")) -> dict[str, Any]:
+    run = _run_for(run_id, authorization, x_run_key)
+    write = build_proxy.decide(run.token, write_id, body.approve)
     if write is None:
         raise HTTPException(status_code=404, detail="no such pending write (decided, timed out or unknown)")
     return write.public()
 
 
 @router.delete("/runs/{run_id}")
-async def stop(run_id: str, authorization: str = Header("")) -> dict[str, Any]:
-    _authorize(authorization)
-    token = _token(run_id)
-    build_proxy.end_run(token)
+async def stop(run_id: str, authorization: str = Header(""), x_run_key: str = Header("")) -> dict[str, Any]:
+    run = _run_for(run_id, authorization, x_run_key)
+    build_proxy.end_run(run.token)
     response = await _call_runner("DELETE", f"/runs/{run_id}")
     return {"id": run_id, "stopping": response.status_code == 200}
 
@@ -153,8 +244,8 @@ async def stream_run(run_id: str, token: str) -> AsyncIterator[str]:
         if out:
             last_sent = time.monotonic()
         if page["status"] not in ("running", "unknown") and not page["events"]:
-            build_proxy.end_run(token)
             final = (await _call_runner("GET", f"/runs/{run_id}")).json()
+            await settle(run_id, final)
             yield _sse("done", {k: final.get(k) for k in ("status", "exit_code", "answer", "summary")})
             return
         if time.monotonic() - last_sent > STREAM_PING_S:
@@ -165,8 +256,7 @@ async def stream_run(run_id: str, token: str) -> AsyncIterator[str]:
 
 
 @router.get("/runs/{run_id}/events")
-async def events(run_id: str, authorization: str = Header("")) -> StreamingResponse:
-    _authorize(authorization)
-    token = _token(run_id)
-    return StreamingResponse(stream_run(run_id, token), media_type="text/event-stream",
+async def events(run_id: str, authorization: str = Header(""), x_run_key: str = Header("")) -> StreamingResponse:
+    run = _run_for(run_id, authorization, x_run_key)
+    return StreamingResponse(stream_run(run_id, run.token), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
