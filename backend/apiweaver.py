@@ -6,6 +6,8 @@ Complete replacement with all features from the advanced version
 
 import json
 import asyncio
+import secrets
+import time
 import inspect
 from typing import Dict, Any, Optional, List, Union
 from urllib.parse import urljoin, quote
@@ -22,6 +24,12 @@ import yaml
 import logging
 
 logger = logging.getLogger(__name__)
+
+# Writes from MCP clients wait for a human (docs/decode-fork-plan.md: MCP endpoint, decided 2026-11-09):
+# an MCP client has no Approve button, so call_api returns a link the user opens on the site.
+WRITE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+HOLD_TTL_S = 600
+APPROVE_URL = os.getenv("MCP_APPROVE_URL", "https://apicookbook.vercel.app/#approve-")
 
 # ===================== Models =====================
 
@@ -86,6 +94,7 @@ class BaNCSAPIWeaver:
         self.http_clients: Dict[str, httpx.AsyncClient] = {}
         self.created_tools: Dict[str, Any] = {}  # Track created tools
         self.pending_registrations: List[Dict[str, Any]] = []  # Store configs to register later
+        self.held_writes: Dict[str, Dict[str, Any]] = {}  # approval id -> the write, its status and result
         self._setup_core_tools()
         self._initialize_default_apis()
     
@@ -338,6 +347,13 @@ class BaNCSAPIWeaver:
                     await ctx.error(error_msg)
                 raise ValueError(error_msg)
             
+            # A write is held for a human; the same call with {"approval_id": ...} returns its outcome.
+            approval_id = parameters.pop("approval_id", None)
+            if approval_id:
+                return self._held_outcome(str(approval_id))
+            if endpoint.method.upper() in WRITE_METHODS:
+                return self._hold_write(api_name, endpoint, parameters)
+
             if ctx:
                 await ctx.info(f"Calling {api_name}.{endpoint_name}")
             
@@ -963,6 +979,68 @@ Use get_api_schema("{api_name}", "{endpoint_name}") for full parameter details.
         
         return params
     
+    # ---------------------------------------------------------------- held writes (MCP)
+
+    def _hold_write(self, api_name: str, endpoint: "APIEndpoint", params: Dict[str, Any]) -> Dict[str, Any]:
+        for key in [k for k, w in self.held_writes.items() if time.time() - w["created"] > 6 * HOLD_TTL_S]:
+            self.held_writes.pop(key, None)  # ponytail: prune on write; a few dozen a day at most
+        write_id = secrets.token_urlsafe(18)
+        self.held_writes[write_id] = {"api": api_name, "endpoint": endpoint.name, "method": endpoint.method.upper(),
+                                      "path": endpoint.path, "params": params, "created": time.time(),
+                                      "status": "pending", "result": None}
+        return {"success": False, "status": "pending_approval", "approval_id": write_id,
+                "approval_url": APPROVE_URL + write_id,
+                "message": (f"This {endpoint.method.upper()} changes shared demo data, so it was NOT sent. Ask the "
+                            f"user to open approval_url and approve it within {HOLD_TTL_S // 60} minutes, then call "
+                            f"call_api again with the same api_name and endpoint_name and parameters "
+                            f'{{"approval_id": "{write_id}"}} to get the result.')}
+
+    def _held_outcome(self, write_id: str) -> Dict[str, Any]:
+        write = self.held_writes.get(write_id)
+        if write is None:
+            return {"success": False, "status": "unknown", "message": "No held write with this approval_id."}
+        self._expire(write)
+        if write["status"] == "approved":
+            return {"success": True, "status": "approved", "data": write["result"]}
+        messages = {"pending": "Not approved yet; ask the user to open the approval link.",
+                    "rejected": "The user rejected it; it was not sent.",
+                    "expired": "Nobody approved it in time; it was not sent.",
+                    "failed": f"Approved, but the bank call failed: {write.get('error')}"}
+        return {"success": False, "status": write["status"], "message": messages.get(write["status"], "")}
+
+    def _expire(self, write: Dict[str, Any]) -> None:
+        if write["status"] == "pending" and time.time() - write["created"] > HOLD_TTL_S:
+            write["status"] = "expired"
+
+    def held_write(self, write_id: str) -> Optional[Dict[str, Any]]:
+        """What the approval page shows; None when there is no such write."""
+        write = self.held_writes.get(write_id)
+        if write is None:
+            return None
+        self._expire(write)
+        left = max(0, int(HOLD_TTL_S - (time.time() - write["created"])))
+        return {k: write[k] for k in ("api", "endpoint", "method", "path", "params", "status")} | {"seconds_left": left}
+
+    async def decide_write(self, write_id: str, approve: bool) -> Optional[Dict[str, Any]]:
+        """Approve (send it now) or reject a pending write; None when it is not pending."""
+        write = self.held_writes.get(write_id)
+        if write is None:
+            return None
+        self._expire(write)
+        if write["status"] != "pending":
+            return None
+        if not approve:
+            write["status"] = "rejected"
+            return self.held_write(write_id)
+        write["status"] = "sending"
+        try:
+            write["result"] = await self._execute_api_call(api_name=write["api"], endpoint_name=write["endpoint"],
+                                                           params=dict(write["params"]))
+            write["status"] = "approved"
+        except Exception as e:  # the outcome is reported to the MCP client, not raised at the approver
+            write["status"], write["error"] = "failed", f"{type(e).__name__}: {e}"[:300]
+        return self.held_write(write_id)
+
     def run(self, **kwargs):
         """Run the MCP server."""
         if self.mcp:

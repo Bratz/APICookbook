@@ -1163,6 +1163,16 @@
             
             <!-- MCP Tools Tab -->
             <div id="mcpTab" class="tab-content hidden">
+                <div class="card mb-3">
+                    <h2 class="mb-3">Connect an MCP client</h2>
+                    <p>Any MCP client (Claude Code, Claude Desktop, Cursor…) can use these tools over streamable HTTP. No key needed; requests are rate-limited per address.</p>
+                    <dl class="basics"><dt>Endpoint</dt><dd>https://apicookbook.vercel.app/api/mcp/</dd></dl>
+                    <p class="text-small">Claude Code:</p>
+                    <pre><code class="language-bash">claude mcp add --transport http bancs https://apicookbook.vercel.app/api/mcp/</code></pre>
+                    <p class="text-small">Other clients (JSON config):</p>
+                    <pre><code class="language-json">{ "mcpServers": { "bancs": { "type": "http", "url": "https://apicookbook.vercel.app/api/mcp/" } } }</code></pre>
+                    <p class="text-small text-muted">Reads run at once. A write (POST, PUT, PATCH, DELETE) is not sent: <code>call_api</code> returns an approval link. Open it here, approve within 10 minutes, then the client calls <code>call_api</code> again with <code>{"approval_id": …}</code> for the result.</p>
+                </div>
                 <div class="card">
                     <h2 class="mb-3">Available MCP Tools</h2>
                     <div id="mcpToolsList">
@@ -1247,6 +1257,7 @@
 
                 // Is the code-writing agent switched on here?
                 initBuildMode();
+                showMcpApproval();
 
                 // Code editor for the Playground body (desktop only)
                 setupBodyEditor();
@@ -2945,6 +2956,44 @@
            document.getElementById('messageInput').value = text;
            sendMessage();
        }
+
+       // ---------------------------------------------------------------- MCP writes waiting for a person
+       // An MCP client's call_api write returns a link to #approve-<id>; whoever holds the link decides.
+       async function showMcpApproval() {
+           const m = location.hash.match(/^#approve-([A-Za-z0-9_-]{16,})$/);
+           if (!m) return;
+           switchTab('chat', document.querySelector('.tab'));
+           const id = m[1];
+           let w;
+           try {
+               const r = await fetch('/api/mcp-writes/' + id);
+               if (!r.ok) throw new Error('gone');
+               w = await r.json();
+           } catch (e) {
+               addPanel('MCP write', '<p>This approval link is not valid any more.</p>');
+               return;
+           }
+           const pending = w.status === 'pending';
+           const el = addPanel('MCP write', `<div class="write-card">
+               <h4>An MCP client wants to change bank data</h4>
+               <div class="plan-step-head"><span class="method-badge method-${escapeHtml(w.method.toLowerCase())}">${escapeHtml(w.method)}</span><code>${escapeHtml(w.path)}</code></div>
+               <p class="text-small text-muted">${escapeHtml(w.api)} · ${escapeHtml(w.endpoint)}</p>
+               <pre>${escapeHtml(JSON.stringify(w.params, null, 2))}</pre>
+               <div class="choice-row">${pending
+                   ? '<button type="button" class="btn btn-primary btn-sm" data-ok>Approve and send</button><button type="button" class="btn btn-secondary btn-sm" data-no>Reject</button>' : ''}
+               <span class="write-status">${pending ? `${Math.ceil(w.seconds_left / 60)} min left. Approved changes are visible to everyone using the demo.` : 'Already ' + escapeHtml(w.status) + '.'}</span></div></div>`);
+           const decide = async (approve) => {
+               el.querySelectorAll('button').forEach(b => b.remove());
+               const r = await fetch('/api/mcp-writes/' + id, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ approve }) });
+               const d = await r.json().catch(() => ({}));
+               el.querySelector('.write-status').textContent = r.ok
+                   ? ({ approved: 'Approved and sent. The MCP client can now fetch the result.', rejected: 'Rejected: not sent.', failed: 'Approved, but the bank call failed.' }[d.status] || d.status)
+                   : (d.detail || 'Could not decide.');
+           };
+           el.querySelector('[data-ok]')?.addEventListener('click', () => decide(true));
+           el.querySelector('[data-no]')?.addEventListener('click', () => decide(false));
+       }
+       window.addEventListener('hashchange', showMcpApproval);
 
        function addPanel(label, html) {
            const container = document.getElementById('chatMessages');

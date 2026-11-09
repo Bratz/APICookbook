@@ -35,6 +35,7 @@ import os
 load_dotenv()
 
 from backend import api_lookup, build_proxy, build_routes
+from backend.agent_guard import AgentGuard
 
 # Optional imports - PyTorch is NOT required
 try:
@@ -529,6 +530,18 @@ UnifiedAPIKnowledgeBase = imports['UnifiedAPIKnowledgeBase']
 UnifiedResponseGenerator = imports['UnifiedResponseGenerator']
 BaNCSAPIWeaver = imports['BaNCSAPIWeaver']
 
+# The MCP endpoint (decided 2026-11-09): APIWeaver's four tools over streamable HTTP at /api/mcp/, for any
+# MCP client, behind a per-IP limit. Writes are held until a person approves them on the site (apiweaver.py).
+MCP_WEAVER = None
+MCP_HTTP = None
+if settings.mcp_enabled:
+    try:
+        MCP_WEAVER = BaNCSAPIWeaver()
+        MCP_HTTP = MCP_WEAVER.mcp.http_app(path="/") if getattr(MCP_WEAVER, "mcp", None) else None
+    except Exception as e:  # the site works without MCP; the badge says so
+        logger.warning(f"MCP unavailable: {e}")
+        MCP_WEAVER = SimpleAPIWeaver()
+
 # Log configuration
 def check_and_log_configuration():
     """Check and log system configuration"""
@@ -686,28 +699,10 @@ async def lifespan(app: FastAPI):
             else:
                 logger.info("BERT is disabled")
         
-        # Initialize MCP if enabled
-        if settings.mcp_enabled:
-            try:
-                app.state.apiweaver = BaNCSAPIWeaver()
-                logger.info("APIWeaver (MCP) initialized successfully")
-            except Exception as e:
-                logger.warning(f"Failed to initialize APIWeaver: {e}, using fallback")
-                app.state.apiweaver = SimpleAPIWeaver()
-        else:
-            logger.info("MCP is disabled in configuration")
-            app.state.apiweaver = None
-        
-        if settings.mcp_enabled:
-            try:
-                app.state.apiweaver = BaNCSAPIWeaver()
-                # Process any pending API registrations
-                if hasattr(app.state.apiweaver, 'process_pending_registrations'):
-                    await app.state.apiweaver.process_pending_registrations()
-                logger.info("APIWeaver (MCP) initialized successfully with all APIs registered")
-            except Exception as e:
-                logger.warning(f"Failed to initialize APIWeaver: {e}, using fallback")
-                app.state.apiweaver = SimpleAPIWeaver()
+        # MCP: the weaver was built at import (it is mounted at /api/mcp); register the APIs it loaded.
+        app.state.apiweaver = MCP_WEAVER
+        if hasattr(MCP_WEAVER, 'process_pending_registrations'):
+            await MCP_WEAVER.process_pending_registrations()
 
         # Initialize playground state
         app.state.playground_history = []
@@ -736,7 +731,11 @@ async def lifespan(app: FastAPI):
         app.state.build_proxy_task = asyncio.create_task(app.state.build_proxy.serve())
         logger.info(f"Build proxy listening on :{proxy_port}")
 
-    yield  # App runs here
+    if MCP_HTTP is not None:
+        async with MCP_HTTP.lifespan(MCP_HTTP):  # FastMCP's session manager lives as long as the app
+            yield  # App runs here
+    else:
+        yield  # App runs here
 
     if app.state.build_proxy:
         app.state.build_proxy.should_exit = True
@@ -788,6 +787,45 @@ app.add_middleware(
     allow_methods=settings.cors_allow_methods,
     allow_headers=settings.cors_allow_headers,
 )
+
+_MCP_GUARD = None
+
+
+@app.middleware("http")
+async def mcp_rate_limit(request: Request, call_next):
+    """MCP is open to anyone: cap requests per IP (each tool call is one POST to /api/mcp/)."""
+    global _MCP_GUARD
+    if request.method == "POST" and request.url.path.rstrip("/") == "/api/mcp":
+        if _MCP_GUARD is None:
+            _MCP_GUARD = AgentGuard(os.getenv("MCP_DATA_DIR", "data/mcp"),
+                                    per_hour=int(os.getenv("MCP_RATE_PER_HOUR", "300")))
+        if _MCP_GUARD.check(build_routes._client_ip(request)):
+            return JSONResponse(status_code=429, content={"error": "rate_limited",
+                                "message": "Too many MCP requests from this address; try again later."})
+    return await call_next(request)
+
+
+class WriteDecision(BaseModel):
+    approve: bool
+
+
+@app.get("/api/mcp-writes/{write_id}")
+async def mcp_held_write(write_id: str):
+    """The approval page: one write an MCP client asked for, waiting for a person."""
+    write = MCP_WEAVER.held_write(write_id) if hasattr(MCP_WEAVER, "held_write") else None
+    if write is None:
+        raise HTTPException(status_code=404, detail="No such write (wrong link, or it was cleared).")
+    return write
+
+
+@app.post("/api/mcp-writes/{write_id}")
+async def mcp_decide_write(write_id: str, body: WriteDecision):
+    """Approve (sends it to the bank now) or reject. Holding the link is the authority to decide."""
+    write = await MCP_WEAVER.decide_write(write_id, body.approve) if hasattr(MCP_WEAVER, "decide_write") else None
+    if write is None:
+        raise HTTPException(status_code=409, detail="This write is not waiting any more (decided or expired).")
+    return write
+
 
 # Process time header middleware
 @app.middleware("http")
@@ -1888,8 +1926,11 @@ async def execute_playground_request(request: PlaygroundRequest):
             if not settings.mcp_enabled or not hasattr(app.state, 'apiweaver'):
                 raise HTTPException(status_code=503, detail="MCP is not available")
             
-            # Execute the tool (simplified for brevity - copy your existing logic)
-            result = {"message": "MCP tool execution"}
+            from fastmcp import Client
+            async with Client(app.state.apiweaver.mcp) as mcp_client:  # in-process: the same tools /api/mcp serves
+                tool_result = await mcp_client.call_tool(request.tool_name or "", request.tool_params or {},
+                                                         raise_on_error=False)
+            result = tool_result.structured_content or {"content": [getattr(c, "text", str(c)) for c in tool_result.content]}
             
         elif request.type == "api":
             # Execute direct API call
@@ -2456,6 +2497,10 @@ async def general_exception_handler(request: Request, exc: Exception):
     )
 
 # ============= MAIN ENTRY POINT =============
+if MCP_HTTP is not None:
+    app.mount("/api/mcp", MCP_HTTP)  # MCP clients: https://apicookbook.vercel.app/api/mcp/
+
+
 if __name__ == "__main__":
     import uvicorn
     

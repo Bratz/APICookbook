@@ -22,7 +22,6 @@ from .spec_loader import APISpecificationLoader
 # Conditional imports for type checking
 if TYPE_CHECKING:
     from .main import app
-    from .mcp_server import IntegratedMCPServer
     from .models import (
         ChatMessage,
         ChatResponse,
