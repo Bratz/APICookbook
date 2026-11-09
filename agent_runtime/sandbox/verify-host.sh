@@ -23,7 +23,15 @@ check() {  # check <expect: open|blocked> <label> <host> <port>
 
 echo "== runtimes: $(docker info --format '{{range $k,$v := .Runtimes}}{{$k}} {{end}}')"
 echo "== gVisor in the worker: $(docker run --rm --runtime runsc decode-session:latest dmesg 2>/dev/null | head -1 || echo '?')"
-check open    "BaNCS proxy ($MAIN_VM_IP:$PROXY_PORT)"   "$MAIN_VM_IP" "$PROXY_PORT"
+# The proxy path also crosses OCI's subnet security list, which this host does not control. If the
+# HOST itself times out on the port, the drop is OCI's: warn instead of failing, and name the rule.
+timeout 5 bash -c "</dev/tcp/$MAIN_VM_IP/$PROXY_PORT" 2>/dev/null
+if [ $? -eq 124 ]; then
+  echo "WARN  BaNCS proxy ($MAIN_VM_IP:$PROXY_PORT): dropped before the main VM, from this host too."
+  echo "      Add an OCI security-list ingress rule: source 10.0.0.223/32 -> TCP $PROXY_PORT (needed by F2)."
+else
+  check open "BaNCS proxy ($MAIN_VM_IP:$PROXY_PORT)" "$MAIN_VM_IP" "$PROXY_PORT"
+fi
 check blocked "main VM SSH ($MAIN_VM_IP:22)"            "$MAIN_VM_IP" 22
 check blocked "main VM HTTPS ($MAIN_VM_IP:443)"         "$MAIN_VM_IP" 443
 check blocked "this host's SSH ($HOST_IP:22)"           "$HOST_IP" 22
