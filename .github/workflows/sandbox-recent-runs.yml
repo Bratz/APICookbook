@@ -1,0 +1,35 @@
+# Read-only: the sandbox host's recent Build & run runs (answer, steps, outcome), newest first.
+# For diagnosing evals and smoke runs; run dirs are kept for a day. Secrets: SANDBOX_HOST/USER/SSH_KEY.
+name: Sandbox recent runs
+
+on:
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: "How many runs"
+        type: string
+        default: "20"
+
+jobs:
+  show:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Recent runs (read-only)
+        uses: appleboy/ssh-action@v1
+        env:
+          LIMIT: ${{ inputs.limit }}
+        with:
+          host: ${{ secrets.SANDBOX_HOST }}
+          username: ${{ secrets.SANDBOX_USER }}
+          key: ${{ secrets.SANDBOX_SSH_KEY }}
+          envs: LIMIT
+          script: |
+            case "$LIMIT" in ''|*[!0-9]*) LIMIT=20 ;; esac
+            cd /var/lib/decode/runs || exit 0
+            for d in $(ls -1t | head -n "$LIMIT"); do
+              echo "=================== $d ($(date -r "$d" -u +%H:%M))"
+              jq -c '{exit_reason, requests, cost_usd}' "$d/summary.json" 2>/dev/null
+              echo "--- steps: $(jq -r 'select(.type=="tool_call") | .tool' "$d/events.jsonl" 2>/dev/null | tr '\n' ' ')"
+              echo "--- answer"; head -c 900 "$d/answer.txt"; echo
+            done
