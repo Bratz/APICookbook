@@ -10,6 +10,7 @@ from fastapi.responses import FileResponse, JSONResponse, HTMLResponse, Streamin
 from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 import asyncio
+import contextlib
 import logging
 import json
 import os
@@ -36,7 +37,7 @@ load_dotenv()
 # Code-writing agent (after load_dotenv, so AGENT_* settings and ANTHROPIC_API_KEY are visible)
 from pydantic_ai import capture_run_messages
 from pydantic_ai.exceptions import UsageLimitExceeded
-from backend import code_agent
+from backend import build_proxy, build_routes, code_agent
 from backend.agent_guard import AgentGuard
 
 # Optional imports - PyTorch is NOT required
@@ -737,7 +738,21 @@ async def lifespan(app: FastAPI):
                 app.state.kb if app.state.kb else SimpleKnowledgeBase()
             )
     
+    # Build & run's BaNCS proxy (docs/decode-fork-plan.md, F2a): a second server in this process, so it
+    # shares the knowledge base and the approvals the /api/build routes record. Off unless a port is set.
+    app.state.build_proxy = None
+    proxy_port = int(os.getenv("BUILD_PROXY_PORT", "0") or 0)
+    if proxy_port:
+        app.state.build_proxy = build_proxy.server(proxy_port)
+        app.state.build_proxy_task = asyncio.create_task(app.state.build_proxy.serve())
+        logger.info(f"Build proxy listening on :{proxy_port}")
+
     yield  # App runs here
+
+    if app.state.build_proxy:
+        app.state.build_proxy.should_exit = True
+        with contextlib.suppress(Exception):
+            await asyncio.wait_for(app.state.build_proxy_task, timeout=5)
     
     # Cleanup code after yield
     logger.info("Shutting down...")
@@ -769,6 +784,7 @@ app = FastAPI(
     docs_url="/api/docs",
     redoc_url="/api/redoc"
 )
+app.include_router(build_routes.router)  # Build & run, operator-only until F3/F4
 
 if BERT_AVAILABLE and bert_router:
     app.include_router(bert_router)

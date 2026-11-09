@@ -263,6 +263,11 @@ class Settings(BaseSettings):
     # per-session apt install (the image bakes git, and the locked network blocks apt anyway).
     # Off keeps upstream's worker byte-identical.
     sandbox_docker_hardened: bool = False
+    # --- APICookbook fork (F2a): the run's BaNCS proxy, http://10.0.0.49:7601/r/<token> ---
+    # Set per run by the runner. Empty: the BaNCS tools say so and the prompt has no BaNCS part.
+    bancs_proxy_url: str = ""
+    # The only proxy prefix the runner accepts for a run (cookbook-api's private proxy).
+    runner_proxy_prefix: str = "http://10.0.0.49:7601/r/"
     # --- APICookbook fork (F1): the runner on the sandbox host (``python -m decode.runner``) ---
     # The shared secret cookbook-api sends as ``Authorization: Bearer …``; empty refuses to start.
     runner_token: SecretStr = SecretStr("")

@@ -60,11 +60,13 @@ jobs:
           PRUNE_ALL: ${{ inputs.prune_all_build_cache || false }}
           # The code agent's key (docs/coding-agent-plan.md). Unset: the agent stays off (503).
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Build & run (docs/decode-fork-plan.md, F2a): the runner's bearer token. Unset: /api/build is off (503).
+          RUNNER_TOKEN: ${{ secrets.RUNNER_TOKEN }}
         with:
           host: ${{ secrets.VM_HOST }}
           username: ${{ secrets.VM_USER }}
           key: ${{ secrets.VM_SSH_KEY }}
-          envs: REPO,PRUNE_ALL,ANTHROPIC_API_KEY
+          envs: REPO,PRUNE_ALL,ANTHROPIC_API_KEY,RUNNER_TOKEN
           command_timeout: 35m
           script: |
             set -e
@@ -76,8 +78,11 @@ jobs:
             cd deploy/oci
             # Compose reads deploy/oci/.env (untracked) for ${ANTHROPIC_API_KEY}. Written fresh on every
             # deploy from the GitHub secret, owner-only, never echoed; removing the secret turns the agent off.
-            ( umask 077; if [ -n "$ANTHROPIC_API_KEY" ]; then printf 'ANTHROPIC_API_KEY=%s\n' "$ANTHROPIC_API_KEY" > .env; else rm -f .env; fi )
-            echo "agent key on the VM: $([ -s .env ] && echo yes || echo no)"
+            ( umask 077; : > .env
+              if [ -n "$ANTHROPIC_API_KEY" ]; then printf 'ANTHROPIC_API_KEY=%s\n' "$ANTHROPIC_API_KEY" >> .env; fi
+              if [ -n "$RUNNER_TOKEN" ]; then printf 'RUNNER_TOKEN=%s\n' "$RUNNER_TOKEN" >> .env; fi )
+            echo "agent key on the VM: $(grep -q '^ANTHROPIC_API_KEY=' .env && echo yes || echo no)"
+            echo "build runner token on the VM: $(grep -q '^RUNNER_TOKEN=' .env && echo yes || echo no)"
             # The disk is shared with vam-portal and its siblings and has been filled before.
             # Prune first, then measure: build cache older than 48h and dangling images only,
             # nothing a running container uses. A post-build prune never runs when the build fails.

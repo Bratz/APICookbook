@@ -107,10 +107,17 @@ Still open, both outside the code:
 1. OCI's subnet security list silently drops the proxy port. It needs ingress rules `10.0.0.223/32 → TCP 7601` and `10.0.0.49/32 → TCP 7700`.
 2. The *Main VM sandbox firewall* workflow hasn't run yet; it needs the owner's go-ahead because it changes the shared VM.
 
-**F2. Proxy with approvals.**
-- The BaNCS proxy holds writes pending approval.
-- Routes: `POST /api/build/stream`, `/approve`, `/steer`.
-- The runner channel for approvals and steering.
+**F2a. Proxy with approvals, and API knowledge** (decided 2026-11-09):
+- `backend/build_proxy.py`: a second server inside cookbook-api's process on `10.0.0.49:7601`, published on the private address only.
+  - Every path carries a per-run token: `/r/<token>/...`.
+  - GETs pass through to the BaNCS host, which is the only host allowed, with the bank headers added.
+  - POST, PUT, PATCH and DELETE are **held** until approved. A rejection, a 2-minute timeout or the run ending all answer 403, and nothing reaches the bank.
+  - `/_kb/*` serves the code agent's search, endpoint and body-schema lookups. `url_template` is rewritten to the run's proxy address.
+- decode gets three read-only tools (`search_endpoints`, `get_endpoint`, `get_body_schema`) and a BaNCS part of its prompt, both active only when the run has `BANCS_PROXY_URL`. The runner passes that on, accepting only the cookbook proxy's prefix.
+- Operator-only routes `/api/build/runs` (start, status with held writes and bank calls, approve or reject, stop) behind `RUNNER_TOKEN` until F3 and F4.
+- *Build smoke* (manual) drives one task through all of it; by default it rejects every write, so no demo data changes.
+
+**F2b. Live events and visitor routes:** per-step events from `decode run` streamed to cookbook-api; the visitor-facing `/api/build/stream`, `/approve`, `/steer`.
 
 **F3. Web UI.**
 - A "Build & run" mode in the chat: live steps, file tree and contents, command output, Approve and Reject for each bank write, a steering box and Stop.

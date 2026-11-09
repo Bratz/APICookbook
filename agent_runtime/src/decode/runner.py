@@ -4,7 +4,7 @@ A small private HTTP service that cookbook-api calls to run ``decode run`` for a
 Each run is its own ``decode run`` subprocess in its own directory (its harness home, so its session
 log and Workspace are separate), because decode keeps per-process state (the bash executor memo).
 
-    POST   /runs          {"task": "...", "model": null}  → 202 {"id"} · 429 when all slots are busy
+    POST   /runs          {"task", "model"?, "proxy_url"?}  → 202 {"id"} · 429 when all slots are busy
     GET    /runs/<id>     → {"id", "status", "exit_code", "answer", "summary", "stderr_tail"}
     DELETE /runs/<id>     → stop it (process group killed, its worker container removed)
     GET    /health        → {"ok", "active", "max"}  (no token: a liveness probe)
@@ -74,7 +74,7 @@ class Runner:
         with self._lock:
             return sum(run.status == "running" for run in self._runs.values())
 
-    def start(self, task: str, model: str | None = None) -> Run | None:
+    def start(self, task: str, model: str | None = None, proxy_url: str = "") -> Run | None:
         """Start a run, or return ``None`` when every slot is busy."""
         with self._lock:
             if sum(run.status == "running" for run in self._runs.values()) >= self.max_runs:
@@ -97,7 +97,11 @@ class Runner:
                     stdin=subprocess.DEVNULL,
                     stdout=out,
                     stderr=err,
-                    env={**os.environ, "DECODE_LOG_FILE": str(directory / "decode.log")},
+                    env={
+                        **os.environ,
+                        "DECODE_LOG_FILE": str(directory / "decode.log"),
+                        "BANCS_PROXY_URL": proxy_url,  # this run's proxy address (F2a)
+                    },
                     start_new_session=True,  # its own process group, so a stop kills the whole tree
                 )
             run = Run(id=run_id, directory=directory, process=process)
@@ -193,6 +197,16 @@ def _decode_cmd() -> list[str]:
     return [sys.executable, "-m", "decode"]
 
 
+def _valid_proxy_url(url: object) -> bool:
+    """Only the cookbook proxy's per-run address: the configured prefix plus a token, nothing else."""
+    prefix = settings.runner_proxy_prefix
+    return (
+        isinstance(url, str)
+        and url.startswith(prefix)
+        and bool(re.fullmatch(r"[A-Za-z0-9_-]{16,64}", url[len(prefix) :]))
+    )
+
+
 def _read(path: Path) -> str:
     return path.read_text(encoding="utf-8", errors="replace") if path.exists() else ""
 
@@ -251,7 +265,11 @@ def make_handler(runner: Runner, token: str) -> type[BaseHTTPRequestHandler]:
             ):
                 self._send(400, {"error": "bad model id"})
                 return
-            run = runner.start(task, model)
+            proxy_url = payload.get("proxy_url") or ""
+            if proxy_url and not _valid_proxy_url(proxy_url):
+                self._send(400, {"error": "proxy_url must be the cookbook proxy's per-run address"})
+                return
+            run = runner.start(task, model, proxy_url)
             if run is None:
                 self._send(429, {"error": "all sandboxes are busy", "max": runner.max_runs})
                 return

@@ -21,6 +21,7 @@ from decode.agent.deps import AgentDeps
 from decode.permissions.types import ToolKind
 from decode.tools import agent as agent_module
 from decode.tools import askuser as askuser_module
+from decode.tools import bancs as bancs_module
 from decode.tools import bash as bash_module
 from decode.tools import files
 from decode.tools import lsp as lsp_module
@@ -57,6 +58,22 @@ TOOL_SPECS: list[ToolSpec] = [
     # Mutating file tools: FILE_EDIT — edit mode auto-allows them, default asks.
     ToolSpec(name=files.WRITE_TOOL_NAME, func=files.write, kind=ToolKind.FILE_EDIT),
     ToolSpec(name=files.EDIT_TOOL_NAME, func=files.edit, kind=ToolKind.FILE_EDIT),
+    # BaNCS API knowledge through the run's proxy (APICookbook fork F2a): read-only lookups.
+    ToolSpec(
+        name=bancs_module.SEARCH_TOOL_NAME,
+        func=bancs_module.search_endpoints,
+        kind=ToolKind.READ_ONLY,
+    ),
+    ToolSpec(
+        name=bancs_module.ENDPOINT_TOOL_NAME,
+        func=bancs_module.get_endpoint,
+        kind=ToolKind.READ_ONLY,
+    ),
+    ToolSpec(
+        name=bancs_module.BODY_SCHEMA_TOOL_NAME,
+        func=bancs_module.get_body_schema,
+        kind=ToolKind.READ_ONLY,
+    ),
     # Bash: shell execution behind the executor seam → OTHER (edit mode still asks).
     ToolSpec(name=bash_module.BASH_TOOL_NAME, func=bash_module.bash, kind=ToolKind.OTHER),
     # In-memory TodoWrite checklist: no disk/exec side effect → READ_ONLY (works in plan mode).

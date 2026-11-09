@@ -1,0 +1,47 @@
+# ============================================================================
+# One Build & run task end to end (docs/decode-fork-plan.md, F2a): cookbook-api starts it on the
+# sandbox host, the agent writes and runs code through the BaNCS proxy, and every bank write it makes
+# is held, then approved or rejected here. Manual only. "reject" (the default) changes no demo data.
+# Runs deploy/oci/build_smoke.py inside the cookbook-api container. Secrets: VM_HOST/USER/SSH_KEY.
+# ============================================================================
+name: Build smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      task:
+        description: "The task for the agent"
+        type: string
+        default: "Using the BaNCS APIs, look up one existing customer or account with a GET call, then try one small update on it (for example its phone number). Report what each call returned."
+      writes:
+        description: "What to do with each held bank write"
+        type: choice
+        options: [reject, approve]
+        default: reject
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      HOST: ${{ secrets.VM_HOST }}
+      USER_: ${{ secrets.VM_USER }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: SSH key
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "${{ secrets.VM_SSH_KEY }}" > ~/.ssh/vm
+          chmod 600 ~/.ssh/vm
+      - name: Run one task through cookbook-api
+        env:
+          TASK: ${{ inputs.task }}
+          WRITES: ${{ inputs.writes }}
+        run: |
+          # The task travels as a shell-quoted argument built here, never pasted into the remote script.
+          ssh -i ~/.ssh/vm -o StrictHostKeyChecking=accept-new "$USER_@$HOST" \
+            "sudo docker exec -i cookbook-api python - $(printf '%q' "$TASK") $(printf '%q' "$WRITES")" \
+            < deploy/oci/build_smoke.py
+      - name: Remove the key
+        if: always()
+        run: rm -f ~/.ssh/vm

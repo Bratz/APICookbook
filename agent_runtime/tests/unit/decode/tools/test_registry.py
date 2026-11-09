@@ -27,6 +27,10 @@ def _agent(mocker):
 def test_registry_lists_the_expected_tools():
     names = {spec.name for spec in TOOL_SPECS}
     assert names == {
+        # BaNCS API knowledge through the run's proxy (APICookbook fork F2a): READ_ONLY lookups.
+        "search_endpoints",
+        "get_endpoint",
+        "get_body_schema",
         "read",
         "glob",
         "grep",

@@ -2,6 +2,9 @@
 name: build
 description: A capable coding agent that reads, edits, runs commands, and ships changes.
 tools:
+  - search_endpoints
+  - get_endpoint
+  - get_body_schema
   - read
   - glob
   - grep

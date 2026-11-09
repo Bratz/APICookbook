@@ -18,7 +18,11 @@ services:
     container_name: cookbook-api  # the deploy workflow execs into it by this name
     restart: unless-stopped
     logging: { driver: json-file, options: { max-size: "10m", max-file: "3" } }  # uncapped logs have filled this disk before
-    expose: ["7600"]  # reached by Caddy over oci_default; never `ports:`
+    expose: ["7600"]  # reached by Caddy over oci_default; never published
+    # Build & run's BaNCS proxy (docs/decode-fork-plan.md, F2a): published on the VM's PRIVATE address
+    # only, for the sandbox host (10.0.0.223). OCI's security list and the VM's SANDBOX-IN rules admit
+    # nothing else; the internet never sees it.
+    ports: ["10.0.0.49:7601:7601"]
     mem_limit: 2g     # shared VM; torch + bge-small + 950 embeddings sit well under this
     volumes:
       # The downloaded bge model and the RAG index cache. Losing it only costs one slow start.
@@ -41,6 +45,11 @@ services:
       AGENT_DAILY_CAP_USD: "5"
       AGENT_MONTHLY_CAP_USD: "50"
       AGENT_DATA_DIR: /app/data/agent
+      # Build & run (F2a): the proxy, the runner on the sandbox host, and its token from .env.
+      BUILD_PROXY_PORT: "7601"
+      BUILD_PROXY_BASE: http://10.0.0.49:7601
+      RUNNER_URL: http://10.0.0.223:7700
+      RUNNER_TOKEN: ${RUNNER_TOKEN:-}
 
 volumes:
   cookbook_models:

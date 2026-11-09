@@ -37,6 +37,7 @@ def test_build_agent_has_the_full_tool_set_and_default_mode():
 
     assert build.mode is PermissionMode.DEFAULT
     expected = {
+        "search_endpoints", "get_endpoint", "get_body_schema",
         "read", "glob", "grep", "lsp", "write", "edit", "bash", "todo_write",
         "ask_user", "enter_plan_mode", "exit_plan_mode", "sleep", "agent",
     }  # fmt: skip

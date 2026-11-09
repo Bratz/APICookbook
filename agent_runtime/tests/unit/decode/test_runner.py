@@ -21,12 +21,12 @@ from decode import runner as runner_mod
 TOKEN = "t" * 40
 
 _FAKE_DECODE = (
-    "import json, sys, time\n"
+    "import json, os, sys, time\n"
     "args = sys.argv[1:]\n"
     "if 'sleep' in args[1]: time.sleep(30)\n"
     "summary = args[args.index('--summary-json') + 1]\n"
     "open(summary, 'w').write(json.dumps({'exit_reason': 'completed', 'task': args[1]}))\n"
-    "print('answer for ' + args[1])\n"
+    "print(('answer for ' + args[1] + ' via ' + os.environ.get('BANCS_PROXY_URL', '')).strip())\n"
 )
 
 
@@ -54,7 +54,7 @@ def test_a_run_completes_with_its_answer_and_summary(runner):
 
     assert body["status"] == "completed"
     assert body["exit_code"] == 0
-    assert body["answer"].strip() == "answer for list accounts"
+    assert body["answer"].strip() == "answer for list accounts via"  # no proxy given
     assert body["summary"] == {"exit_reason": "completed", "task": "list accounts"}
 
 
@@ -115,3 +115,17 @@ def test_a_run_round_trips_over_http(server, runner):
     assert code == 200
     assert result["status"] == "completed"
     assert "get balance" in result["answer"]
+
+
+def test_only_the_cookbook_proxys_per_run_address_is_passed_on(server, runner):
+    good = "http://10.0.0.49:7601/r/" + "a" * 32
+    for bad in (
+        "http://evil.example/r/" + "a" * 32,
+        good + "/../x",
+        "http://10.0.0.49:7601/r/short",
+    ):
+        assert _call(f"{server}/runs", "POST", {"task": "x", "proxy_url": bad})[0] == 400
+
+    code, body = _call(f"{server}/runs", "POST", {"task": "use the bank", "proxy_url": good})
+    assert code == 202
+    assert _wait(runner, body["id"])["answer"].strip() == f"answer for use the bank via {good}"

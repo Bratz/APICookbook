@@ -30,6 +30,7 @@ from pydantic_ai.providers.openrouter import OpenRouterProvider
 from decode.agent.deps import AgentDeps
 from decode.config.settings import settings
 from decode.memory.service import assemble_memory
+from decode.tools import bancs
 from decode.tools.agent import set_main_agent
 from decode.tools.registry import register_tools
 
@@ -177,6 +178,7 @@ def _register_instructions(agent: Agent[AgentDeps, str | DeferredToolRequests]) 
         parts = (
             _BASE_INSTRUCTIONS,
             ctx.deps.active_agent.prompt,
+            bancs.instructions(),  # APICookbook fork F2a: only when the run has a BaNCS proxy
             assemble_memory(harness_home),
         )
         return "\n\n".join(part for part in parts if part)
