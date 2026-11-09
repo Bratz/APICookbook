@@ -53,6 +53,7 @@ class BuildRun:
     key: str  # the run's own secret, held by the browser that started it
     started: float = field(default_factory=time.time)
     settled: bool = False
+    operator: bool = False  # started with RUNNER_TOKEN (evals, smoke): kept out of the visitors' caps
 
 
 # runner run id -> run. ponytail: in memory, so a cookbook-api restart forgets runs in flight (their
@@ -117,6 +118,8 @@ async def settle(run_id: str, final: dict[str, Any]) -> None:
         return
     run.settled = True
     build_proxy.end_run(run.token)
+    if run.operator:
+        return  # evals and smoke runs report their own cost; the caps are the visitors' budget
     summary = final.get("summary") or {}
     _guard().record(kind="build", usd=float(summary.get("cost_usd") or 0), outcome=str(final.get("status")),
                     seconds=time.time() - run.started, tools=len(build_proxy.calls(run.token)),
@@ -158,7 +161,8 @@ async def build_status() -> dict[str, Any]:
 
 @router.post("/runs", status_code=202)
 async def start(body: StartRequest, request: Request, authorization: str = Header("")) -> Any:
-    if not _is_operator(authorization):
+    operator = _is_operator(authorization)
+    if not operator:
         if not _public():
             raise HTTPException(status_code=401, detail="Build & run is not open on this server.")
         blocked = _guard().check(_client_ip(request))
@@ -175,7 +179,7 @@ async def start(body: StartRequest, request: Request, authorization: str = Heade
             "error": "busy" if busy else "runner_refused",
             "message": "Both sandboxes are busy. Try again in a minute." if busy else "The sandbox could not start the run."})
     run_id = response.json()["id"]
-    _RUNS[run_id] = BuildRun(token=proxy.token, key=secrets.token_urlsafe(24))
+    _RUNS[run_id] = BuildRun(token=proxy.token, key=secrets.token_urlsafe(24), operator=operator)
     asyncio.create_task(_settle_when_done(run_id))
     return {"id": run_id, "key": _RUNS[run_id].key}
 

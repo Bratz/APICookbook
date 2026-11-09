@@ -1,6 +1,6 @@
 # Forking decode into APICookbook: decisions and plan
 
-Status: F0–F3 done; F4 open to visitors with caps (2026-11-09), F5 next · Sandbox changed from Modal to a dedicated OCI instance on 2026-11-09 · Decided with the owner in an interview on 2026-11-09 · Upstream: [decodingai-magazine/building-a-coding-agent-from-scratch-course](https://github.com/decodingai-magazine/building-a-coding-agent-from-scratch-course) ("decode", Apache-2.0)
+Status: F0–F4 done; F5 eval built (2026-11-09) · Sandbox changed from Modal to a dedicated OCI instance on 2026-11-09 · Decided with the owner in an interview on 2026-11-09 · Upstream: [decodingai-magazine/building-a-coding-agent-from-scratch-course](https://github.com/decodingai-magazine/building-a-coding-agent-from-scratch-course) ("decode", Apache-2.0)
 
 ## Intent
 
@@ -154,10 +154,18 @@ Still open, both outside the code:
 - **The composer note** says approved changes are visible to everyone using the demo.
 - **Still open:** a way to monitor or reset the demo data (*Build smoke* with `reject` is the safe check for now), and alerts when the ledger nears its caps.
 
-**F5. Evals.**
-- BaNCS tasks with gold call sequences, plus "the code ran and the GET calls returned 2xx".
-- Regression cases mined from session logs, including the two empty-tool-call prompts.
-- It must also beat the current agent on the same tasks before replacing it.
+**F5. Evals** (built 2026-11-09):
+- `backend/agent_eval.py` runs **20 BaNCS tasks**, 11 read-only and 9 that need a write, through **both** agents.
+  - The tasks come from the code agent's exit check and the retrieval benchmark's questions.
+  - Each has a **gold sequence** of Swagger operations, in order, with acceptable alternatives per step. A test checks that all of them exist in the spec.
+- Scored the same way for both: did the agent hit the gold sequence?
+  - **Code agent:** its plan's endpoints, and whether its Python parses.
+  - **Build & run:** the operations its code really called, mapped from each bank call through the path templates; whether the run completed; whether a gold GET returned 2xx; whether each held write's body is valid against the schema.
+  - Cost, time and requests for both.
+- **Every Build & run write is auto-rejected,** so evals never change demo data. Operator runs stay out of the visitors' caps.
+- **Agent eval** (manual workflow) runs it in a one-off container on the VM, never inside the live one, and posts the side-by-side table on the run page.
+- **Replace rule:** Build & run replaces the code agent (F6) if it hits at least as many gold sequences overall, **and** a gold GET answered 2xx on at least 8 of the 11 read tasks.
+- *Not yet:* an LLM judge, and regression cases mined from session logs (the two empty-tool-call prompts). Add them if scores and reading the answers disagree.
 
 **F6. Switch over.**
 - The chat's default goes to Build & run.
