@@ -1,6 +1,6 @@
 # Forking decode into APICookbook: decisions and plan
 
-Status: F0 done (2026-11-09), F1 next · Sandbox changed from Modal to a dedicated OCI instance on 2026-11-09 · Decided with the owner in an interview on 2026-11-09 · Upstream: [decodingai-magazine/building-a-coding-agent-from-scratch-course](https://github.com/decodingai-magazine/building-a-coding-agent-from-scratch-course) ("decode", Apache-2.0)
+Status: F0 and F1 done (2026-11-09), F2 next · Sandbox changed from Modal to a dedicated OCI instance on 2026-11-09 · Decided with the owner in an interview on 2026-11-09 · Upstream: [decodingai-magazine/building-a-coding-agent-from-scratch-course](https://github.com/decodingai-magazine/building-a-coding-agent-from-scratch-course) ("decode", Apache-2.0)
 
 ## Intent
 
@@ -96,6 +96,16 @@ Two design points the answers imply:
 - **Setup by GitHub Actions:** *Sandbox host setup* (manual, idempotent) runs `agent_runtime/sandbox/setup-host.sh`, writes the runner's secrets, runs `verify-host.sh` inside a real worker, and does one smoke run. Secrets: `SANDBOX_HOST`, `SANDBOX_USER`, `SANDBOX_SSH_KEY`, `ANTHROPIC_API_KEY`, `RUNNER_TOKEN`.
 - **Linux CI** for `agent_runtime/` (*agent_runtime tests*). `agent_runtime/` changes no longer redeploy the cookbook.
 - **Done when:** one run started from a script completes end to end, the network rules are proved from inside a container (the proxy reachable; the internet, `10.0.0.49:22` and `:443` refused), and the fork's test suite passes on Linux.
+
+*F1 result (2026-11-09):* the sandbox host is set up by *Sandbox host setup*.
+- Inside a gVisor worker, these are blocked: the main VM's SSH and HTTPS, the host's own SSH and runner port, the internet, and the BaNCS host directly.
+- A worker can write its workspace. It runs as the workspace owner's uid, which is 1001 on this image, not 1000.
+- Smoke runs through the runner completed: answer 5050, about $0.006–0.03 per run, no leftover containers.
+- All 2193 unit tests pass in Linux CI.
+
+Still open, both outside the code:
+1. OCI's subnet security list silently drops the proxy port. It needs ingress rules `10.0.0.223/32 → TCP 7601` and `10.0.0.49/32 → TCP 7700`.
+2. The *Main VM sandbox firewall* workflow hasn't run yet; it needs the owner's go-ahead because it changes the shared VM.
 
 **F2. Proxy with approvals.**
 - The BaNCS proxy holds writes pending approval.
