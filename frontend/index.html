@@ -547,8 +547,29 @@
         .lang-select { width: auto; flex: none; height: var(--control-h); }
         .composer-note { margin-top: var(--space-2xs); font-size: var(--text-xs); color: var(--color-muted); }
 
+        /* Developer entry points: starter cards, the agent mode switch, spec-driven endpoint cards */
+        .starter-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); gap: var(--space-sm); margin: var(--space-sm) 0; }
+        .starter-card { display: flex; flex-direction: column; gap: var(--space-2xs); padding: var(--space-sm); border: var(--rule-hair) solid var(--color-rule-2); border-radius: var(--radius-card); background: var(--color-paper); }
+        .starter-card h3 { margin: 0; font-size: var(--text-sm); }
+        .starter-card p { margin: 0; font-size: var(--text-sm); color: var(--color-ink-2); flex: 1; }
+        .starter-card .btn { align-self: flex-start; }
+        .mode-switch { display: inline-flex; margin-bottom: var(--space-2xs); border: var(--rule-hair) solid var(--color-rule-2); border-radius: var(--radius-input); overflow: hidden; }
+        .mode-switch button { border: 0; background: var(--color-paper); color: var(--color-ink-2); font: inherit; font-size: var(--text-sm); padding: var(--space-3xs) var(--space-sm); cursor: pointer; }
+        .mode-switch button + button { border-left: var(--rule-hair) solid var(--color-rule-2); }
+        .mode-switch button[aria-pressed="true"] { background: var(--color-accent-wash); color: var(--color-accent); font-weight: 600; }
+        .mode-switch button:focus-visible { outline: 2px solid var(--color-focus); outline-offset: -2px; }
+        .endpoint-search { margin: 0 0 var(--space-xs); }
+        .endpoint-search .form-input { height: var(--control-h-sm); font-size: var(--text-sm); }
+        .endpoint-card .param-table { width: 100%; border-collapse: collapse; font-size: var(--text-xs); margin: var(--space-xs) 0; }
+        .endpoint-card .param-table th, .endpoint-card .param-table td { text-align: left; padding: var(--space-3xs) var(--space-2xs); border-bottom: var(--rule-hair) solid var(--color-rule); vertical-align: top; }
+        .endpoint-card .param-table code { overflow-wrap: anywhere; }
+        .endpoint-card pre { max-height: 18lh; overflow: auto; font-size: var(--text-xs); }
+        .endpoint-card .choice-row { margin-top: var(--space-sm); }
+        .area-list { list-style: none; padding: 0; margin: var(--space-xs) 0; display: grid; gap: var(--space-xs); }
+        .area-list li { font-size: var(--text-sm); }
+        .linkish { background: none; border: 0; padding: 0; color: var(--color-accent); cursor: pointer; font: inherit; font-size: var(--text-xs); text-decoration: underline; }
+
         /* Build & run (decode fork F3): live steps, bank calls, held-write cards */
-        .build-toggle[aria-pressed="true"] { background: var(--color-accent-wash); border-color: var(--color-accent); color: var(--color-accent); }
         .build-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-xs); margin-bottom: var(--space-xs); }
         .build-log { list-style: none; margin: 0 0 var(--space-sm); padding: 0; display: grid; gap: var(--space-3xs); font-size: var(--text-sm); color: var(--color-muted); }
         .build-log li { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-2xs); min-width: 0; }
@@ -858,6 +879,10 @@
             <!-- The reference first: every row opens the endpoint in chat -->
             <details class="sidebar-section" open>
                 <summary class="sidebar-title">API Endpoints</summary>
+                <form class="endpoint-search" role="search" onsubmit="searchEndpoints(event)">
+                    <input id="endpointSearch" class="form-input" type="search" placeholder="Search, e.g. change phone number"
+                           aria-label="Search the BaNCS endpoints" autocomplete="off">
+                </form>
                 <div id="endpointList">
                     <div class="typing-indicator" role="status" aria-label="Loading endpoints">
                         <div class="typing-dot"></div>
@@ -869,33 +894,25 @@
 
             <details class="sidebar-section" open>
                 <summary class="sidebar-title">Quick Actions</summary>
-                <button type="button" class="sidebar-item" onclick="quickDiscoverAPIs()">
+                <button type="button" class="sidebar-item" onclick="showApiAreas()">
                     <i data-lucide="database" style="width: 16px; height: 16px;" aria-hidden="true"></i>
-                    <span>Discover APIs</span>
+                    <span>Browse API areas</span>
                 </button>
-                <button type="button" class="sidebar-item" onclick="quickSearchEndpoints()">
+                <button type="button" class="sidebar-item" onclick="document.getElementById('endpointSearch').focus()">
                     <i data-lucide="search" style="width: 16px; height: 16px;" aria-hidden="true"></i>
-                    <span>Search Endpoints</span>
+                    <span>Search endpoints</span>
                 </button>
                 <button type="button" class="sidebar-item" onclick="quickTestAccount()">
                     <i data-lucide="play-circle" style="width: 16px; height: 16px;" aria-hidden="true"></i>
-                    <span>Test Account API</span>
+                    <span>Try a balance call</span>
                 </button>
-                <button type="button" class="sidebar-item" onclick="quickGetSchema()">
-                    <i data-lucide="file-code" style="width: 16px; height: 16px;" aria-hidden="true"></i>
-                    <span>Get API Schema</span>
-                </button>
-                <button type="button" class="sidebar-item" onclick="sendQuickMessage('Show me all available APIs')">
-                    <i data-lucide="list" style="width: 16px; height: 16px;" aria-hidden="true"></i>
-                    <span>List All APIs</span>
-                </button>
-                <button type="button" class="sidebar-item" onclick="sendQuickMessage('How do I authenticate?')">
+                <button type="button" class="sidebar-item" onclick="showAuthentication()">
                     <i data-lucide="key" style="width: 16px; height: 16px;" aria-hidden="true"></i>
-                    <span>Authentication</span>
+                    <span>Authentication &amp; headers</span>
                 </button>
-                <button type="button" class="sidebar-item" onclick="sendQuickMessage('Show me a Python example')">
+                <button type="button" class="sidebar-item" onclick="startTask('plan', 'Check the balance of account 101000000101814', 'python')">
                     <i data-lucide="code-2" style="width: 16px; height: 16px;" aria-hidden="true"></i>
-                    <span>Python Example</span>
+                    <span>Python example</span>
                 </button>
             </details>
 
@@ -949,27 +966,42 @@
                         <div class="message assistant">
                             <div class="message-label">API Assistant</div>
                             <div class="message-content">
-                                <p><strong>Developer Mode Active!</strong> Quick tips:</p>
-                                <ul class="tips">
-                                    <li><kbd>Ctrl+E</kbd> Execute in playground</li>
-                                    <li><kbd>Ctrl+K</kbd> Focus the question box</li>
-                                    <li><kbd>Ctrl+Shift+D</kbd> Toggle dev console</li>
-                                    <li>Use <code>call_api</code> tool for all API calls</li>
-                                    <li>Use <code>get_api_schema</code> to discover endpoints</li>
-                                </ul>
-                                <p>Every request goes to the BaNCS demo host with three headers, already filled in the Playground:</p>
+                                <p><strong>Find TCS BaNCS APIs, get code for a task, or have it built and run for you.</strong></p>
+                                <div class="starter-grid">
+                                    <div class="starter-card">
+                                        <h3>Find an endpoint</h3>
+                                        <p>Search the 950 endpoints on the left, or browse them by business area. Each one opens with its parameters, body and a curl command.</p>
+                                        <button type="button" class="btn btn-secondary btn-sm" onclick="showApiAreas()">Browse API areas</button>
+                                    </div>
+                                    <div class="starter-card" data-needs="plan">
+                                        <h3>Plan &amp; code</h3>
+                                        <p>Describe a task. You get the calls in order and code in curl, Python, JavaScript or Java to run yourself.</p>
+                                        <button type="button" class="btn btn-secondary btn-sm" onclick="startTask('plan', 'A customer moved house: update their postal address')">Try: update an address</button>
+                                    </div>
+                                    <div class="starter-card" data-needs="build" hidden>
+                                        <h3>Build &amp; run</h3>
+                                        <p>The agent writes the code, runs it against the demo bank and fixes it until it works. It asks you before any change to bank data.</p>
+                                        <button type="button" class="btn btn-secondary btn-sm" onclick="startTask('build', 'List the first 3 customers and show their IDs and names')">Try: list three customers</button>
+                                    </div>
+                                </div>
+                                <p>No sign-in or token: every request goes to the shared BaNCS demo host with three headers, already filled in the Playground.</p>
                                 <dl class="basics">
-                                    <dt>Base URL</dt><dd>https://demoapps.tcsbancs.com</dd>
+                                    <dt>Base URL</dt><dd>https://demoapps.tcsbancs.com/Core</dd>
                                     <dt>entity</dt><dd>GPRDTTSTOU</dd>
                                     <dt>userId</dt><dd>1</dd>
                                     <dt>languageCode</dt><dd>1</dd>
                                 </dl>
-                                <p>What would you like to build today?</p>
                             </div>
                         </div>
                     </div>
                     
                     <div class="chat-input-container">
+                        <div class="mode-switch" id="modeSwitch" role="group" aria-label="What the agent does" hidden>
+                            <button type="button" data-mode="plan" aria-pressed="true" onclick="setMode('plan')"
+                                    title="The agent picks the calls and writes code for you to run">Plan &amp; code</button>
+                            <button type="button" data-mode="build" aria-pressed="false" onclick="setMode('build')"
+                                    title="The agent writes the code, runs it against the demo bank and fixes it">Build &amp; run</button>
+                        </div>
                         <div class="chat-input-wrapper">
                             <textarea 
                                 class="chat-input"
@@ -987,10 +1019,6 @@
                                 <option value="javascript">JavaScript</option>
                                 <option value="java">Java</option>
                             </select>
-                            <button type="button" class="btn btn-secondary build-toggle" id="buildToggle" hidden aria-pressed="false"
-                                    onclick="toggleBuildMode()" title="Write the code, run it in a sandbox, and call the demo bank">
-                                Build &amp; run
-                            </button>
                             <button class="btn btn-primary" id="sendButton" onclick="sendMessage()">
                                 <i data-lucide="send" style="width: 16px; height: 16px;" aria-hidden="true"></i>
                                 Send
@@ -1351,60 +1379,16 @@
         }
         
         // Developer Quick Actions
-        async function quickDiscoverAPIs() {
-            switchTab('playground', document.querySelector('.tab:nth-child(3)'));
-            setRequestType('mcp', document.querySelector('.request-type-btn:nth-child(2)'));
-            document.getElementById('mcpToolSelect').value = 'list_apis';
-            document.getElementById('mcpToolParams').value = '{}';
-            await executePlaygroundRequest();
-        }
-        
-        async function quickSearchEndpoints() {
-            const query = prompt('Search for endpoints containing:');
-            if (!query) return;
-            
-            switchTab('playground', document.querySelector('.tab:nth-child(3)'));
-            setRequestType('mcp', document.querySelector('.request-type-btn:nth-child(2)'));
-            document.getElementById('mcpToolSelect').value = 'search_endpoints';
-            document.getElementById('mcpToolParams').value = JSON.stringify({
-                query: query
-            }, null, 2);
-            await executePlaygroundRequest();
-        }
-        
+        // A real call, ready to run: the demo host's balance endpoint for an account that has data.
         async function quickTestAccount() {
             switchTab('playground', document.querySelector('.tab:nth-child(3)'));
-            setRequestType('mcp', document.querySelector('.request-type-btn:nth-child(2)'));
-            document.getElementById('mcpToolSelect').value = 'call_api';
-            document.getElementById('mcpToolParams').value = JSON.stringify({
-                "api_name": "TCS_BaNCS",
-                "endpoint_name": "get_account_balance",
-                "parameters": {
-                    "accountReference": "101000000101814"
-                }
-            }, null, 2);
-            
-            // Auto-fetch schema
-            await fetchSchemaForTool();
-        }
-        
-        async function quickGetSchema() {
-            const apiName = prompt('Enter API name (e.g., TCS_BaNCS):');
-            if (!apiName) return;
-            
-            const endpointName = prompt('Enter endpoint name (optional):');
-            
-            switchTab('playground', document.querySelector('.tab:nth-child(3)'));
-            setRequestType('mcp', document.querySelector('.request-type-btn:nth-child(2)'));
-            document.getElementById('mcpToolSelect').value = 'get_api_schema';
-            
-            const params = { api_name: apiName };
-            if (endpointName) params.endpoint_name = endpointName;
-            
-            document.getElementById('mcpToolParams').value = JSON.stringify(params, null, 2);
+            setRequestType('api', document.querySelector('.request-type-btn'));
+            clearPlayground();
+            document.getElementById('playgroundMethod').value = 'GET';
+            document.getElementById('playgroundUrl').value = '/Core/accountManagement/account/balanceDetails/101000000101814';
             await executePlaygroundRequest();
         }
-        
+
         // Fetch schema for current tool selection
         async function fetchSchemaForTool() {
             const toolName = document.getElementById('mcpToolSelect').value;
@@ -2008,13 +1992,6 @@
            }
        }
        
-       // Send quick message
-       function sendQuickMessage(message) {
-           const input = document.getElementById('messageInput');
-           input.value = message;
-           sendMessage({ search: true });
-       }
-       
        // Add message to chat
        function addMessage(content, type, metadata = {}) {
            const messagesContainer = document.getElementById('chatMessages');
@@ -2118,12 +2095,10 @@
        
        // Switch tabs
        function switchTab(tabName, tabElement) {
+           // Mark the tab by name: callers hand in guesses like querySelector('.tab'), which drifted.
            document.querySelectorAll('.tab').forEach(tab => {
-               tab.classList.remove('active');
+               tab.classList.toggle('active', (tab.getAttribute('onclick') || '').includes(`'${tabName}'`));
            });
-           if (tabElement) {
-               tabElement.classList.add('active');
-           }
            
            document.querySelectorAll('.tab-content').forEach(content => {
                content.classList.add('hidden');
@@ -2637,8 +2612,7 @@
        
        // Other functions
        function askAboutEndpoint(endpointName) {
-           switchTab('chat', document.querySelector('.tab'));
-           sendQuickMessage(`Tell me about the ${endpointName} endpoint with examples`);
+           showEndpointCard(endpointName);  // straight from the spec: the search chat named the wrong endpoints
        }
        
        async function loadRecipe(recipeId) {
@@ -2646,8 +2620,7 @@
                const response = await fetchWithRetry(`/api/cookbook/${encodeURIComponent(recipeId)}`);
                const recipe = await response.json();
                
-               switchTab('chat', document.querySelector('.tab'));
-               sendQuickMessage(`Show me the ${recipe.title} recipe with code examples`);
+               showEndpointCard(recipe.endpoint || recipe.title);
            } catch (error) {
                console.error('Failed to load recipe:', error);
                showNotification('Failed to load recipe', 'error');
@@ -3009,13 +2982,9 @@
            } catch (e) {
                state.agentAvailable = false;
            }
-           const select = document.getElementById('agentLanguage');
-           select.value = getAgentLanguage();
-           select.hidden = !state.agentAvailable;
-           document.getElementById('agentNote').hidden = !state.agentAvailable;
-           document.getElementById('messageInput').placeholder = state.agentAvailable
-               ? 'Describe a task, e.g. "a customer moved house: update their address"…'
-               : 'Ask about APIs, authentication, code examples…';
+           document.getElementById('agentLanguage').value = getAgentLanguage();
+           document.querySelectorAll('[data-needs="plan"]').forEach(el => { el.hidden = !state.agentAvailable; });
+           setMode(state.buildMode ? 'build' : 'plan');  // the note, placeholder and language picker follow the mode
            logToDevConsole(state.agentAvailable ? 'Code agent on' : 'Code agent off: chat uses search', 'info');
        }
 
@@ -3112,22 +3081,152 @@
                const r = await fetch('/api/build/status');
                available = r.ok && (await r.json()).available === true;
            } catch (e) {}
-           document.getElementById('buildToggle').hidden = !available;
-           if (!available && state.buildMode) toggleBuildMode();
+           state.buildAvailable = available;
+           document.getElementById('modeSwitch').hidden = !available;
+           document.querySelectorAll('[data-needs="build"]').forEach(el => { el.hidden = !available; });
+           setMode(available && state.buildMode ? 'build' : 'plan');
        }
 
-       function toggleBuildMode() {
-           state.buildMode = !state.buildMode;
-           document.getElementById('buildToggle').setAttribute('aria-pressed', String(state.buildMode));
+       // One composer, two clearly named outcomes: the switch, the note and the placeholder always agree.
+       function setMode(mode) {
+           state.buildMode = mode === 'build' && !!state.buildAvailable;
+           document.querySelectorAll('#modeSwitch button').forEach(b =>
+               b.setAttribute('aria-pressed', String(b.dataset.mode === (state.buildMode ? 'build' : 'plan'))));
            document.getElementById('agentLanguage').hidden = state.buildMode || !state.agentAvailable;
            const note = document.getElementById('agentNote');
            note.hidden = !state.buildMode && !state.agentAvailable;
            note.textContent = state.buildMode
                ? 'Build & run writes the code, runs it in a sandbox and calls the shared demo bank. Every change to bank data waits for your Approve, and approved changes are visible to everyone using the demo.'
-               : 'The agent plans BaNCS calls and writes code; it never runs anything. Don’t paste real customer data.';
+               : 'Plan & code picks the BaNCS calls and writes code for you to run; it doesn’t call the bank. Don’t paste real customer data.';
            document.getElementById('messageInput').placeholder = state.buildMode
                ? 'Describe a task to build and run, e.g. "find a customer and show their accounts"…'
                : (state.agentAvailable ? 'Describe a task, e.g. "a customer moved house: update their address"…' : 'Ask about APIs, authentication, code examples…');
+       }
+
+       // A starter card or quick action: pick the mode (and language), fill the box, send.
+       function startTask(mode, text, language) {
+           switchTab('chat', document.querySelector('.tab'));
+           setMode(mode);
+           if (language && !state.buildMode) {
+               document.getElementById('agentLanguage').value = language;
+               setAgentLanguage(language);
+           }
+           document.getElementById('messageInput').value = text;
+           sendMessage();
+       }
+
+       function addPanel(label, html) {
+           const container = document.getElementById('chatMessages');
+           const el = document.createElement('div');
+           el.className = 'message assistant';
+           el.innerHTML = `<div class="message-label">${escapeHtml(label)}</div><div class="message-content">${html}</div>`;
+           container.appendChild(el);
+           container.scrollTop = container.scrollHeight;
+           return el;
+       }
+
+       // ---------------------------------------------------------------- the spec, without a model
+       async function showEndpointCard(name) {
+           switchTab('chat', document.querySelector('.tab'));
+           let ep;
+           try {
+               const r = await fetch('/api/endpoint/' + encodeURIComponent(name));
+               if (!r.ok) throw new Error('not found');
+               ep = await r.json();
+           } catch (e) {
+               addPanel('Endpoint', `<p>Couldn’t load <code>${escapeHtml(name)}</code>. Try searching for it on the left.</p>`);
+               return;
+           }
+           const rows = Object.entries(ep.parameters || {}).map(([k, v]) => `<tr><td><code>${escapeHtml(k)}</code></td>
+               <td>${escapeHtml(v.in || '')}</td><td>${escapeHtml(v.type || '')}</td><td>${v.required ? 'yes' : ''}</td>
+               <td>${escapeHtml(v.description || '')}</td></tr>`).join('');
+           const body = ep.example_body != null
+               ? `<details><summary class="text-small">Example body (the schema’s fields, values left empty)</summary><pre><code class="language-json">${escapeHtml(JSON.stringify(ep.example_body, null, 2))}</code></pre></details>` : '';
+           const task = `Call ${ep.name} (${ep.method} ${ep.path})`;
+           const el = addPanel('Endpoint', `<div class="endpoint-card">
+               <div class="plan-step-head"><span class="method-badge method-${escapeHtml(ep.method.toLowerCase())}">${escapeHtml(ep.method)}</span><code>${escapeHtml(ep.path)}</code></div>
+               ${ep.description ? `<p>${escapeHtml(ep.description)}</p>` : ''}
+               <p class="text-small text-muted">${escapeHtml(ep.name)}${ep.area ? ' · ' + escapeHtml(ep.area) : ''}</p>
+               ${rows ? `<table class="param-table"><thead><tr><th>Parameter</th><th>In</th><th>Type</th><th>Required</th><th>Description</th></tr></thead><tbody>${rows}</tbody></table>` : ''}
+               ${body}
+               <pre><code class="language-bash">${escapeHtml(ep.curl)}</code></pre>
+               <div class="choice-row">
+                   <button type="button" class="btn btn-primary btn-sm" data-act="try">Try in Playground</button>
+                   <button type="button" class="btn btn-secondary btn-sm" data-act="copy">Copy curl</button>
+                   <button type="button" class="btn btn-secondary btn-sm" data-act="plan">Write code for it</button>
+                   ${state.buildAvailable ? '<button type="button" class="btn btn-secondary btn-sm" data-act="build">Build &amp; run it</button>' : ''}
+               </div></div>`);
+           el.querySelectorAll('pre code').forEach(b => window.hljs?.highlightElement?.(b));
+           el.querySelector('[data-act="try"]').onclick = () => tryInPlayground(ep);
+           el.querySelector('[data-act="copy"]').onclick = async (e) => {
+               try { await navigator.clipboard.writeText(ep.curl); e.target.textContent = 'Copied'; } catch (err) {}
+           };
+           el.querySelector('[data-act="plan"]').onclick = () => startTask('plan', task);
+           el.querySelector('[data-act="build"]')?.addEventListener('click', () => startTask('build', task + ' against the demo bank and show what it returns'));
+       }
+
+       function tryInPlayground(ep) {
+           switchTab('playground', document.querySelector('.tab:nth-child(3)'));
+           setRequestType('api', document.querySelector('.request-type-btn'));
+           clearPlayground();
+           document.getElementById('playgroundMethod').value = ep.method;
+           const url = document.getElementById('playgroundUrl');
+           url.value = ep.url || ep.path;
+           url.dispatchEvent(new Event('input'));
+           document.getElementById('playgroundBody').value = ep.example_body != null ? JSON.stringify(ep.example_body, null, 2) : '';
+           showNotification(/\{[^}]+\}/.test(ep.url || ep.path) ? 'Fill in the {placeholders} in the URL, then press Execute.'
+               : 'Check the request, then press Execute.', 'info');
+       }
+
+       async function showApiAreas() {
+           switchTab('chat', document.querySelector('.tab'));
+           let eps = state.allEndpoints;
+           if (!eps) {
+               try { eps = state.allEndpoints = await (await fetch('/api/endpoints')).json(); } catch (e) { eps = []; }
+           }
+           const areas = {};
+           eps.forEach(e => { (areas[e.category || 'other'] ||= []).push(e); });
+           const sorted = Object.entries(areas).sort((a, b) => b[1].length - a[1].length);
+           addPanel('API areas', `<p>${eps.length} endpoints in ${sorted.length} areas. Open one, or search on the left.</p>
+               <ul class="area-list">${sorted.map(([area, list]) => `<li><strong>${escapeHtml(area)}</strong> <span class="text-muted">(${list.length})</span><br>
+               ${list.slice(0, 4).map(e => `<button type="button" class="linkish" onclick="showEndpointCard(${jsArg(e.name)})">${escapeHtml(e.description || e.name)}</button>`).join(' · ')}</li>`).join('')}</ul>`);
+       }
+
+       function showAuthentication() {
+           switchTab('chat', document.querySelector('.tab'));
+           const curl = "curl 'https://demoapps.tcsbancs.com/Core/accountManagement/account/balanceDetails/101000000101814' \\\n  -H 'entity: GPRDTTSTOU' -H 'userId: 1' -H 'languageCode: 1'";
+           const el = addPanel('Authentication', `<p><strong>There is no sign-in or token.</strong> The demo host identifies the caller by three headers on every request; send <code>Content-Type: application/json</code> too when there is a body.</p>
+               <dl class="basics"><dt>Base URL</dt><dd>https://demoapps.tcsbancs.com/Core</dd><dt>entity</dt><dd>GPRDTTSTOU</dd>
+               <dt>userId</dt><dd>1</dd><dt>languageCode</dt><dd>1</dd></dl>
+               <pre><code class="language-bash">${escapeHtml(curl)}</code></pre>
+               <p class="text-small text-muted">The data is a shared demo: anything you change, every other user sees.</p>`);
+           el.querySelectorAll('pre code').forEach(b => window.hljs?.highlightElement?.(b));
+       }
+
+       function clearEndpointSearch() {
+           document.getElementById('endpointSearch').value = '';
+           loadEndpoints();
+       }
+
+       async function searchEndpoints(event) {
+           if (event) event.preventDefault();
+           const query = document.getElementById('endpointSearch').value.trim();
+           if (!query) { loadEndpoints(); return; }
+           const list = document.getElementById('endpointList');
+           list.innerHTML = '<div class="text-muted text-small">Searching…</div>';
+           try {
+               const r = await fetch('/api/knowledge/search', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                   body: JSON.stringify({ query, limit: 12 }) });
+               const hits = (await r.json()).results || [];
+               list.innerHTML = hits.length ? hits.map(h => `
+                   <button type="button" class="sidebar-item" onclick="showEndpointCard(${jsArg(h.endpoint_name)})" title="${escapeHtml(h.endpoint_name)}">
+                       <span class="method-badge method-${escapeHtml((h.method || '').toLowerCase())}">${escapeHtml(h.method || '')}</span>
+                       <span class="text-small">${escapeHtml(h.description || h.endpoint_name)}</span>
+                   </button>`).join('') + '<button type="button" class="sidebar-more linkish" onclick="clearEndpointSearch()">Clear search</button>'
+                   : '<div class="text-muted text-small">No match. Try other words, or describe the task in the chat.</div>';
+           } catch (e) {
+               list.innerHTML = '<div class="text-muted text-small">Search failed. Try again.</div>';
+           }
        }
 
        function buildFetch(path, options = {}, runKey = '') {

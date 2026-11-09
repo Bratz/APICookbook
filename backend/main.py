@@ -13,6 +13,7 @@ import asyncio
 import contextlib
 import logging
 import json
+from types import SimpleNamespace
 import os
 import re
 import sys
@@ -1775,6 +1776,45 @@ async def get_body_schema(method: str, url: str):
         return {"endpoint": name, "schema": kb.resolved_body_schema(name)}
 
     raise HTTPException(status_code=404, detail="No request-body schema for this method and URL")
+
+
+@app.get("/api/endpoint/{name}")
+async def endpoint_card(name: str):
+    """One endpoint, straight from the spec (no model): what the sidebar and recipe cards show.
+
+    Method, full path, description, parameters, body schema with an example body, and a curl command
+    with the demo host's headers. Swagger operations use the code agent's own lookups; the Postman
+    collection's nicknames have a ready URL and their parameters as given.
+    """
+    kb = app.state.kb
+    ep = kb.endpoints.get(name)
+    if not ep:
+        raise HTTPException(status_code=404, detail=f"No endpoint named {name}")
+    path = ep.get("url", "")
+    if not path.startswith("/Core/"):
+        path = "/Core" + path  # Swagger paths are relative to the spec's basePath
+    schema, params = None, {}
+    if ep.get("source") == "swagger":
+        ctx = SimpleNamespace(deps=code_agent.AgentDeps(kb=kb))
+        params = code_agent.get_endpoint(ctx, name).get("parameters", {})
+        schema = kb.resolved_body_schema(name)
+    else:
+        raw = ep.get("parameters")
+        if isinstance(raw, dict):
+            params = {k: {f: v.get(f) for f in ("type", "required", "description") if isinstance(v, dict) and v.get(f) is not None}
+                      for k, v in raw.items()}
+    example = _example_body(schema) if schema else None
+    # Required query parameters go in the URL as {placeholders}, so the copied curl is complete.
+    required_query = [k for k, v in params.items() if v.get("in") == "query" and v.get("required")]
+    url = path + ("?" + "&".join(f"{k}={{{k}}}" for k in required_query) if required_query else "")
+    base = settings.api_base_url.rstrip("/")
+    curl = (f"curl -X {ep['method']} '{base}{url}' \\\n  -H 'entity: {settings.bancs_entity}' \\\n"
+            f"  -H 'userId: {settings.bancs_user_id}' \\\n  -H 'languageCode: {settings.bancs_language_code}'")
+    if example is not None:
+        curl += f" \\\n  -H 'Content-Type: application/json' \\\n  -d '{json.dumps(example)}'"
+    return {"name": name, "method": ep["method"], "path": path, "url": url, "description": ep.get("description") or "",
+            "area": ep.get("category") or "", "source": ep.get("source") or "collection", "parameters": params,
+            "body_schema": schema, "example_body": example, "curl": curl}
 
 
 # ---------------------------------------------------------------- code-writing agent (milestone 1)

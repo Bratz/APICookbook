@@ -1,6 +1,6 @@
 # Forking decode into APICookbook: decisions and plan
 
-Status: F0–F4 done; F5 eval built (2026-11-09) · Sandbox changed from Modal to a dedicated OCI instance on 2026-11-09 · Decided with the owner in an interview on 2026-11-09 · Upstream: [decodingai-magazine/building-a-coding-agent-from-scratch-course](https://github.com/decodingai-magazine/building-a-coding-agent-from-scratch-course) ("decode", Apache-2.0)
+Status: F0–F5 done; F5's replace rule met (2026-11-09), F6 next · Sandbox changed from Modal to a dedicated OCI instance on 2026-11-09 · Decided with the owner in an interview on 2026-11-09 · Upstream: [decodingai-magazine/building-a-coding-agent-from-scratch-course](https://github.com/decodingai-magazine/building-a-coding-agent-from-scratch-course) ("decode", Apache-2.0)
 
 ## Intent
 
@@ -179,7 +179,22 @@ Still open, both outside the code:
   - **The one remaining miss (task 20):** the code read the profile from `GET /customer/detail`, a path that is **not in the spec**, although the prompt says to use only operations the tools returned. The gold is right; the miss is real.
   - **The code agent's 20/20 scores plans with placeholders that were never run;** Build & run's scores come from calls the bank answered.
   - **Replace rule:** the 2xx part is met (11/11, needing 8). The gold-hit part is short by one task (19 vs 20).
+  - **After tightening** the prompt (`c326bdd` with its fix `c2b06f5`: call only the `url_template`s that `get_endpoint` returned), two Build & run runs scored **20/20 and 20/20** (writes 9/9). A gold GET answered 2xx on 11/11 and 10/11, held write bodies were valid 8/8, at $0.10 per task, median 22 s.
+  - **The replace rule is met** (20 ≥ 20; 2xx ≥ 8 of 11). F6 can switch the chat over.
 - *Not yet:* an LLM judge, and regression cases mined from session logs (the two empty-tool-call prompts). Add them if scores and reading the answers disagree.
+
+**Developer UX fixes** (2026-11-09, after a review of the live page):
+- **Sidebar endpoints and Cookbook recipes** open an endpoint card built from the spec by `GET /api/endpoint/{name}`, with no model involved: method, path, parameters, an example body, and a complete curl with the required query parameters as `{placeholders}`. The card offers Try in Playground, Copy curl, Write code for it and Build & run it. Before, the keyword-search chat named the wrong endpoint (`GetAccountBalance` → `FAET2021…`).
+- **Quick actions:**
+  - Browse API areas lists 31 areas with example endpoints.
+  - Search endpoints is a sidebar search over the semantic index.
+  - Try a balance call is a real Playground request. The MCP execute path is a stub (`{"message": "MCP tool execution"}`), so no quick action uses it.
+  - Authentication is answered directly: no token, three headers.
+  - Python example goes to the code agent.
+- **The welcome** gives one starter card per job (find an endpoint, Plan & code, Build & run) and the no-sign-in basics, replacing the MCP-tool tips.
+- **Composer:** a Plan & code | Build & run switch, with the note and placeholder following the mode.
+- **Fixed:** the active tab didn't follow programmatic switches.
+- **Still open:** a full endpoint browser, real multi-step recipes, and a Connect via MCP panel (needs a real MCP endpoint).
 
 **F6. Switch over.**
 - The chat's default goes to Build & run.
