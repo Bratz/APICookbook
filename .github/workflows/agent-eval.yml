@@ -1,5 +1,5 @@
 # ============================================================================
-# F5 (docs/decode-fork-plan.md): Build & run on 20 BaNCS tasks with gold call sequences
+# F5 (docs/decode-fork-plan.md): Build & run on 26 BaNCS tasks (20 build, 4 API questions, 2 off-topic)
 # (backend/agent_eval.py). Manual only; costs real money (~$0.10 per task, ~$2 a run).
 # Every Build & run write is held and REJECTED, so no demo data changes.
 #
@@ -15,7 +15,7 @@ on:
   workflow_dispatch:
     inputs:
       only:
-        description: "Task numbers, e.g. 1,12 (empty = all 20)"
+        description: "Task numbers, e.g. 1,21 (empty = all 26)"
         type: string
         default: ""
 

@@ -5,7 +5,7 @@ https://github.com/decodingai-magazine/building-a-coding-agent-from-scratch-cour
 at commit 2ba55b548dbb2bb352c3651e20c8a21f3e5eb9d4 (2026-10-24),
 Copyright (c) Paul Iusztin and the course authors, licensed under the Apache License 2.0 (see LICENSE).
 
-Modified by the APICookbook project, 2026-11-09. Summary of changes
+Modified by the APICookbook project, 2026-11-09 (F0-F6). Summary of changes
 (details in docs/adr/0024-apicookbook-fork.md):
 
 Removed
@@ -30,12 +30,25 @@ Changed
 - one_line() moved from runtime/recording.py to runtime/summary.py.
 - The Docker backend can run the worker hardened for anonymous visitors (SANDBOX_DOCKER_RUNTIME,
   SANDBOX_DOCKER_NETWORK, SANDBOX_DOCKER_HARDENED; all off by default, keeping upstream's worker).
+- The hardened worker runs as the uid that owns the Workspace (1001 on the sandbox host), not 1000.
+- `decode run` and the runner pass a per-run BANCS_PROXY_URL (only the cookbook proxy's prefix is
+  accepted), and `decode run --events-jsonl` logs each tool call and result through pydantic-ai's
+  event_stream_handler; the agent loop itself is unchanged.
+- The build agent's tool list adds the three BaNCS tools and keeps everything else.
+- Pydantic-ai 2.66 sends a tool retry as ToolReturnPart(outcome="retried"), not RetryPromptPart;
+  compaction and the tests were updated for it.
 - Tests for removed modules deleted; affected tests updated.
 
 Added
 - src/decode/runner.py: a private HTTP runner that starts `decode run` per visitor task on the
   sandbox host, with a slot cap, a wall-clock limit and worker cleanup.
 - sandbox/: the session image and the sandbox host's setup, verify and smoke-run scripts.
+- src/decode/tools/bancs.py: three read-only tools (search_endpoints, get_endpoint, get_body_schema)
+  that read the BaNCS spec through the run's proxy, and the BaNCS part of the system prompt: decline
+  anything off-topic; answer API questions from the spec without running anything; for tasks, find
+  real records instead of asking, call only url_templates get_endpoint returned, make writes (each is
+  held for the visitor's approval), and finish only after the code has called the bank.
+- The runner's events cursor (GET /runs/<id>/events?after=N) for the website's live view.
 
 Left inert (removed with the generic eval cases in F5): the skills_dir and web_fetch_timeout_s
 settings, sandbox.workspace.seed_skills (a no-op without a skills directory), the

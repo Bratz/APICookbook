@@ -71,3 +71,6 @@ def test_the_prompt_names_the_proxy_base_and_the_approval_rule(monkeypatch):
     assert "MAKE the call" in text
     # F5 finding: the one remaining miss called a path the spec does not have.
     assert "must be the `url_template` of an operation get_endpoint returned" in text
+    # Questions about the API get an answer from the spec; anything off-topic is declined.
+    assert "A QUESTION about the API" in text and "make no bank calls" in text
+    assert "decline in\n  one sentence" in text

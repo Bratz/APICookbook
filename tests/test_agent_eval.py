@@ -55,3 +55,24 @@ def test_the_report_summarises_and_lists_every_task():
     assert "| Held write bodies valid against the schema | 0/1 |" in text
     assert "❌ run ended: failed" in text
     assert "$0.150/task ($0.30)" in text
+
+
+def test_an_api_question_passes_only_by_naming_a_gold_operation():
+    endpoints = {"RSTBTAmendPhonenumberUsingPUT": {"url": "/customerManagement/customer/contact"}}
+    gold = [{"RSTBTAmendPhonenumberUsingPUT"}]
+
+    assert agent_eval.names_an_operation("Use RSTBTAmendPhonenumberUsingPUT with a body…", gold, endpoints)
+    assert agent_eval.names_an_operation("PUT /customerManagement/customer/contact takes…", gold, endpoints)
+    assert not agent_eval.names_an_operation("Use the contact API.", gold, endpoints)
+    assert not agent_eval.names_an_operation("anything", [], endpoints)  # off-topic tasks have no gold
+
+
+def test_the_report_counts_api_questions_and_off_topic_separately():
+    text = agent_eval.report([
+        Result(agent="build", task=21, kind="spec", gold_hit=True, ok=True),
+        Result(agent="build", task=25, kind="offtopic", gold_hit=False, ok=True, note="used tools"),
+    ])
+
+    assert "| … API questions (answered from the spec, no bank calls) | 1/1 |" in text
+    assert "| … off-topic (declined, no tools) | 0/1 |" in text
+    assert "| 25 | offtopic | Write a quicksort function in Go. | ❌ used tools |" in text

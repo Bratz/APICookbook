@@ -13,6 +13,10 @@ Every write is held and REJECTED here, so evals never change demo data; a held w
 "used", and its body is checked against the operation's schema. Also recorded: whether the run
 completed, whether a gold GET answered 2xx on read tasks, and each run's cost, time and requests.
 
+Two kinds of task check the agent's judgement rather than its building: an API question ("spec") passes
+when the answer names a gold operation and no bank call was made; an off-topic request passes when it
+was declined without any tool call.
+
 The code agent this was first compared against was retired in F6 after Build & run scored 20/20 twice.
 """
 
@@ -68,6 +72,17 @@ TASKS: list[tuple[str, str, list[set[str]]]] = [
     ("write", "Look up a customer's profile, then update their mobile number.",
      [{"RSTETViewCustomerDetailsUsingGET", "CBPET0106GetBPDetailsUsingGET"},
       {"RSTBTAmendPhonenumberUsingPUT", "BRBT0303ModContactDtls_POSTUsingPUT"}]),
+    # "spec": a question ABOUT the API. Pass: the answer names a gold operation (id or path), no bank calls.
+    ("spec", "Which API do I use to update a customer's mobile number, and what does its request body look like?",
+     [{"RSTBTAmendPhonenumberUsingPUT", "BRBT0303ModContactDtls_POSTUsingPUT"}]),
+    ("spec", "What parameters does the account balance API take?",
+     [{"CBPETGetAccountBalanceUsingGET", "AMET0395GetAcntUsrBlncsUsingGET"}]),
+    ("spec", "Is there an API to stop payment on a cheque? What does it need?",
+     [{"RSTBT11810StopPymntChqUsingPOST", "RSBTCreateStopChequeRequest_POSTUsingPOST"}]),
+    ("spec", "How do I get the repayment schedule of a loan through the API?", [{"CRET2811GetRpymntDtls_POSTUsingGET"}]),
+    # "offtopic": nothing to do with BaNCS. Pass: declined with no tool calls and no bank calls.
+    ("offtopic", "Write a quicksort function in Go.", []),
+    ("offtopic", "What is the capital of France?", []),
 ]
 
 BUILD_URL = os.getenv("EVAL_BUILD_URL", "http://cookbook-api:7600/api/build")  # the LIVE api
@@ -107,6 +122,15 @@ class OperationMatcher:
         return {name for m, rx, name in self.routes if m == method.upper() and rx.match(path)}
 
 
+def names_an_operation(answer: str, gold: list[set[str]], endpoints: dict[str, dict[str, Any]]) -> bool:
+    """A spec answer passes when it names a gold operation: its id, or its Swagger path."""
+    for op in set().union(*gold) if gold else set():
+        path = (endpoints.get(op) or {}).get("url", "")
+        if op in answer or (path and path in answer):
+            return True
+    return False
+
+
 def body_valid(schema: Optional[dict], body: str) -> Optional[bool]:
     """Whether a held write's body satisfies the operation's schema; None when there is nothing to check."""
     if not schema:
@@ -133,6 +157,8 @@ class Result:
     ok: Optional[bool] = None  # the run completed
     gold_get_2xx: Optional[bool] = None  # Build & run, read tasks: a gold GET answered 2xx
     write_bodies_valid: Optional[bool] = None  # Build & run: every held write matched its schema
+    tool_calls: int = 0
+    answer: str = ""  # the start of the answer, for reading misses
     note: str = ""
 
 
@@ -165,15 +191,23 @@ async def eval_build(n: int, kind: str, task: str, gold: list[set[str]], kb, mat
                                           json={"approve": False}, headers=auth)
                     elif event == "bank_call":
                         calls.append(data)
+                    elif event == "step" and data.get("type") == "tool_call":
+                        r.tool_calls += 1
                     elif event == "done":
                         final = data
                         break
                     event = None
     used = [matcher.operations(c["method"], c["path"]) for c in calls]
     r.used = [sorted(u) or [f"{c['method']} {c['path']}"] for u, c in zip(used, calls)]
-    r.gold_hit = in_order(used, gold)
+    r.answer = (final.get("answer") or "")[:600]
+    if kind == "spec":  # answered from the spec, without touching the bank
+        r.gold_hit = not calls and names_an_operation(r.answer, gold, kb.endpoints)
+    elif kind == "offtopic":  # declined without using any tool
+        r.gold_hit = not calls and r.tool_calls == 0
+    else:
+        r.gold_hit = in_order(used, gold)
     r.ok = final.get("status") == "completed"
-    gold_ops = set().union(*gold)
+    gold_ops = set().union(*gold) if gold else set()
     if kind == "read":
         r.gold_get_2xx = any(c["method"] == "GET" and 200 <= int(c.get("status") or 0) < 300 and (u & gold_ops)
                              for u, c in zip(used, calls))
@@ -208,6 +242,8 @@ def report(results: list[Result]) -> str:
              f"| Gold sequence hit, all tasks | {rate('gold_hit')} |",
              f"| … read tasks | {rate('gold_hit', 'read')} |",
              f"| … write tasks | {rate('gold_hit', 'write')} |",
+             f"| … API questions (answered from the spec, no bank calls) | {rate('gold_hit', 'spec')} |",
+             f"| … off-topic (declined, no tools) | {rate('gold_hit', 'offtopic')} |",
              f"| Run completed | {rate('ok')} |",
              f"| A gold GET answered 2xx (read tasks) | {rate('gold_get_2xx')} |",
              f"| Held write bodies valid against the schema | {rate('write_bodies_valid')} |",
