@@ -515,6 +515,9 @@
         }
         .basics dt { color: var(--color-graphite-muted); }
         .basics dd { margin: 0; overflow-wrap: anywhere; }
+        .headers-box > summary { cursor: pointer; list-style-position: inside; }
+        .headers-box > summary .text-muted { font-weight: 400; }
+        .headers-box[open] > summary { margin-bottom: 0.5rem; }
         .token-form { display: flex; gap: 0.5rem; flex-wrap: wrap; margin: 0.5rem 0; }
         .token-form .form-input { flex: 1 1 14rem; min-width: 0; }
 
@@ -843,9 +846,6 @@
                 <button type="button" class="btn btn-ghost btn-icon" onclick="showKeyboardShortcuts()" aria-label="Keyboard shortcuts" title="Keyboard shortcuts">
                     <i data-lucide="keyboard" style="width: 16px; height: 16px;" aria-hidden="true"></i>
                 </button>
-                <button type="button" class="btn btn-ghost btn-icon" onclick="showSettings()" aria-label="Settings" title="Settings">
-                    <i data-lucide="settings" style="width: 16px; height: 16px;" aria-hidden="true"></i>
-                </button>
             </div>
         </div>
     </header>
@@ -888,31 +888,31 @@
         <!-- Main Content -->
         <main class="main-content">
             <!-- Tabs -->
-            <div class="tabs-container">
-                <button type="button" class="tab active" onclick="switchTab('chat', this)">
+            <div class="tabs-container" role="tablist" aria-label="Sections">
+                <button type="button" class="tab active" role="tab" id="tab-chat" aria-controls="chatTab" aria-selected="true" onclick="switchTab('chat', this)">
                     <i data-lucide="message-circle" style="width: 16px; height: 16px;" aria-hidden="true"></i>
                     <span>Chat</span>
                 </button>
-                <button type="button" class="tab" onclick="switchTab('reference', this)">
+                <button type="button" class="tab" role="tab" id="tab-reference" aria-controls="referenceTab" aria-selected="false" onclick="switchTab('reference', this)">
                     <i data-lucide="library" style="width: 16px; height: 16px;" aria-hidden="true"></i>
                     <span>Reference</span>
                 </button>
-                <button type="button" class="tab" onclick="switchTab('guides', this)">
+                <button type="button" class="tab" role="tab" id="tab-guides" aria-controls="guidesTab" aria-selected="false" onclick="switchTab('guides', this)">
                     <i data-lucide="map" style="width: 16px; height: 16px;" aria-hidden="true"></i>
                     <span>Guides</span>
                 </button>
-                <button type="button" class="tab" onclick="switchTab('playground', this)">
+                <button type="button" class="tab" role="tab" id="tab-playground" aria-controls="playgroundTab" aria-selected="false" onclick="switchTab('playground', this)">
                     <i data-lucide="play" style="width: 16px; height: 16px;" aria-hidden="true"></i>
                     <span>Playground</span>
                 </button>
-                <button type="button" class="tab" onclick="switchTab('history', this)">
+                <button type="button" class="tab" role="tab" id="tab-history" aria-controls="historyTab" aria-selected="false" onclick="switchTab('history', this)">
                     <i data-lucide="clock" style="width: 16px; height: 16px;" aria-hidden="true"></i>
                     <span>History</span>
                 </button>
             </div>
             
             <!-- Chat Tab -->
-            <div id="chatTab" class="tab-content">
+            <div id="chatTab" class="tab-content" role="tabpanel" aria-labelledby="tab-chat">
                 <div class="chat-container">
                     <div class="chat-messages" id="chatMessages">
                         <div class="message assistant">
@@ -931,7 +931,7 @@
                                         <button type="button" class="btn btn-secondary btn-sm" onclick="startTask('List the first 3 customers and show their IDs and names')">Try: list three customers</button>
                                     </div>
                                 </div>
-                                <p>No sign-in or token: every request goes to the shared BaNCS demo host with three headers, already filled in the Playground. Send <code>Accept: application/json</code> too: without it the bank answers in XML.</p>
+                                <p>No sign-in: every request goes to the shared BaNCS demo host with three headers, already filled in the Playground. Send <code>Accept: application/json</code> too: without it the bank answers in XML. A BaNCS access token is optional; add yours under Authentication and every call carries it.</p>
                                 <dl class="basics">
                                     <dt>Base URL</dt><dd>https://demoapps.tcsbancs.com/Core</dd>
                                     <dt>entity</dt><dd>GPRDTTSTOU</dd>
@@ -967,7 +967,7 @@
             </div>
             
             <!-- Reference: search, then one card per business area; an area opens to its endpoints -->
-            <div id="referenceTab" class="tab-content hidden">
+            <div id="referenceTab" class="tab-content hidden" role="tabpanel" aria-labelledby="tab-reference">
                 <div class="tab-head">
                     <h2 class="tab-title">API reference</h2>
                     <p class="text-muted" id="refSummary">The BaNCS endpoints by business area.</p>
@@ -986,7 +986,7 @@
             </div>
 
             <!-- Guides: multi-step flows, one card each -->
-            <div id="guidesTab" class="tab-content hidden">
+            <div id="guidesTab" class="tab-content hidden" role="tabpanel" aria-labelledby="tab-guides">
                 <div class="tab-head">
                     <h2 class="tab-title">Guides</h2>
                     <p class="text-muted">Multi-step flows on real BaNCS operations, each tested against the demo bank. Open one for its steps.</p>
@@ -995,7 +995,7 @@
             </div>
 
             <!-- Enhanced Playground Tab -->
-            <div id="playgroundTab" class="tab-content hidden">
+            <div id="playgroundTab" class="tab-content hidden" role="tabpanel" aria-labelledby="tab-playground">
                 <div class="playground-container" id="playgroundContainer">
                     <!-- Request Section -->
                     <div class="playground-section">
@@ -1012,7 +1012,7 @@
                             <!-- API Request Form -->
                             <div id="apiRequestForm">
                                 <div class="form-group">
-                                    <label class="form-label">Method</label>
+                                    <label class="form-label" for="playgroundMethod">Method</label>
                                     <select id="playgroundMethod" class="form-input form-select">
                                         <option value="GET">GET</option>
                                         <option value="POST">POST</option>
@@ -1023,47 +1023,49 @@
                                 </div>
                                 
                                 <div class="form-group">
-                                    <label class="form-label">URL</label>
+                                    <label class="form-label" for="playgroundUrl">URL</label>
                                     <input type="text" id="playgroundUrl" class="form-input" 
                                            placeholder="https://demoapps.tcsbancs.com/Core/accountManagement/account/balance">
                                 </div>
                                 
                                 <div class="form-group">
-                                    <label class="form-label">Headers</label>
+                                    <details class="headers-box">
+                                    <summary class="form-label">Headers <span id="headersCount" class="text-muted"></span></summary>
                                     <div id="headersEditor">
                                         <div class="header-row">
-                                            <input type="text" class="form-input" placeholder="Key" value="entity">
-                                            <input type="text" class="form-input" placeholder="Value" value="GPRDTTSTOU">
-                                            <button class="btn btn-ghost btn-icon" onclick="removeHeader(this)">
+                                            <input type="text" class="form-input" placeholder="Key" aria-label="Header name" value="entity">
+                                            <input type="text" class="form-input" placeholder="Value" aria-label="Header value" value="GPRDTTSTOU">
+                                            <button class="btn btn-ghost btn-icon" onclick="removeHeader(this)" aria-label="Remove header">
                                                 <i data-lucide="x" style="width: 16px; height: 16px;"></i>
                                             </button>
                                         </div>
                                         <div class="header-row">
-                                            <input type="text" class="form-input" placeholder="Key" value="userId">
-                                            <input type="text" class="form-input" placeholder="Value" value="1">
-                                            <button class="btn btn-ghost btn-icon" onclick="removeHeader(this)">
+                                            <input type="text" class="form-input" placeholder="Key" aria-label="Header name" value="userId">
+                                            <input type="text" class="form-input" placeholder="Value" aria-label="Header value" value="1">
+                                            <button class="btn btn-ghost btn-icon" onclick="removeHeader(this)" aria-label="Remove header">
                                                 <i data-lucide="x" style="width: 16px; height: 16px;"></i>
                                             </button>
                                         </div>
                                         <div class="header-row">
-                                            <input type="text" class="form-input" placeholder="Key" value="languageCode">
-                                            <input type="text" class="form-input" placeholder="Value" value="1">
-                                            <button class="btn btn-ghost btn-icon" onclick="removeHeader(this)">
+                                            <input type="text" class="form-input" placeholder="Key" aria-label="Header name" value="languageCode">
+                                            <input type="text" class="form-input" placeholder="Value" aria-label="Header value" value="1">
+                                            <button class="btn btn-ghost btn-icon" onclick="removeHeader(this)" aria-label="Remove header">
                                                 <i data-lucide="x" style="width: 16px; height: 16px;"></i>
                                             </button>
                                         </div>
                                         <div class="header-row">
-                                            <input type="text" class="form-input" placeholder="Key" value="Accept">
-                                            <input type="text" class="form-input" placeholder="Value" value="application/json">
-                                            <button class="btn btn-ghost btn-icon" onclick="removeHeader(this)">
+                                            <input type="text" class="form-input" placeholder="Key" aria-label="Header name" value="Accept">
+                                            <input type="text" class="form-input" placeholder="Value" aria-label="Header value" value="application/json">
+                                            <button class="btn btn-ghost btn-icon" onclick="removeHeader(this)" aria-label="Remove header">
                                                 <i data-lucide="x" style="width: 16px; height: 16px;"></i>
                                             </button>
                                         </div>
                                     </div>
                                     <button class="btn btn-secondary btn-sm mt-2" onclick="addHeader()">
-                                        <i data-lucide="plus" style="width: 14px; height: 14px;"></i>
+                                        <i data-lucide="plus" style="width: 14px; height: 14px;" aria-hidden="true"></i>
                                         Add Header
                                     </button>
+                                    </details>
                                 </div>
                                 
                                 <div class="form-group">
@@ -1077,7 +1079,7 @@
                             <!-- MCP Tool Form -->
                             <div id="mcpToolForm" class="hidden">
                                 <div class="form-group">
-                                    <label class="form-label">Tool Name</label>
+                                    <label class="form-label" for="mcpToolSelect">Tool Name</label>
                                     <select id="mcpToolSelect" class="form-input form-select" onchange="updateMCPToolParams()">
                                         <option value="">Select a tool…</option>
                                         <option value="call_api">call_api - Call any API endpoint</option>
@@ -1098,7 +1100,7 @@
                                 </div>
                                 
                                 <div class="form-group">
-                                    <label class="form-label">
+                                    <label class="form-label" for="mcpToolParams">
                                         Parameters (JSON)
                                         <button class="btn btn-ghost btn-sm ml-2" onclick="fetchSchemaForTool()">
                                             <i data-lucide="info" style="width: 12px; height: 12px;"></i>
@@ -1165,7 +1167,7 @@
             <div id="mcpTab" class="tab-content hidden">
                 <div class="card mb-3">
                     <h2 class="mb-3">Connect an MCP client</h2>
-                    <p>Any MCP client (Claude Code, Claude Desktop, Cursor…) can use these tools over streamable HTTP. No key needed; requests are rate-limited per address.</p>
+                    <p>Any MCP client (Claude Code, Claude Desktop, Cursor…) can use these tools over streamable HTTP. No key needed; requests are rate-limited per address. If your bank needs a BaNCS access token, send it in the <code>Accesstoken</code> header.</p>
                     <dl class="basics"><dt>Endpoint</dt><dd>https://apicookbook.vercel.app/api/mcp</dd></dl>
                     <p class="text-small">Claude Code:</p>
                     <pre><code class="language-bash">claude mcp add --transport http bancs https://apicookbook.vercel.app/api/mcp</code></pre>
@@ -1186,7 +1188,7 @@
             </div>
             
             <!-- History Tab -->
-            <div id="historyTab" class="tab-content hidden">
+            <div id="historyTab" class="tab-content hidden" role="tabpanel" aria-labelledby="tab-history">
                 <div class="card">
                     <div class="flex justify-between items-center mb-3">
                         <h2>Request History</h2>
@@ -1207,7 +1209,6 @@
         // Configuration
         const config = {
             apiBaseUrl: window.location.origin,
-            wsProtocol: window.location.protocol === 'https:' ? 'wss:' : 'ws:',
             maxRetries: 3,
             retryDelay: 1000
         };
@@ -1217,8 +1218,6 @@
             conversationContext: [],
             endpoints: [],
             mcpTools: [],
-            ws: null,
-            isConnected: false,
             playgroundType: 'api',
             playgroundHistory: [],
             currentResponse: null
@@ -1242,8 +1241,6 @@
                     loadMCPTools()
                 ]);
                 
-                // Setup WebSocket connection
-                setupWebSocket();
                 
                 // Set up periodic health checks
                 setInterval(checkStatus, 30000);
@@ -1355,7 +1352,7 @@
         // Developer Quick Actions
         // A real call, ready to run: the demo host's balance endpoint for an account that has data.
         async function quickTestAccount() {
-            switchTab('playground', document.querySelector('.tab:nth-child(3)'));
+            switchTab('playground');
             setRequestType('api', document.querySelector('.request-type-btn'));
             clearPlayground();
             document.getElementById('playgroundMethod').value = 'GET';
@@ -1678,82 +1675,6 @@
             lucide.createIcons();
         }
         
-        // Setup WebSocket connection
-        function setupWebSocket() {
-            // Vercel's rewrites can't proxy WebSockets, so on Vercel the attempt only fails noisily.
-            // Chat uses HTTP whenever the socket is closed.
-            if (window.location.hostname.endsWith('.vercel.app')) {
-                logToDevConsole('Chat uses HTTP (WebSockets are not available through Vercel)', 'info');
-                return;
-            }
-            const wsUrl = `${config.wsProtocol}//${window.location.host}/ws`;
-            
-            try {
-                state.ws = new WebSocket(wsUrl);
-                
-                state.ws.onopen = () => {
-                    state.isConnected = true;
-                    state.wsEverOpened = true;
-                    console.log('WebSocket connected');
-                    logToDevConsole('WebSocket connected', 'success');
-                };
-                
-                state.ws.onmessage = (event) => {
-                    const data = JSON.parse(event.data);
-                    handleWebSocketMessage(data);
-                };
-                
-                state.ws.onerror = (error) => {
-                    console.error('WebSocket error:', error);
-                    logToDevConsole('WebSocket error', 'error');
-                };
-                
-                state.ws.onclose = () => {
-                    state.isConnected = false;
-                    // Never connected (e.g. on Vercel, whose rewrites can't proxy WebSockets): chat uses HTTP, stop retrying
-                    if (!state.wsEverOpened) {
-                        logToDevConsole('WebSocket unavailable - chat uses HTTP', 'info');
-                        return;
-                    }
-                    console.log('WebSocket disconnected');
-                    logToDevConsole('WebSocket disconnected - reconnecting in 5s', 'warning');
-                    // Attempt to reconnect after 5 seconds
-                    setTimeout(setupWebSocket, 5000);
-                };
-            } catch (error) {
-                console.error('Failed to setup WebSocket:', error);
-                logToDevConsole(`WebSocket setup failed: ${error.message}`, 'error');
-            }
-        }
-        
-        // Handle WebSocket messages
-        function handleWebSocketMessage(data) {
-            console.log('WebSocket received:', data);
-            
-            if (data.type === 'system') {
-                console.log('System message:', data.message);
-                return;
-            }
-            
-            hideTypingIndicator();
-            
-            // Handle different response structures
-            if (data.type === 'response' && data.data) {
-                const responseData = data.data;
-                const message = responseData.response || responseData.message || 'No response received';
-                addMessage(message, 'assistant', responseData);
-            } else if (data.response) {
-                addMessage(data.response, 'assistant', data);
-            } else if (data.message) {
-                addMessage(data.message, 'assistant', data);
-            } else if (data.error) {
-                addMessage(`Error: ${data.error}`, 'assistant');
-            } else {
-                console.error('Unknown message format:', data);
-                addMessage(`Received: ${JSON.stringify(data)}`, 'assistant');
-            }
-        }
-        
         // Knowledge Base Search Functions
         async function searchKnowledgeBase(query = null) {
             if (!query) {
@@ -1899,12 +1820,7 @@
            try {
                const context = Array.isArray(state.conversationContext) ? state.conversationContext : [];
                
-               if (state.isConnected && state.ws && state.ws.readyState === WebSocket.OPEN) {
-                   state.ws.send(JSON.stringify({
-                       message: message,
-                       context: context
-                   }));
-               } else {
+               {
                    const response = await fetchWithRetry('/api/chat', {
                        method: 'POST',
                        headers: {
@@ -2045,10 +1961,26 @@
        }
        
        // Switch tabs
+       // Arrow keys move between tabs (the WAI-ARIA tabs pattern); Tab moves into the panel.
+       document.addEventListener('keydown', (event) => {
+           const tab = event.target.closest?.('[role="tab"]');
+           if (!tab || !['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+           const tabs = [...document.querySelectorAll('[role="tab"]')];
+           const i = tabs.indexOf(tab);
+           const next = { ArrowLeft: i - 1, ArrowRight: i + 1, Home: 0, End: tabs.length - 1 }[event.key];
+           const target = tabs[(next + tabs.length) % tabs.length];
+           event.preventDefault();
+           target.click();
+           target.focus();
+       });
+
        function switchTab(tabName, tabElement) {
            // Mark the tab by name: callers hand in guesses like querySelector('.tab'), which drifted.
            document.querySelectorAll('.tab').forEach(tab => {
-               tab.classList.toggle('active', (tab.getAttribute('onclick') || '').includes(`'${tabName}'`));
+               const on = (tab.getAttribute('onclick') || '').includes(`'${tabName}'`);
+               tab.classList.toggle('active', on);
+               tab.setAttribute('aria-selected', on);
+               tab.tabIndex = on ? 0 : -1;
            });
            
            document.querySelectorAll('.tab-content').forEach(content => {
@@ -2086,9 +2018,9 @@
            const headerRow = document.createElement('div');
            headerRow.className = 'header-row';
            headerRow.innerHTML = `
-               <input type="text" class="form-input" placeholder="Key">
-               <input type="text" class="form-input" placeholder="Value">
-               <button class="btn btn-ghost btn-icon" onclick="removeHeader(this)">
+               <input type="text" class="form-input" placeholder="Key" aria-label="Header name">
+               <input type="text" class="form-input" placeholder="Value" aria-label="Header value">
+               <button class="btn btn-ghost btn-icon" onclick="removeHeader(this)" aria-label="Remove header">
                    <i data-lucide="x" style="width: 16px; height: 16px;"></i>
                </button>
            `;
@@ -2096,6 +2028,16 @@
            lucide.createIcons();
        }
        
+       // The folded Headers line shows how many rows there are and their names; it follows every change.
+       function showHeadersCount() {
+           const names = [...document.querySelectorAll('#headersEditor .header-row input:first-child')]
+               .map(i => i.value.trim()).filter(Boolean);
+           document.getElementById('headersCount').textContent = `(${names.length}) ${names.join(', ')}`;
+       }
+       new MutationObserver(showHeadersCount).observe(document.getElementById('headersEditor'), { childList: true, subtree: true });
+       document.getElementById('headersEditor').addEventListener('input', showHeadersCount);
+       showHeadersCount();
+
        function removeHeader(button) {
            button.closest('.header-row').remove();
        }
@@ -2356,30 +2298,30 @@
                
                document.getElementById('headersEditor').innerHTML = `
                    <div class="header-row">
-                       <input type="text" class="form-input" placeholder="Key" value="entity">
-                       <input type="text" class="form-input" placeholder="Value" value="GPRDTTSTOU">
-                       <button class="btn btn-ghost btn-icon" onclick="removeHeader(this)">
+                       <input type="text" class="form-input" placeholder="Key" aria-label="Header name" value="entity">
+                       <input type="text" class="form-input" placeholder="Value" aria-label="Header value" value="GPRDTTSTOU">
+                       <button class="btn btn-ghost btn-icon" onclick="removeHeader(this)" aria-label="Remove header">
                            <i data-lucide="x" style="width: 16px; height: 16px;"></i>
                        </button>
                    </div>
                    <div class="header-row">
-                       <input type="text" class="form-input" placeholder="Key" value="userId">
-                       <input type="text" class="form-input" placeholder="Value" value="1">
-                       <button class="btn btn-ghost btn-icon" onclick="removeHeader(this)">
+                       <input type="text" class="form-input" placeholder="Key" aria-label="Header name" value="userId">
+                       <input type="text" class="form-input" placeholder="Value" aria-label="Header value" value="1">
+                       <button class="btn btn-ghost btn-icon" onclick="removeHeader(this)" aria-label="Remove header">
                            <i data-lucide="x" style="width: 16px; height: 16px;"></i>
                        </button>
                    </div>
                    <div class="header-row">
-                       <input type="text" class="form-input" placeholder="Key" value="languageCode">
-                       <input type="text" class="form-input" placeholder="Value" value="1">
-                       <button class="btn btn-ghost btn-icon" onclick="removeHeader(this)">
+                       <input type="text" class="form-input" placeholder="Key" aria-label="Header name" value="languageCode">
+                       <input type="text" class="form-input" placeholder="Value" aria-label="Header value" value="1">
+                       <button class="btn btn-ghost btn-icon" onclick="removeHeader(this)" aria-label="Remove header">
                            <i data-lucide="x" style="width: 16px; height: 16px;"></i>
                        </button>
                    </div>
                    <div class="header-row">
-                       <input type="text" class="form-input" placeholder="Key" value="Accept">
-                       <input type="text" class="form-input" placeholder="Value" value="application/json">
-                       <button class="btn btn-ghost btn-icon" onclick="removeHeader(this)">
+                       <input type="text" class="form-input" placeholder="Key" aria-label="Header name" value="Accept">
+                       <input type="text" class="form-input" placeholder="Value" aria-label="Header value" value="application/json">
+                       <button class="btn btn-ghost btn-icon" onclick="removeHeader(this)" aria-label="Remove header">
                            <i data-lucide="x" style="width: 16px; height: 16px;"></i>
                        </button>
                    </div>
@@ -2501,7 +2443,7 @@
            const item = state.playgroundHistory[index];
            if (!item) return;
            
-           switchTab('playground', document.querySelector('.tab:nth-child(3)'));
+           switchTab('playground');
            
            if (item.type === 'api') {
                setRequestType('api', document.querySelector('.request-type-btn'));
@@ -2517,9 +2459,9 @@
                    const row = document.createElement('div');
                    row.className = 'header-row';
                    row.innerHTML = `
-                       <input type="text" class="form-input" placeholder="Key" value="${escapeHtml(key)}">
-                       <input type="text" class="form-input" placeholder="Value" value="${escapeHtml(value)}">
-                       <button class="btn btn-ghost btn-icon" onclick="removeHeader(this)">
+                       <input type="text" class="form-input" placeholder="Key" aria-label="Header name" value="${escapeHtml(key)}">
+                       <input type="text" class="form-input" placeholder="Value" aria-label="Header value" value="${escapeHtml(value)}">
+                       <button class="btn btn-ghost btn-icon" onclick="removeHeader(this)" aria-label="Remove header">
                            <i data-lucide="x" style="width: 16px; height: 16px;"></i>
                        </button>
                    `;
@@ -2569,7 +2511,7 @@
        // Other functions
 
        function testMCPTool(toolName) {
-           switchTab('playground', document.querySelector('.tab:nth-child(3)'));
+           switchTab('playground');
            setRequestType('mcp', document.querySelector('.request-type-btn:nth-child(2)'));
            document.getElementById('mcpToolSelect').value = toolName;
            updateMCPToolParams();
@@ -2578,10 +2520,6 @@
        
        function showMCPTools() {
            switchTab('mcp');
-       }
-       
-       function showSettings() {
-           showNotification('Settings panel coming soon!', 'info');
        }
        
        // Utility functions
@@ -2976,7 +2914,7 @@
                    <button type="button" class="btn btn-secondary btn-sm" data-act="copy">Copy curl</button>
                    ${state.buildAvailable ? '<button type="button" class="btn btn-secondary btn-sm" data-act="build">Build &amp; run it</button>' : ''}
                </div></div>`);
-           el.querySelectorAll('pre code').forEach(b => window.hljs?.highlightElement?.(b));
+           window.Prism?.highlightAllUnder(el);
            el.querySelector('[data-act="try"]').onclick = () => tryInPlayground(ep);
            el.querySelector('[data-act="copy"]').onclick = async (e) => {
                try { await navigator.clipboard.writeText(ep.curl); e.target.textContent = 'Copied'; } catch (err) {}
@@ -2985,7 +2923,7 @@
        }
 
        function tryInPlayground(ep) {
-           switchTab('playground', document.querySelector('.tab:nth-child(3)'));
+           switchTab('playground');
            setRequestType('api', document.querySelector('.request-type-btn'));
            clearPlayground();
            document.getElementById('playgroundMethod').value = ep.method;
@@ -3130,12 +3068,12 @@
        function showAuthentication() {
            switchTab('chat', document.querySelector('.tab'));
            const curl = "curl 'https://demoapps.tcsbancs.com/Core/accountManagement/account/balanceDetails/101000000101814' \\\n  -H 'entity: GPRDTTSTOU' -H 'userId: 1' -H 'languageCode: 1' \\\n  -H 'Accept: application/json' -H \"Accesstoken: $BANCS_ACCESS_TOKEN\"";
-           const el = addPanel('Authentication', `<p><strong>There is no sign-in or token.</strong> The demo host identifies the caller by three headers on every request. Send <code>Accept: application/json</code> as well (without it the bank answers in XML), and <code>Content-Type: application/json</code> when there is a body.</p>
+           const el = addPanel('Authentication', `<p><strong>There is no sign-in.</strong> The demo host identifies the caller by three headers on every request. Send <code>Accept: application/json</code> as well (without it the bank answers in XML), and <code>Content-Type: application/json</code> when there is a body.</p>
                <dl class="basics"><dt>Base URL</dt><dd>https://demoapps.tcsbancs.com/Core</dd><dt>entity</dt><dd>GPRDTTSTOU</dd>
                <dt>userId</dt><dd>1</dd><dt>languageCode</dt><dd>1</dd><dt>Accept</dt><dd>application/json</dd></dl>
                <pre><code class="language-bash">${escapeHtml(curl)}</code></pre>
                <h4>Your BaNCS access token</h4>
-               <p>The Playground, the MCP tools and Build &amp; run need your token. It goes to the bank as the <code>Accesstoken</code> header.
+               <p>Optional on the demo bank. If your bank needs a token, save it here: the Playground, the MCP tools and Build &amp; run send it to the bank as the <code>Accesstoken</code> header.
                The page keeps it in this tab only, and the server passes it on without storing it.
                Code from Build &amp; run reads it from the <code>BANCS_ACCESS_TOKEN</code> environment variable.</p>
                <form class="token-form" onsubmit="saveBankToken(event)">
@@ -3147,7 +3085,7 @@
                <p class="text-small text-muted">MCP clients send the same header: <code>Accesstoken: &lt;your token&gt;</code>.</p>
                <p class="text-small text-muted">The data is a shared demo: anything you change, every other user sees.</p>`);
            showBankTokenState();
-           el.querySelectorAll('pre code').forEach(b => window.hljs?.highlightElement?.(b));
+           window.Prism?.highlightAllUnder(el);
        }
 
        function clearEndpointSearch() {
@@ -3287,7 +3225,7 @@
                : final.status === 'stopped' ? 'Stopped.' : `The run ended: ${final.status}.`;
            if (final.answer) {
                body.innerHTML = DOMPurify.sanitize(marked.parse(maskProxy(final.answer)));
-               body.querySelectorAll('pre code').forEach(b => window.hljs?.highlightElement?.(b));
+               window.Prism?.highlightAllUnder(body);
            }
            writes.querySelectorAll('.write-card:not(.decided)').forEach(card => settleWriteCard(card, 'rejected'));
            await showRunFiles(el, runId, runKey);
