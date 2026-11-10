@@ -33,7 +33,7 @@ services:
       ENVIRONMENT: production
       DEBUG: "false"  # keeps /api/developer/logs closed
       RAG_ENABLED: "true"
-      BANCS_TOKEN_REQUIRED: "true"  # Playground, MCP call_api and Build & run need the visitor's Accesstoken
+      BANCS_TOKEN_REQUIRED: "false"  # the demo bank checks no token; one a visitor sends is still carried. true on a bank that checks
       RAG_EMBEDDING_MODEL: BAAI/bge-small-en-v1.5
       DISABLE_BERT_SEARCH: "true"
       ENABLE_BERT: "false"  # the BERT chat routes are gone; RAG does the search
