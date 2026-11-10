@@ -342,3 +342,77 @@ def test_a_visitor_run_needs_a_bank_token_and_the_run_carries_it(client, open_bu
     # The operator (evals, smoke runs) does not need one.
     assert client.post("/api/build/runs", json={"task": "c"},
                        headers={"Authorization": "Bearer " + "x" * 40}).status_code == 202
+
+
+@pytest.mark.anyio
+async def test_an_approved_write_keeps_the_banks_answer_and_a_repeat_is_not_asked_again(proxy):
+    client, run = proxy
+    first = asyncio.create_task(client.post(f"/r/{run.token}/Core/customer", json={"name": "Ada"}))
+    held = await _until_pending(run.token)
+    build_proxy.decide(run.token, held["id"], approve=True)
+    assert (await first).status_code == 200
+    sent = build_proxy.calls(run.token)[-1]
+    assert sent["status"] == 200 and '"bank"' in sent["answer"]  # the page shows this on the card
+
+    # A script re-run sends the very same write: answered from the first approval, the bank not called again.
+    again = await client.post(f"/r/{run.token}/Core/customer", json={"name": "Ada"})
+    assert again.status_code == 200 and again.json() == (await first).json()
+    assert len(BANK_CALLS) == 1 and build_proxy.pending(run.token) == []
+    assert build_proxy.calls(run.token)[-1]["repeat_of"] == held["id"]
+
+    # A different body is a different write: it is held again.
+    other = asyncio.create_task(client.post(f"/r/{run.token}/Core/customer", json={"name": "Bea"}))
+    held_again = await _until_pending(run.token)
+    assert held_again["id"] != held["id"]
+    build_proxy.decide(run.token, held_again["id"], approve=False)
+    assert (await other).status_code == 403
+
+
+@pytest.mark.anyio
+async def test_a_rejected_write_repeated_is_refused_without_asking(proxy):
+    client, run = proxy
+    first = asyncio.create_task(client.delete(f"/r/{run.token}/Core/customer/7"))
+    held = await _until_pending(run.token)
+    build_proxy.decide(run.token, held["id"], approve=False)
+    assert (await first).status_code == 403
+
+    again = await client.delete(f"/r/{run.token}/Core/customer/7")
+    assert again.status_code == 403 and "rejected the same request" in again.json()["error"]
+    assert not BANK_CALLS and build_proxy.pending(run.token) == []
+
+
+@pytest.mark.anyio
+async def test_the_stream_sends_an_approved_write_only_once_the_bank_answered(monkeypatch):
+    run = build_proxy.new_run()
+    run.writes["w1"] = build_proxy.HeldWrite(id="w1", method="POST", path="/Core/customer", body_preview="{}")
+    run.calls.append({"method": "POST", "path": "/Core/customer", "write_id": "w1"})
+    pages = iter([
+        {"status": "running", "events": [], "next": 0},  # approved, the bank not answered yet
+        {"status": "running", "events": [], "next": 0},  # the bank answered
+        {"status": "completed", "events": [], "next": 0},
+    ])
+    seen = []
+
+    async def fake_runner(method, path, json=None):
+        if "/events" in path:
+            page = next(pages)
+            seen.append(page)
+            if len(seen) == 1:
+                build_proxy.decide(run.token, "w1", approve=True)
+                run.calls[0]["decision"] = "approved"
+            if len(seen) == 2:
+                run.calls[0].update(status=400, answer='{"description": "BP_WITH_SAME_NAME_AND_DOB_ALREADY_EXISTS"}')
+            return httpx.Response(200, json=page)
+        return httpx.Response(200, json={"status": "completed", "exit_code": 0, "answer": "done", "summary": {}})
+
+    monkeypatch.setattr(build_routes, "_call_runner", fake_runner)
+    monkeypatch.setattr(build_routes, "STREAM_POLL_S", 0)
+    monkeypatch.setattr(build_routes, "_GUARD", build_routes.AgentGuard(pathlib.Path(tempfile.mkdtemp())))
+    build_routes._RUNS["r2"] = build_routes.BuildRun(token=run.token, key="k" * 32)
+    chunks = [c async for c in build_routes.stream_run("r2", run.token)]
+    kinds = [c.split("\n", 1)[0].removeprefix("event: ") for c in chunks]
+
+    # write_decided right away; the bank_call only once it carries the bank's status and answer
+    assert kinds == ["write", "write_decided", "bank_call", "done"]
+    bank = chunks[kinds.index("bank_call")]
+    assert '"status": 400' in bank and "BP_WITH_SAME_NAME" in bank

@@ -336,7 +336,9 @@ async def stream_run(run_id: str, token: str) -> AsyncIterator[str]:
                 decided_seen.add(write["id"])
                 out.append(_sse("write_decided", write))
         calls = build_proxy.calls(token)
-        while calls_sent < len(calls) and ("status" in calls[calls_sent] or "decision" in calls[calls_sent]):
+        # in order, once each has an outcome: the bank's status, or a write that was not sent
+        while calls_sent < len(calls) and ("status" in calls[calls_sent]
+                                           or calls[calls_sent].get("decision") not in (None, "approved")):
             out.append(_sse("bank_call", calls[calls_sent]))  # in order, once each has an outcome
             calls_sent += 1
         for chunk in out:

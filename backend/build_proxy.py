@@ -68,6 +68,8 @@ class ProxyRun:
     writes: dict[str, HeldWrite] = field(default_factory=dict)
     calls: list[dict[str, Any]] = field(default_factory=list)
     bank_token: str = field(default="", repr=False)  # the visitor's; the sandbox never sees it
+    # (method, URL, body) -> how the visitor and the bank answered it: a repeat is answered the same way, unasked
+    answered: dict[tuple, dict[str, Any]] = field(default_factory=dict, repr=False)
 
     @property
     def alive(self) -> bool:
@@ -201,6 +203,16 @@ async def forward(token: str, path: str, request: Request) -> Response:
 
     record: dict[str, Any] = {"method": method, "path": "/" + path, "at": time.time()}
     run.calls.append(record)
+    key = (method, str(target), body)
+    if method in WRITE_METHODS and key in run.answered:
+        # The same write again (a script re-run): the visitor already answered it, so don't ask twice.
+        earlier = run.answered[key]
+        record.update(repeat_of=earlier["write_id"], decision=earlier["decision"])
+        if earlier["decision"] != "approved":
+            return JSONResponse({"error": f"This {method} was not sent to the bank: the visitor rejected "
+                                          "the same request earlier in this run."}, status_code=403)
+        record.update(status=earlier["status"], answer=earlier["answer"])
+        return Response(content=earlier["content"], status_code=earlier["status"], media_type=earlier["media_type"])
     if method in WRITE_METHODS:
         write = HeldWrite(id=uuid.uuid4().hex[:12], method=method, path="/" + path,
                           body_preview=body[:4000].decode("utf-8", "replace"))
@@ -212,6 +224,8 @@ async def forward(token: str, path: str, request: Request) -> Response:
         except asyncio.TimeoutError:
             write.decision = write.decision or "timeout"
         record["decision"] = write.decision
+        if write.decision == "rejected":
+            run.answered[key] = {"write_id": write.id, "decision": "rejected"}
         if write.decision != "approved":
             reason = "the visitor did not approve it in time" if write.decision == "timeout" else "the visitor rejected it"
             return JSONResponse({"error": f"This {method} was not sent to the bank: {reason}."}, status_code=403)
@@ -238,6 +252,11 @@ async def forward(token: str, path: str, request: Request) -> Response:
         record.update(status=502, ms=int((time.time() - started) * 1000))
         return JSONResponse({"error": f"the bank did not answer: {type(exc).__name__}"}, status_code=502)
     record.update(status=upstream.status_code, ms=int((time.time() - started) * 1000))
+    if method in WRITE_METHODS:  # the visitor approved it: show them what the bank said, and keep it for a repeat
+        record["answer"] = upstream.text[:300]
+        run.answered[key] = {"write_id": record["write_id"], "decision": "approved", "status": upstream.status_code,
+                             "answer": record["answer"], "content": upstream.content,
+                             "media_type": upstream.headers.get("content-type")}
     return Response(content=upstream.content, status_code=upstream.status_code,
                     media_type=upstream.headers.get("content-type"))
 

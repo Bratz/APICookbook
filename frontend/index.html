@@ -772,6 +772,11 @@
         .write-card h4 { margin: 0 0 var(--space-2xs); font-size: var(--text-sm); }
         .write-card pre { max-height: 12lh; overflow: auto; font-size: var(--text-xs); margin: var(--space-2xs) 0; }
         .write-card .write-status { font-size: var(--text-xs); color: var(--color-muted); }
+        .build-log li.write-step { display: block; }
+        .write-answer { margin: var(--space-2xs) 0 0; font-size: var(--text-sm); font-weight: 700; overflow-wrap: anywhere; }
+        .write-answer.ok { color: var(--color-success); }
+        .write-answer.fail { color: var(--color-error); }
+        .write-repeats:empty { display: none; }
 
         .knowledge-search-bar {
             padding: var(--space-xs) var(--space-md);
@@ -3702,13 +3707,23 @@
                        } else if (event === 'bank_call') {
                            const li = document.createElement('li');
                            li.className = 'bank';
-                           const outcome = data.decision && data.decision !== 'approved' ? `not sent (${escapeHtml(data.decision)})` : escapeHtml(data.status ?? '');
+                           let outcome = data.decision && data.decision !== 'approved' ? `not sent (${escapeHtml(data.decision)})` : escapeHtml(data.status ?? '');
+                           if (data.repeat_of) {
+                               outcome += ' · the same request as before, not asked again';
+                               el.querySelector(`[data-write="${CSS.escape(data.repeat_of)}"] [data-repeats]`)?.replaceChildren(
+                                   `The code sent this same request again; it got the same answer without asking you.`);
+                           } else if (data.write_id) {
+                               showWriteAnswer(el.querySelector(`[data-write="${CSS.escape(data.write_id)}"]`), data);
+                           }
                            li.innerHTML = `<span class="mark">⇄</span><span class="method-badge method-${escapeHtml(data.method.toLowerCase())}">${escapeHtml(data.method)}</span><code>${escapeHtml(data.path)}</code><span>${outcome}</span>`;
                            log.appendChild(li);
                        } else if (event === 'write') {
-                           writes.appendChild(renderHeldWrite(runId, runKey, data));
+                           const li = document.createElement('li');  // in the log, where the code made it
+                           li.className = 'write-step';
+                           li.appendChild(renderHeldWrite(runId, runKey, data));
+                           log.appendChild(li);
                        } else if (event === 'write_decided') {
-                           const card = writes.querySelector(`[data-write="${CSS.escape(data.id)}"]`);
+                           const card = el.querySelector(`[data-write="${CSS.escape(data.id)}"]`);
                            if (card) settleWriteCard(card, data.decision);
                        } else if (event === 'done') {
                            final = data;
@@ -3730,7 +3745,7 @@
                body.innerHTML = DOMPurify.sanitize(marked.parse(maskProxy(final.answer)));
                window.Prism?.highlightAllUnder(body);
            }
-           writes.querySelectorAll('.write-card:not(.decided)').forEach(card => settleWriteCard(card, 'rejected'));
+           el.querySelectorAll('.write-card:not(.decided)').forEach(card => settleWriteCard(card, 'rejected'));
            await showRunFiles(el, runId, runKey);
            if (final.status !== 'stopped') setLastRun({ id: runId, key: runKey });
            scroll();
@@ -3795,7 +3810,9 @@
                ${pretty ? `<pre>${escapeHtml(pretty)}</pre>` : ''}
                <div class="choice-row"><button type="button" class="btn btn-primary btn-sm" data-approve>Approve</button>
                <button type="button" class="btn btn-secondary btn-sm" data-reject>Reject</button>
-               <span class="write-status" data-left></span></div>`;
+               <span class="write-status" data-left></span></div>
+               <p class="write-answer" data-answer hidden></p>
+               <p class="write-repeats text-small text-muted" data-repeats></p>`;
            const left = card.querySelector('[data-left]');
            const deadline = Date.now() + 120000 - (write.waiting_s || 0) * 1000;
            const tick = () => {
@@ -3815,6 +3832,18 @@
            card.querySelector('[data-approve]').onclick = () => decide(true);
            card.querySelector('[data-reject]').onclick = () => decide(false);
            return card;
+       }
+
+       // What the bank said to a write the visitor approved: the status and its short message.
+       function showWriteAnswer(card, call) {
+           const box = card?.querySelector('[data-answer]');
+           if (!box || call.status == null) return;
+           const said = (call.answer || '').match(/"(?:description|message|errorMessage|errorDescription)"\s*:\s*"([^"]{1,200})"/);
+           const text = said ? said[1] : (call.answer || '').slice(0, 200);
+           const ok = call.status >= 200 && call.status < 300;
+           box.className = 'write-answer ' + (ok ? 'ok' : 'fail');
+           box.textContent = `The bank answered ${call.status}${text ? ': ' + text : ''}`;
+           box.hidden = false;
        }
 
        function settleWriteCard(card, decision) {
