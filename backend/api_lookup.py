@@ -70,18 +70,6 @@ def get_body_schema(kb, name: str) -> Any:
     return compact(schema) if schema else "This operation takes no request body."
 
 
-def list_endpoints(kb, area: str) -> Any:
-    """Every Swagger operation in one business area (e.g. 'AccountManagement')."""
-    rows = [{"endpoint": n, "method": e["method"], "path": e["url"], "description": (e.get("description") or "")[:80]}
-            for n, e in kb.endpoints.items() if e.get("source") == "swagger" and e.get("category") == area]
-    if not rows:
-        return {"error": f"unknown area {area!r}",
-                "areas": sorted({e.get("category") for e in kb.endpoints.values() if e.get("source") == "swagger"})}
-    if len(rows) > 80:
-        return {"shown": 80, "total": len(rows), "note": "use search_endpoints to narrow this area", "rows": rows[:80]}
-    return rows
-
-
 def compact(schema: dict) -> Any:
     """A schema small enough for a model: as is when it fits, else without prose, else cut with a note."""
     if len(json.dumps(schema)) <= MAX_TOOL_CHARS:

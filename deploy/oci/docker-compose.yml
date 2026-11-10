@@ -35,7 +35,7 @@ services:
       RAG_ENABLED: "true"
       RAG_EMBEDDING_MODEL: BAAI/bge-small-en-v1.5
       DISABLE_BERT_SEARCH: "true"
-      ENABLE_BERT: "true"
+      ENABLE_BERT: "false"  # the BERT chat routes are gone; RAG does the search
       HF_HUB_DISABLE_TELEMETRY: "1"
       # Build & run (F2a): the proxy, the runner on the sandbox host, and its token from .env.
       BUILD_PROXY_PORT: "7601"

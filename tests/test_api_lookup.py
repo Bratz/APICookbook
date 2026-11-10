@@ -36,16 +36,7 @@ def test_get_body_schema(client):
     assert api_lookup.get_body_schema(kb, "CBPETGetAccountBalanceUsingGET") == "This operation takes no request body."
 
 
-def test_list_endpoints_by_area(client):
-    kb = client.app.state.kb
-    rows = api_lookup.list_endpoints(kb, "AccountManagement")
-    assert rows and all(kb.endpoints[r["endpoint"]]["category"] == "AccountManagement" for r in rows)
-    assert "areas" in api_lookup.list_endpoints(kb, "NoSuchArea")
-
-
 def test_big_schemas_are_compacted_and_long_lists_say_so(client):
     kb = client.app.state.kb
     big = api_lookup.get_body_schema(kb, "DEPBT0711MtrdDlOnHld_POSTUsingPOST")  # ~107 KB raw
     assert len(json.dumps(big)) <= api_lookup.MAX_TOOL_CHARS + 500
-    listed = api_lookup.list_endpoints(kb, "TradeFinance")
-    assert listed["shown"] == 80 and listed["total"] > 80

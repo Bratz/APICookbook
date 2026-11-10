@@ -8,7 +8,6 @@ token, ``/r/<token>/...``, so each call belongs to one run and stops working whe
     /r/<token>/_kb/search?q=...      Read-only API knowledge for the agent's tools (backend/api_lookup.py),
     /r/<token>/_kb/endpoint/<name>   over the same knowledge base as the site's endpoint cards.
     /r/<token>/_kb/body-schema/<name>
-    /r/<token>/_kb/area/<area>
 
 It runs inside cookbook-api's process (``serve()``, started from the app's lifespan), so the
 approvals the main app's routes record and the knowledge base are shared without any IPC.
@@ -168,7 +167,6 @@ def kb_body_schema(token: str, name: str) -> Any:
     return api_lookup.get_body_schema(_kb()[0], name)  # already compacted to the tool size cap
 
 
-@proxy_app.get("/r/{token}/_kb/area/{area}")
 def kb_area(token: str, area: str) -> Any:
     _run_or_404(token)
     return api_lookup.list_endpoints(_kb()[0], area)

@@ -4,7 +4,7 @@ Enhanced with improved error handling, validation, and fallback mechanisms
 BERT/PyTorch are now completely optional
 """
 
-from fastapi import Depends, FastAPI, Header, HTTPException, WebSocket, WebSocketDisconnect, UploadFile, File, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, UploadFile, File, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -629,7 +629,6 @@ async def lifespan(app: FastAPI):
     app.state.kb = None
     app.state.response_generator = None
     app.state.apiweaver = None
-    app.state.playground_history = []
     app.state.playground_sessions = {}
     app.state.is_fallback_mode = False
     app.state.bert_integration = None
@@ -706,7 +705,6 @@ async def lifespan(app: FastAPI):
             await MCP_WEAVER.process_pending_registrations()
 
         # Initialize playground state
-        app.state.playground_history = []
         app.state.playground_sessions = {}
         
         logger.info(f"API Server ready on port {settings.api_port}")
@@ -775,9 +773,6 @@ app = FastAPI(
 )
 app.include_router(build_routes.router)  # Build & run, operator-only until F3/F4
 
-if BERT_AVAILABLE and bert_router:
-    app.include_router(bert_router)
-    logger.info("BERT chatbot endpoints mounted")
 
 # ============= MIDDLEWARE =============
 # CORS middleware
@@ -949,8 +944,7 @@ async def health_check():
         "components": components_loaded,
         "stats": {
             "endpoints_loaded": len(app.state.kb.endpoints) if app.state.kb else 0,
-            "mcp_tools": len(getattr(app.state.kb, 'mcp_tools', [])),
-            "playground_history": len(app.state.playground_history)
+            "mcp_tools": len(getattr(app.state.kb, 'mcp_tools', []))
         },
         "configuration": {
             "bert_requested": ENABLE_BERT,
@@ -1249,39 +1243,6 @@ async def add_to_knowledge(request: Request):
             content={"error": f"Failed to add to knowledge base: {str(e)}"}
         )
 
-@app.get("/api/knowledge/endpoints")
-async def get_knowledge_endpoints():
-    """Get all endpoints in the knowledge base"""
-    request_id = str(uuid.uuid4())[:8]
-    logger.info(f"[{request_id}] Get knowledge endpoints request")
-    
-    try:
-        endpoints = []
-        
-        if hasattr(app.state, 'kb') and app.state.kb:
-            for name, data in app.state.kb.endpoints.items():
-                endpoints.append({
-                    'name': name,
-                    'method': data.get('method', 'GET'),
-                    'path': data.get('url', '/'),
-                    'description': data.get('description', ''),
-                    'parameters': data.get('parameters', {}),
-                    'category': data.get('category', 'general')
-                })
-        
-        return JSONResponse(content={
-            "status": "success",
-            "endpoints": endpoints,
-            "total": len(endpoints)
-        })
-        
-    except Exception as e:
-        logger.error(f"[{request_id}] Get endpoints error: {e}", exc_info=True)
-        return JSONResponse(
-            status_code=500,
-            content={"error": f"Failed to get endpoints: {str(e)}"}
-        )
-
 @app.delete("/api/knowledge/{endpoint_name}", dependencies=[Depends(operator_only)])
 async def remove_from_knowledge(endpoint_name: str):
     """Remove an endpoint from the knowledge base"""
@@ -1324,15 +1285,6 @@ async def remove_from_knowledge(endpoint_name: str):
             status_code=500,
             content={"error": f"Failed to remove from knowledge base: {str(e)}"}
         )
-
-@app.get("/api/knowledge/search/{query}")
-async def search_knowledge_get(query: str, limit: int = 5):
-    """GET version of knowledge search for easier testing"""
-    class FakeRequest:
-        async def json(self):
-            return {"query": query, "limit": limit}
-    
-    return await search_knowledge(FakeRequest())
 
 @app.post("/api/chat")
 async def chat(message_data: Dict[str, Any]):
@@ -1752,34 +1704,6 @@ async def get_mcp_tools_response(app_state) -> Optional[Dict[str, Any]]:
             "metadata": {"error": str(e)}
         }
 
-@app.get("/api/cookbook")
-async def get_cookbook_recipes(category: Optional[str] = None):
-    """Get cookbook recipes with error handling"""
-    try:
-        recipes = await app.state.kb.get_cookbook_recipes(category)
-        # Sanitize emojis in recipes
-        for recipe in recipes:
-            if 'icon' in recipe:
-                recipe['icon'] = sanitize_text(recipe['icon'])
-        return recipes or []
-    except Exception as e:
-        logger.error(f"Cookbook error: {e}")
-        return []
-
-@app.get("/api/cookbook/{recipe_id}")
-async def get_cookbook_recipe(recipe_id: str):
-    """Get specific cookbook recipe"""
-    try:
-        recipe = await app.state.kb.get_recipe(recipe_id)
-        if recipe:
-            return recipe
-        raise HTTPException(status_code=404, detail=f"Recipe '{recipe_id}' not found")
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Recipe fetch error: {e}")
-        raise HTTPException(status_code=500, detail="Failed to fetch recipe")
-
 @app.get("/api/endpoints")
 async def list_endpoints(category: Optional[str] = None):
     """List all API endpoints with enhanced details"""
@@ -2002,22 +1926,6 @@ async def execute_playground_request(request: PlaygroundRequest):
         # Prepare response
         duration = int((time.time() - start_time) * 1000)  # milliseconds
         
-        # Add to history
-        history_entry = {
-            "id": request_id,
-            "type": request.type,
-            "timestamp": datetime.utcnow().isoformat(),
-            "duration": duration,
-            "request": request.dict(),
-            "response": result,
-            "success": True
-        }
-        
-        app.state.playground_history.insert(0, history_entry)
-        
-        # Limit history size
-        if len(app.state.playground_history) > 100:
-            app.state.playground_history = app.state.playground_history[:100]
         
         logger.info(f"[{request_id}] Request completed in {duration}ms")
         
@@ -2034,17 +1942,6 @@ async def execute_playground_request(request: PlaygroundRequest):
     except Exception as e:
         logger.error(f"[{request_id}] Unexpected error in playground: {e}", exc_info=True)
         
-        # Add error to history
-        error_entry = {
-            "id": request_id,
-            "type": request.type,
-            "timestamp": datetime.utcnow().isoformat(),
-            "duration": int((time.time() - start_time) * 1000),
-            "request": request.dict(),
-            "error": str(e),
-            "success": False
-        }
-        app.state.playground_history.insert(0, error_entry)
         
         return {
             "success": False,
@@ -2053,82 +1950,7 @@ async def execute_playground_request(request: PlaygroundRequest):
             "request_id": request_id
         }
 
-@app.get("/api/playground/history")
-async def get_playground_history(limit: int = 50):
-    """Get playground execution history"""
-    history = app.state.playground_history[:limit]
-    return {
-        "history": history,
-        "total": len(app.state.playground_history),
-        "limit": limit
-    }
-
 # ============= HOPPSCOTCH INTEGRATION ENDPOINTS =============
-@app.get("/api/hoppscotch/collections")
-async def export_to_hoppscotch():
-    """Export API endpoints as Hoppscotch collections"""
-    try:
-        collections = []
-        
-        # Group endpoints by category
-        categories = {}
-        
-        if hasattr(app.state, 'kb') and app.state.kb:
-            for endpoint_name, endpoint_data in app.state.kb.endpoints.items():
-                category = endpoint_data.get('category', 'General')
-                if category not in categories:
-                    categories[category] = []
-                
-                # Build request object for Hoppscotch
-                request = {
-                    "name": endpoint_name,
-                    "method": endpoint_data.get('method', 'GET'),
-                    "endpoint": endpoint_data.get('url', '/'),
-                    "headers": [
-                        {"key": "entity", "value": settings.bancs_entity},
-                        {"key": "userId", "value": str(settings.bancs_user_id)},
-                        {"key": "languageCode", "value": str(settings.bancs_language_code)},
-                        {"key": "Content-Type", "value": "application/json"}
-                    ],
-                    "params": [],
-                    "body": {
-                        "contentType": "application/json",
-                        "body": "{}"
-                    }
-                }
-                
-                # Add parameters
-                params = endpoint_data.get('parameters', {})
-                if isinstance(params, dict):
-                    for param_name, param_data in params.items():
-                        if isinstance(param_data, dict):
-                            required = param_data.get('required', False)
-                            request["params"].append({
-                                "key": param_name,
-                                "value": "",
-                                "active": required
-                            })
-                
-                categories[category].append(request)
-        
-        # Create collection for each category
-        for category, requests in categories.items():
-            collection = HoppscotchCollection(
-                name=f"TCS BaNCS - {category}",
-                requests=requests
-            )
-            collections.append(collection.dict())
-        
-        return {
-            "collections": collections,
-            "total": sum(len(cat) for cat in categories.values()),
-            "categories": list(categories.keys())
-        }
-        
-    except Exception as e:
-        logger.error(f"Hoppscotch export error: {e}")
-        raise HTTPException(status_code=500, detail="Failed to export collections")
-
 @app.post("/api/hoppscotch/import", dependencies=[Depends(operator_only)])
 async def import_from_hoppscotch(file: UploadFile = File(...)):
     """Import Hoppscotch collection and add to knowledge base"""
@@ -2178,188 +2000,7 @@ async def import_from_hoppscotch(file: UploadFile = File(...)):
         logger.error(f"Hoppscotch import error: {e}")
         raise HTTPException(status_code=500, detail="Failed to import collection")
 
-# ============= WEBSOCKET ENDPOINTS =============
-class ConnectionManager:
-    """WebSocket connection manager"""
-    def __init__(self):
-        self.active_connections: List[WebSocket] = []
-        self.connection_info: Dict[WebSocket, Dict[str, Any]] = {}
-    
-    async def connect(self, websocket: WebSocket):
-        await websocket.accept()
-        self.active_connections.append(websocket)
-        self.connection_info[websocket] = {
-            "connected_at": datetime.now(timezone.utc).isoformat(),
-            "id": str(uuid.uuid4())[:8]
-        }
-        logger.info(f"WebSocket connected: {self.connection_info[websocket]['id']}")
-    
-    def disconnect(self, websocket: WebSocket):
-        if websocket in self.active_connections:
-            self.active_connections.remove(websocket)
-        if websocket in self.connection_info:
-            logger.info(f"WebSocket disconnected: {self.connection_info[websocket]['id']}")
-            del self.connection_info[websocket]
-    
-    async def send_personal_message(self, message: str, websocket: WebSocket):
-        try:
-            await websocket.send_text(message)
-        except:
-            self.disconnect(websocket)
-    
-    async def broadcast(self, message: str):
-        disconnected = []
-        for connection in self.active_connections:
-            try:
-                await connection.send_text(message)
-            except:
-                disconnected.append(connection)
-        
-        # Clean up disconnected clients
-        for conn in disconnected:
-            self.disconnect(conn)
-
-manager = ConnectionManager()
-
-@app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
-    """WebSocket endpoint for real-time chat"""
-    await manager.connect(websocket)
-    ws_id = manager.connection_info[websocket]['id']
-    
-    try:
-        # Send welcome message
-        await websocket.send_json({
-            "type": "system",
-            "message": "Connected to TCS BaNCS API Cookbook",
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "bert_available": BERT_AVAILABLE,
-            "mcp_available": settings.mcp_enabled
-        })
-        
-        while True:
-            # Receive message
-            data = await websocket.receive_text()
-            message_data = json.loads(data)
-            
-            logger.info(f"[WS-{ws_id}] Received: {message_data.get('message', '')[:100]}")
-            
-            # Process message through chat system
-            response = await chat(message_data)
-            
-            # Send response back
-            await websocket.send_json({
-                "type": "response",
-                "data": response,
-                "timestamp": datetime.now(timezone.utc).isoformat()
-            })
-            
-    except WebSocketDisconnect:
-        manager.disconnect(websocket)
-        logger.info(f"[WS-{ws_id}] Client disconnected")
-    except Exception as e:
-        logger.error(f"[WS-{ws_id}] WebSocket error: {e}")
-        manager.disconnect(websocket)
-
-@app.websocket("/ws/playground")
-async def websocket_playground(websocket: WebSocket):
-    """WebSocket endpoint for playground real-time updates"""
-    await websocket.accept()
-    session_id = str(uuid.uuid4())[:8]
-    
-    logger.info(f"Playground WebSocket connected: {session_id}")
-    
-    try:
-        # Store session
-        app.state.playground_sessions[session_id] = {
-            "websocket": websocket,
-            "connected_at": datetime.now(timezone.utc).isoformat()
-        }
-        
-        # Send initial state
-        await websocket.send_json({
-            "type": "init",
-            "session_id": session_id,
-            "history": app.state.playground_history[:10]
-        })
-        
-        while True:
-            data = await websocket.receive_text()
-            request_data = json.loads(data)
-            
-            # Process playground request
-            if request_data.get('type') == 'execute':
-                try:
-                    # Parse and execute request
-                    request = PlaygroundRequest(**request_data.get('request', {}))
-                    result = await execute_playground_request(request)
-                    
-                    # Send result
-                    await websocket.send_json({
-                        "type": "result",
-                        "data": result
-                    })
-                    
-                except Exception as e:
-                    await websocket.send_json({
-                        "type": "error",
-                        "error": str(e)
-                    })
-            
-    except WebSocketDisconnect:
-        logger.info(f"Playground WebSocket disconnected: {session_id}")
-    except Exception as e:
-        logger.error(f"Playground WebSocket error: {e}")
-    finally:
-        # Clean up session
-        if session_id in app.state.playground_sessions:
-            del app.state.playground_sessions[session_id]
-
 # ============= DEVELOPER TOOLS ENDPOINTS =============
-@app.get("/api/developer/bert-status")
-async def get_bert_status():
-    """Get detailed BERT status information"""
-    status = {
-        "enabled": ENABLE_BERT,
-        "available": BERT_AVAILABLE,
-        "pytorch_available": TORCH_AVAILABLE,
-        "model_type": None,
-        "embeddings_count": 0,
-        "memory_usage": None
-    }
-    
-    if BERT_AVAILABLE and hasattr(app.state, 'bert_integration') and app.state.bert_integration:
-        try:
-            bert_chatbot = app.state.bert_integration.bert_chatbot
-            
-            if TORCH_AVAILABLE:
-                status["model_type"] = "full_bert"
-                # Get model info if available
-                if hasattr(bert_chatbot, 'model'):
-                    status["model_info"] = {
-                        "name": bert_chatbot.model.__class__.__name__,
-                        "device": str(bert_chatbot.device) if hasattr(bert_chatbot, 'device') else "cpu"
-                    }
-            else:
-                status["model_type"] = "lightweight_sentence_transformer"
-            
-            # Get embeddings count
-            if hasattr(bert_chatbot, 'api_embeddings'):
-                status["embeddings_count"] = len(bert_chatbot.api_embeddings)
-            
-            # Memory usage (if PyTorch available)
-            if TORCH_AVAILABLE and torch is not None:
-                if torch.cuda.is_available():
-                    status["memory_usage"] = {
-                        "cuda_allocated": f"{torch.cuda.memory_allocated() / 1024**2:.2f} MB",
-                        "cuda_reserved": f"{torch.cuda.memory_reserved() / 1024**2:.2f} MB"
-                    }
-            
-        except Exception as e:
-            status["error"] = str(e)
-    
-    return status
-
 @app.post("/api/developer/reload-knowledge", dependencies=[Depends(operator_only)])
 async def reload_knowledge_base():
     """Reload the knowledge base"""

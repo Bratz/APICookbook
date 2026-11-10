@@ -35,13 +35,6 @@ def test_list_endpoints(client):
     assert {"name", "method", "path"} <= eps[0].keys()
 
 
-def test_cookbook(client):
-    recipes = client.get("/api/cookbook").json()
-    assert len(recipes) > 0
-    assert client.get(f"/api/cookbook/{recipes[0]['id']}").status_code == 200
-    assert client.get("/api/cookbook/does-not-exist").status_code == 404
-
-
 def test_openapi_export(client):
     spec = client.get("/api/openapi").json()
     assert spec["openapi"].startswith("3.")
@@ -54,11 +47,6 @@ def test_mcp_tools(client):
     if settings.mcp_enabled:
         assert data["total"] > 0
         assert any(t["name"].endswith("get_account_balance") for t in data["tools"])
-
-
-def test_hoppscotch_export(client):
-    data = client.get("/api/hoppscotch/collections").json()
-    assert data["total"] > 0 and data["collections"]
 
 
 # ===================== Knowledge base =====================
@@ -78,7 +66,7 @@ def test_knowledge_add_and_delete(client, monkeypatch):
     op = {"Authorization": "Bearer op-token-0123456789abcdef0123456789abcdef"}
     body = {"endpoint_name": "PytestEP", "data": {"method": "GET", "url": "/pytest", "description": "tmp"}}
     assert client.post("/api/knowledge/add", json=body, headers=op).status_code == 200
-    assert any(e["name"] == "PytestEP" for e in client.get("/api/knowledge/endpoints").json()["endpoints"])
+    assert any(e["name"] == "PytestEP" for e in client.get("/api/endpoints").json())
     assert client.delete("/api/knowledge/PytestEP", headers=op).status_code == 200
     assert client.delete("/api/knowledge/PytestEP", headers=op).status_code == 404
 
@@ -95,7 +83,7 @@ def test_routes_that_change_shared_state_are_operator_only(client, monkeypatch, 
     for method, path in SHARED_STATE_ROUTES:
         for auth in ({}, {"Authorization": "Bearer "}, {"Authorization": "Bearer wrong"}):
             assert client.request(method, path, headers=auth).status_code == 403, (method, path, auth)
-    assert any(e["name"] == "GetAccountBalance" for e in client.get("/api/knowledge/endpoints").json()["endpoints"])
+    assert any(e["name"] == "GetAccountBalance" for e in client.get("/api/endpoints").json())
 
 
 def test_semantic_search_finds_by_meaning(client):
@@ -221,13 +209,6 @@ def test_chat_uses_semantic_search(client):
     assert "AmendPhonenumber" in data["api_references"][0]["name"]  # keyword search ranks CreateCustomer first
 
 
-def test_chat_websocket(client):
-    with client.websocket_connect("/ws") as ws:
-        assert ws.receive_json()["type"] == "system"
-        ws.send_json({"message": "hi"})
-        assert "Hello" in ws.receive_json()["data"]["response"]
-
-
 # ===================== Security regressions =====================
 
 @pytest.mark.parametrize("url", [
@@ -281,3 +262,10 @@ def test_chat_code_example_uses_core_base_path_and_schema_fields(client):
     assert f"{settings.api_base_url}/Core/" in code  # Swagger paths sit under the spec's basePath
     assert "Add your request data here" not in code  # the body comes from the endpoint's schema
     assert "Fields from the API spec" in code
+
+
+@pytest.mark.parametrize("path", ["/api/cookbook", "/api/knowledge/endpoints", "/api/knowledge/search/balance",
+                                  "/api/hoppscotch/collections", "/api/playground/history",
+                                  "/api/developer/bert-status", "/api/bert-chat/intents"])
+def test_removed_routes_stay_gone(client, path):
+    assert client.get(path).status_code in (404, 405)
