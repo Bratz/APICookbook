@@ -179,7 +179,8 @@ class Runner:
         files: list[dict[str, str]] = []
         skipped = total = 0
         if root.is_dir() and not root.is_symlink():
-            for here, dirs, names in os.walk(root):  # followlinks=False: a linked folder is not entered
+            # os.walk does not follow links (followlinks=False): a linked folder is not entered
+            for here, dirs, names in os.walk(root):
                 dirs[:] = sorted(d for d in dirs if not d.startswith(".") and d not in _SKIP_DIRS)
                 for name in sorted(names):
                     path = Path(here) / name
@@ -187,16 +188,23 @@ class Runner:
                     if name.startswith(".") or not stat.S_ISREG(info.st_mode):
                         skipped += 1
                         continue
-                    if (len(files) >= _MAX_FILES or info.st_size > _MAX_FILE_BYTES
-                            or total + info.st_size > _MAX_FILES_BYTES):
+                    if (
+                        len(files) >= _MAX_FILES
+                        or info.st_size > _MAX_FILE_BYTES
+                        or total + info.st_size > _MAX_FILES_BYTES
+                    ):
                         skipped += 1
                         continue
                     data = path.read_bytes()
                     if b"\0" in data:  # binary: not code to show
                         skipped += 1
                         continue
-                    files.append({"path": path.relative_to(root).as_posix(),
-                                  "content": data.decode("utf-8", errors="replace")})
+                    files.append(
+                        {
+                            "path": path.relative_to(root).as_posix(),
+                            "content": data.decode("utf-8", errors="replace"),
+                        }
+                    )
                     total += len(data)
         return {"status": run.status, "files": files, "skipped": skipped}
 

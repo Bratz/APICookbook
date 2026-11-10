@@ -6,6 +6,7 @@ reap is a no-op, so this runs anywhere with no daemon and no model.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import sys
 import threading
@@ -161,10 +162,8 @@ def test_a_finished_runs_text_files_come_back_but_not_links_hidden_or_binary(run
     (workspace / "blob.bin").write_bytes(bytes([0, 1, 2]))
     outside = run.directory / "stderr.txt"  # a host file next to the Workspace
     outside.write_text("runner secret")
-    try:
+    with contextlib.suppress(OSError):  # no symlink rights: the rest still checks regular files
         (workspace / "link.txt").symlink_to(outside)
-    except OSError:
-        pass  # no symlink rights here: the regular-file check is still exercised by the rest
 
     body = runner.files(run.id)
 
