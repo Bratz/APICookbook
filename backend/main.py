@@ -1571,12 +1571,14 @@ def generate_code_example(endpoint):
         'userId': '{settings.bancs_user_id}',
         'languageCode': '{settings.bancs_language_code}',
         'Accept': 'application/json',
+        'Accesstoken': os.environ.get('BANCS_ACCESS_TOKEN', ''),  # your BaNCS access token
         'Content-Type': 'application/json'
     }}""")
     placeholder = "\n# Replace the {placeholders} in the URL with real values." if '{' in path else ""
 
     if endpoint['method'] == 'GET':
-        code = f"""import httpx
+        code = f"""import os
+import httpx
 
 async def {func_name}():
 {headers}
@@ -1600,7 +1602,8 @@ print(result)"""
                 _example_body(schema), indent=4, width=100, sort_dicts=False)
         else:
             body = "data = {\n    # Add your request data here\n}"
-        code = f"""import httpx
+        code = f"""import os
+import httpx
 
 async def {func_name}(data):
 {headers}
@@ -1726,7 +1729,7 @@ async def endpoint_card(name: str):
     base = settings.api_base_url.rstrip("/")
     curl = (f"curl -X {ep['method']} '{base}{url}' \\\n  -H 'entity: {settings.bancs_entity}' \\\n"
             f"  -H 'userId: {settings.bancs_user_id}' \\\n  -H 'languageCode: {settings.bancs_language_code}' \\\n"
-            "  -H 'Accept: application/json'")
+            "  -H 'Accept: application/json' \\\n  -H \"Accesstoken: $BANCS_ACCESS_TOKEN\"")
     if example is not None:
         curl += f" \\\n  -H 'Content-Type: application/json' \\\n  -d '{json.dumps(example)}'"
     return {"name": name, "method": ep["method"], "path": path, "url": url, "description": ep.get("description") or "",
@@ -1764,7 +1767,7 @@ async def list_mcp_tools():
 
 # ============= ENHANCED PLAYGROUND ENDPOINTS =============
 @app.post("/api/playground/execute")
-async def execute_playground_request(request: PlaygroundRequest):
+async def execute_playground_request(request: PlaygroundRequest, token: str = Depends(build_proxy.visitor_token)):
     """Execute playground request with enhanced error handling"""
     start_time = time.time()
     request_id = str(uuid.uuid4())[:8]
@@ -1780,6 +1783,8 @@ async def execute_playground_request(request: PlaygroundRequest):
                 raise HTTPException(status_code=503, detail="MCP is not available")
             
             from fastmcp import Client
+            from backend.apiweaver import BANK_TOKEN
+            BANK_TOKEN.set(token)  # call_api reads it: in-process calls have no HTTP headers of their own
             async with Client(app.state.apiweaver.mcp) as mcp_client:  # in-process: the same tools /api/mcp serves
                 tool_result = await mcp_client.call_tool(request.tool_name or "", request.tool_params or {},
                                                          raise_on_error=False)
@@ -1815,6 +1820,10 @@ async def execute_playground_request(request: PlaygroundRequest):
                 # The bank answers XML unless asked for JSON; an Accept the visitor typed wins.
                 if not any(k.lower() == "accept" for k in headers):
                     headers["Accept"] = "application/json"
+                if not any(k.lower() == "accesstoken" for k in headers):  # an Accesstoken row typed in wins
+                    build_proxy.require_token(token)
+                    if token:
+                        headers["Accesstoken"] = token
                 
                 # Make request
                 response = await client.request(
@@ -2010,7 +2019,8 @@ async def get_recent_logs(level: str = "INFO", limit: int = 100):
         }
 
 @app.post("/api/developer/test-endpoint", dependencies=[Depends(operator_only)])
-async def test_endpoint(endpoint_name: str, params: Optional[Dict[str, Any]] = None):
+async def test_endpoint(endpoint_name: str, params: Optional[Dict[str, Any]] = None,
+                        token: str = Depends(build_proxy.visitor_token)):
     """Test a specific endpoint with optional parameters"""
     try:
         if not hasattr(app.state, 'kb') or endpoint_name not in app.state.kb.endpoints:
@@ -2028,7 +2038,7 @@ async def test_endpoint(endpoint_name: str, params: Optional[Dict[str, Any]] = N
         )
         
         # Execute test
-        result = await execute_playground_request(test_request)
+        result = await execute_playground_request(test_request, token)
         
         return {
             "endpoint": endpoint_name,

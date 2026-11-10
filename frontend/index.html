@@ -515,6 +515,8 @@
         }
         .basics dt { color: var(--color-graphite-muted); }
         .basics dd { margin: 0; overflow-wrap: anywhere; }
+        .token-form { display: flex; gap: 0.5rem; flex-wrap: wrap; margin: 0.5rem 0; }
+        .token-form .form-input { flex: 1 1 14rem; min-width: 0; }
 
         /* The code-writing agent's answers (milestone 2) */
         .message.agent { max-width: min(100%, 110ch); }
@@ -3092,14 +3094,59 @@
            document.getElementById('chatMessages').scrollTo({ top: 0, behavior: 'smooth' });
        }
 
+       // The visitor's BaNCS access token. It stays in this tab (sessionStorage) and rides as Accesstoken on
+       // every call to /api; the server passes it to the bank, which checks it, and never stores it.
+       let bankTokenInMemory = '';
+       function getBankToken() {
+           try { return sessionStorage.getItem('bancsToken') || ''; } catch (e) { return bankTokenInMemory; }
+       }
+       function setBankToken(token) {
+           bankTokenInMemory = token;
+           try { token ? sessionStorage.setItem('bancsToken', token) : sessionStorage.removeItem('bancsToken'); } catch (e) {}
+           showBankTokenState();
+       }
+       function saveBankToken(event) {
+           event.preventDefault();
+           const input = document.getElementById('bankTokenInput');
+           setBankToken(input.value.trim());
+           input.value = '';
+       }
+       function showBankTokenState() {
+           const el = document.getElementById('bankTokenState');
+           if (el) el.textContent = getBankToken() ? 'A token is saved for this tab.' : 'No token is saved.';
+       }
+       const pageFetch = window.fetch.bind(window);
+       window.fetch = (resource, options = {}) => {
+           const token = getBankToken();
+           const url = new URL(typeof resource === 'string' ? resource : resource.url, location.href);
+           if (token && url.origin === location.origin && url.pathname.startsWith('/api/')) {
+               const headers = new Headers(options.headers || {});
+               if (!headers.has('Accesstoken')) headers.set('Accesstoken', token);
+               options = { ...options, headers };
+           }
+           return pageFetch(resource, options);
+       };
+
        function showAuthentication() {
            switchTab('chat', document.querySelector('.tab'));
-           const curl = "curl 'https://demoapps.tcsbancs.com/Core/accountManagement/account/balanceDetails/101000000101814' \\\n  -H 'entity: GPRDTTSTOU' -H 'userId: 1' -H 'languageCode: 1' \\\n  -H 'Accept: application/json'";
+           const curl = "curl 'https://demoapps.tcsbancs.com/Core/accountManagement/account/balanceDetails/101000000101814' \\\n  -H 'entity: GPRDTTSTOU' -H 'userId: 1' -H 'languageCode: 1' \\\n  -H 'Accept: application/json' -H \"Accesstoken: $BANCS_ACCESS_TOKEN\"";
            const el = addPanel('Authentication', `<p><strong>There is no sign-in or token.</strong> The demo host identifies the caller by three headers on every request. Send <code>Accept: application/json</code> as well (without it the bank answers in XML), and <code>Content-Type: application/json</code> when there is a body.</p>
                <dl class="basics"><dt>Base URL</dt><dd>https://demoapps.tcsbancs.com/Core</dd><dt>entity</dt><dd>GPRDTTSTOU</dd>
                <dt>userId</dt><dd>1</dd><dt>languageCode</dt><dd>1</dd><dt>Accept</dt><dd>application/json</dd></dl>
                <pre><code class="language-bash">${escapeHtml(curl)}</code></pre>
+               <h4>Your BaNCS access token</h4>
+               <p>The Playground, the MCP tools and Build &amp; run need your token. It goes to the bank as the <code>Accesstoken</code> header.
+               The page keeps it in this tab only, and the server passes it on without storing it.
+               Code from Build &amp; run reads it from the <code>BANCS_ACCESS_TOKEN</code> environment variable.</p>
+               <form class="token-form" onsubmit="saveBankToken(event)">
+                   <input type="password" id="bankTokenInput" class="form-input" autocomplete="off" placeholder="Paste your token" aria-label="BaNCS access token">
+                   <button type="submit" class="btn btn-primary btn-sm">Save</button>
+                   <button type="button" class="btn btn-secondary btn-sm" onclick="setBankToken('')">Clear</button>
+               </form>
+               <p id="bankTokenState" class="text-small text-muted" aria-live="polite"></p>
+               <p class="text-small text-muted">MCP clients send the same header: <code>Accesstoken: &lt;your token&gt;</code>.</p>
                <p class="text-small text-muted">The data is a shared demo: anything you change, every other user sees.</p>`);
+           showBankTokenState();
            el.querySelectorAll('pre code').forEach(b => window.hljs?.highlightElement?.(b));
        }
 
@@ -3169,7 +3216,7 @@
            try {
                const r = await buildFetch('/runs', { method: 'POST', body: JSON.stringify(previous ? { task, previous } : { task }) });
                const data = await r.json().catch(() => ({}));
-               if (!r.ok) throw new Error(data.message || data.detail || `The run could not start (${r.status}).`);
+               if (!r.ok) throw new Error(data.message || data.detail || (typeof data.error === 'string' && data.error.includes(' ') ? data.error : '') || `The run could not start (${r.status}).`);
                runId = data.id; runKey = data.key;
            } catch (e) {
                status.textContent = e.message;

@@ -243,6 +243,21 @@ def test_playground_allows_bancs_host(client):
     assert kwargs["headers"]["Accept"] == "application/json"  # the bank answers XML otherwise
 
 
+def test_playground_needs_the_visitors_bank_token_and_forwards_it(client, monkeypatch):
+    monkeypatch.setattr(settings, "bancs_token_required", True)
+    call = {"type": "api", "method": "GET", "url": "/Core/accountManagement/x"}
+    fake = httpx.Response(200, json={}, request=httpx.Request("GET", settings.api_base_url))
+    with patch.object(httpx.AsyncClient, "request", new=AsyncMock(return_value=fake)) as sent:
+        assert client.post("/api/playground/execute", json=call).status_code == 401
+        sent.assert_not_called()
+        client.post("/api/playground/execute", json=call, headers={"Accesstoken": "visitor-token-1"})
+        assert sent.call_args.kwargs["headers"]["Accesstoken"] == "visitor-token-1"
+        # An Accesstoken typed into the Playground's header rows wins.
+        client.post("/api/playground/execute", json={**call, "headers": {"Accesstoken": "typed"}},
+                    headers={"Accesstoken": "visitor-token-1"})
+        assert sent.call_args.kwargs["headers"]["Accesstoken"] == "typed"
+
+
 def test_playground_validation(client):
     assert client.post("/api/playground/execute", json={"type": "bogus"}).status_code == 422
     assert client.post("/api/playground/execute", json={"type": "api", "url": ""}).status_code == 422

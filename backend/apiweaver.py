@@ -22,8 +22,10 @@ from enum import Enum
 from pathlib import Path
 import yaml
 import logging
+from contextvars import ContextVar
 
 logger = logging.getLogger(__name__)
+BANK_TOKEN: ContextVar[str] = ContextVar("bank_token", default="")  # the Playground's
 
 # Writes from MCP clients wait for a human (docs/decode-fork-plan.md: MCP endpoint, decided 2026-11-09):
 # an MCP client has no Approve button, so call_api returns a link the user opens on the site.
@@ -351,8 +353,14 @@ class BaNCSAPIWeaver:
             approval_id = parameters.pop("approval_id", None)
             if approval_id:
                 return self._held_outcome(str(approval_id))
+            from backend.config import settings
+            token = _bank_token()
+            if settings.bancs_token_required and not token:
+                return {"success": False, "status": "token_required",
+                        "message": "This call reaches the bank, so it needs your BaNCS access token. "
+                                   "Send it in the Accesstoken header of your MCP client."}
             if endpoint.method.upper() in WRITE_METHODS:
-                return self._hold_write(api_name, endpoint, parameters)
+                return self._hold_write(api_name, endpoint, parameters, token)
 
             if ctx:
                 await ctx.info(f"Calling {api_name}.{endpoint_name}")
@@ -363,7 +371,8 @@ class BaNCSAPIWeaver:
                     api_name=api_name,
                     endpoint_name=endpoint_name,
                     params=parameters,
-                    ctx=ctx
+                    ctx=ctx,
+                    bank_token=token
                 )
                 
                 # Return structured response
@@ -653,7 +662,8 @@ Use get_api_schema("{api_name}", "{endpoint_name}") for full parameter details.
             docs.append(f"- {param.name} ({param.type}, {required_str}){default_str}{example_str}: {desc}")
         return "\n".join(docs) if docs else "No parameters"
     
-    async def _execute_api_call(self, api_name: str, endpoint_name: str, params: Dict[str, Any], ctx: Optional[Context] = None) -> Any:
+    async def _execute_api_call(self, api_name: str, endpoint_name: str, params: Dict[str, Any],
+                                ctx: Optional[Context] = None, bank_token: str = "") -> Any:
         """Execute an API call with the given parameters."""
         
         # Get API config and endpoint
@@ -715,6 +725,10 @@ Use get_api_schema("{api_name}", "{endpoint_name}") for full parameter details.
                     json_body = {}
                 json_body[param.name] = value
         
+        if bank_token:  # the caller's token wins over an Accesstoken parameter
+            headers = {k: v for k, v in headers.items() if k.lower() != "accesstoken"}
+            headers["Accesstoken"] = bank_token
+
         # Handle API key in query params
         if api_config.auth and api_config.auth.type == AuthType.API_KEY and api_config.auth.api_key_param:
             query_params[api_config.auth.api_key_param] = api_config.auth.api_key
@@ -983,13 +997,15 @@ Use get_api_schema("{api_name}", "{endpoint_name}") for full parameter details.
     
     # ---------------------------------------------------------------- held writes (MCP)
 
-    def _hold_write(self, api_name: str, endpoint: "APIEndpoint", params: Dict[str, Any]) -> Dict[str, Any]:
+    def _hold_write(self, api_name: str, endpoint: "APIEndpoint", params: Dict[str, Any],
+                    bank_token: str = "") -> Dict[str, Any]:
         for key in [k for k, w in self.held_writes.items() if time.time() - w["created"] > 6 * HOLD_TTL_S]:
             self.held_writes.pop(key, None)  # ponytail: prune on write; a few dozen a day at most
         write_id = secrets.token_urlsafe(18)
         self.held_writes[write_id] = {"api": api_name, "endpoint": endpoint.name, "method": endpoint.method.upper(),
                                       "path": endpoint.path, "params": params, "created": time.time(),
-                                      "status": "pending", "result": None}
+                                      "status": "pending", "result": None,
+                                      "bank_token": bank_token}  # held_write() never shows it
         return {"success": False, "status": "pending_approval", "approval_id": write_id,
                 "approval_url": APPROVE_URL + write_id,
                 "message": (f"This {endpoint.method.upper()} changes shared demo data, so it was NOT sent. Ask the "
@@ -1037,7 +1053,8 @@ Use get_api_schema("{api_name}", "{endpoint_name}") for full parameter details.
         write["status"] = "sending"
         try:
             write["result"] = await self._execute_api_call(api_name=write["api"], endpoint_name=write["endpoint"],
-                                                           params=dict(write["params"]))
+                                                           params=dict(write["params"]),
+                                                           bank_token=write["bank_token"])
             write["status"] = "approved"
         except Exception as e:  # the outcome is reported to the MCP client, not raised at the approver
             write["status"], write["error"] = "failed", f"{type(e).__name__}: {e}"[:300]
@@ -1050,6 +1067,16 @@ Use get_api_schema("{api_name}", "{endpoint_name}") for full parameter details.
         else:
             logger.warning("Cannot run MCP server - FastMCP not available")
             return None
+
+def _bank_token() -> str:
+    """The caller's BaNCS access token: the MCP client's Accesstoken header, or the Playground's (set in-process)."""
+    try:
+        from fastmcp.server.dependencies import get_http_headers
+        token = get_http_headers(include={"accesstoken"}).get("accesstoken", "")
+    except Exception:
+        token = ""
+    return (token or BANK_TOKEN.get()).strip()
+
 
 # Maintain backward compatibility
 APIWeaver = BaNCSAPIWeaver

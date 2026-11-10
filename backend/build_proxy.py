@@ -27,7 +27,7 @@ from typing import Any, Optional
 
 import httpx
 import uvicorn
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
 
 from backend import api_lookup
@@ -37,6 +37,8 @@ logger = logging.getLogger(__name__)
 
 WRITE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 WRITE_TIMEOUT_S = 120.0  # a held write the visitor doesn't answer counts as rejected
+TOKEN_NEEDED = ("This call reaches the bank, so it needs your BaNCS access token. Add it under "
+                "Get started > Authentication, or send it in the Accesstoken header.")
 RUN_TTL_S = 20 * 60  # a token dies with its run, or after this, whichever comes first
 MAX_CALLS_PER_RUN = 300
 MAX_BODY_BYTES = 256 * 1024
@@ -65,6 +67,7 @@ class ProxyRun:
     ended: bool = False
     writes: dict[str, HeldWrite] = field(default_factory=dict)
     calls: list[dict[str, Any]] = field(default_factory=list)
+    bank_token: str = field(default="", repr=False)  # the visitor's; the sandbox never sees it
 
     @property
     def alive(self) -> bool:
@@ -75,6 +78,16 @@ RUNS: dict[str, ProxyRun] = {}
 
 
 # ---------------------------------------------------------------- used by cookbook-api's build routes
+
+def visitor_token(accesstoken: str = Header("")) -> str:
+    """The visitor's BaNCS access token. APICookbook never checks it or stores it: it passes it to the bank."""
+    return accesstoken.strip()
+
+
+def require_token(token: str) -> None:
+    if settings.bancs_token_required and not token:
+        raise HTTPException(status_code=401, detail=TOKEN_NEEDED)
+
 
 def new_run() -> ProxyRun:
     for token in [t for t, r in RUNS.items() if time.time() - r.created > 2 * RUN_TTL_S]:
@@ -213,6 +226,10 @@ async def forward(token: str, path: str, request: Request) -> Response:
     if accept is None or headers[accept].strip() in ("", "*/*"):
         headers.pop(accept, None)
         headers["Accept"] = "application/json"
+    if run.bank_token:  # the visitor's token wins over whatever the agent's code sent (it has none)
+        for name in [k for k in headers if k.lower() == "accesstoken"]:
+            headers.pop(name)
+        headers["Accesstoken"] = run.bank_token
     started = time.time()
     try:
         async with _bank_client() as client:

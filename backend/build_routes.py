@@ -195,16 +195,20 @@ async def build_status() -> dict[str, Any]:
 
 
 @router.post("/runs", status_code=202)
-async def start(body: StartRequest, request: Request, authorization: str = Header("")) -> Any:
+async def start(body: StartRequest, request: Request, authorization: str = Header(""),
+                accesstoken: str = Header("")) -> Any:
     operator = _is_operator(authorization)
+    token = build_proxy.visitor_token(accesstoken)
     if not operator:
         if not _public():
             raise HTTPException(status_code=401, detail="Build & run is not open on this server.")
+        build_proxy.require_token(token)
         blocked = _guard().check(_client_ip(request))
         if blocked:
             message = _CAP_MESSAGES.get(blocked[0], blocked[1]).format(n=_guard().per_hour)
             return JSONResponse(status_code=429, content={"error": blocked[0], "message": message})
     proxy = build_proxy.new_run()
+    proxy.bank_token = token
     task, files = body.task, []
     if body.previous:
         try:
@@ -262,6 +266,8 @@ It calls the TCS BaNCS demo bank directly:
   Base URL   {base}
   Headers    entity: {entity}   userId: {user}   languageCode: {lang}
              Accept: application/json (without it the bank answers in XML)
+             Accesstoken: your BaNCS access token; the code reads it from the
+             BANCS_ACCESS_TOKEN environment variable, so set that before you run it
              Content-Type: application/json on a request with a body
 No sign-in or token. The demo data is shared: a write you send changes what every user sees.
 """

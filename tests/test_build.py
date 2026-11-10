@@ -317,3 +317,28 @@ async def test_the_proxy_asks_the_bank_for_json(proxy, sent, expected):
     headers = {"Accept": sent} if sent else {}
     await client.get(f"/r/{run.token}/Core/accountManagement/account/balanceDetails/42", headers=headers)
     assert BANK_CALLS[-1].headers["accept"] == expected
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("agent_sent", [None, "", "something-else"])
+async def test_the_proxy_sends_the_visitors_token_whatever_the_code_sent(proxy, agent_sent):
+    client, run = proxy
+    run.bank_token = "visitor-token-1"
+    headers = {"Accesstoken": agent_sent} if agent_sent is not None else {}
+    await client.get(f"/r/{run.token}/Core/accountManagement/account/balanceDetails/42", headers=headers)
+    assert BANK_CALLS[-1].headers["accesstoken"] == "visitor-token-1"
+    assert "visitor-token-1" not in repr(run)
+
+
+def test_a_visitor_run_needs_a_bank_token_and_the_run_carries_it(client, open_build, monkeypatch):
+    monkeypatch.setattr(build_proxy.settings, "bancs_token_required", True)
+
+    refused = client.post("/api/build/runs", json={"task": "t"})
+    assert refused.status_code == 401 and "Accesstoken" in refused.json()["error"]
+
+    started = client.post("/api/build/runs", json={"task": "t"}, headers={"Accesstoken": "visitor-token-1"})
+    assert started.status_code == 202
+    assert build_proxy.RUNS[build_routes._RUNS[RUN_ID].token].bank_token == "visitor-token-1"
+    # The operator (evals, smoke runs) does not need one.
+    assert client.post("/api/build/runs", json={"task": "c"},
+                       headers={"Authorization": "Bearer " + "x" * 40}).status_code == 202

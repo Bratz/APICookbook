@@ -89,6 +89,10 @@ class Settings(BaseSettings):
         default="1",
         description="BaNCS language code (1 for English)"
     )
+    bancs_token_required: bool = Field(
+        default=False,
+        description="Calls that reach the bank need the visitor's BaNCS access token (Accesstoken header)"
+    )
     
     # ===================== CORS Settings =====================
     cors_origins: List[str] = Field(

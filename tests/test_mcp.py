@@ -21,12 +21,14 @@ def weaver(client, monkeypatch):
     """The app's own weaver (built and registered by the lifespan); bank calls are recorded, never sent."""
     sent = []
 
-    async def fake_call(api_name, endpoint_name, params, ctx=None):
+    async def fake_call(api_name, endpoint_name, params, ctx=None, bank_token=""):
         sent.append((api_name, endpoint_name, params))
+        main.MCP_WEAVER.tokens.append(bank_token)
         return {"created": True}
 
     monkeypatch.setattr(main.MCP_WEAVER, "_execute_api_call", fake_call)
     main.MCP_WEAVER.sent = sent
+    main.MCP_WEAVER.tokens = []
     return main.MCP_WEAVER
 
 
@@ -89,3 +91,24 @@ def test_the_endpoint_answers_without_a_trailing_slash_and_without_a_redirect(cl
                                         "clientInfo": {"name": "test", "version": "1"}}})
 
     assert init.status_code == 200 and init.headers.get("mcp-session-id")
+
+
+@pytest.mark.anyio
+async def test_call_api_needs_the_callers_bank_token_and_passes_it_on(weaver, monkeypatch):
+    from backend.apiweaver import BANK_TOKEN
+    monkeypatch.setattr(main.settings, "bancs_token_required", True)
+    read = {"api_name": "TCS_BaNCS", "endpoint_name": "get_account_balance",
+            "parameters": {"accountReference": "101000000101814"}}
+
+    refused = await _call(weaver, read)
+    assert refused["status"] == "token_required" and weaver.sent == []
+
+    BANK_TOKEN.set("visitor-token-1")  # what the Playground does; an MCP client sends the Accesstoken header
+    assert (await _call(weaver, read))["success"] is True
+    assert weaver.tokens == ["visitor-token-1"]
+
+    held = await _call(weaver, WRITE)  # a held write keeps the token for when it is approved ...
+    page = weaver.held_write(held["approval_id"])
+    assert "visitor-token-1" not in str(page)  # ... and the approval page never shows it
+    await weaver.decide_write(held["approval_id"], True)
+    assert weaver.tokens[-1] == "visitor-token-1"
