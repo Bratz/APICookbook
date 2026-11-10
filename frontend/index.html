@@ -47,7 +47,7 @@
             --ease-out: cubic-bezier(0.16, 1, 0.3, 1); --ease-in: cubic-bezier(0.7, 0, 0.84, 0);
             --dur-micro: 120ms; --dur-short: 220ms;
             --z-sticky-nav: 300; --z-toast: 500;
-            --bar-h: 56px; --sidebar-w: 22rem; --control-h: 38px; --control-h-sm: 32px;
+            --bar-h: 56px; --sidebar-w: 16rem; --control-h: 38px; --control-h-sm: 32px;
 
             /* Minimal: white work surface, warm off-white chrome, one deep green, blue for reads */
             --color-paper: #ffffff; --color-paper-2: #f6f6f2; --color-paper-3: #ededE7;
@@ -237,14 +237,6 @@
         .sidebar-item:hover { background: var(--color-paper-3); color: var(--color-ink); }
         .sidebar-item:active { background: var(--color-rule); }
         .sidebar-item > span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        #endpointList { max-height: 46dvh; overflow-y: auto; }
-        .ref-area > summary { list-style: none; font-weight: 500; }
-        .ref-area > summary::-webkit-details-marker { display: none; }
-        .ref-area[open] > summary { color: var(--color-ink); }
-        .ref-area > button.sidebar-item { padding-left: var(--space-md); }
-        #endpointList .sidebar-item { align-items: flex-start; }
-        #endpointList summary.sidebar-item > span:last-child { white-space: nowrap; }
-        #endpointList .sidebar-item > span:last-child { font-size: var(--text-xs); line-height: 1.6; white-space: normal; overflow-wrap: anywhere; }
         .sidebar-more { padding: var(--space-xs); font-size: var(--text-xs); color: var(--color-muted); }
 
         /* HTTP method: the label face on a hairline key, coloured by verb, never white on a fill */
@@ -537,15 +529,42 @@
         .starter-card p { margin: 0; font-size: var(--text-sm); color: var(--color-ink-2); flex: 1; }
         .starter-card .btn { align-self: flex-start; }
         .welcome-title { font-size: clamp(1.5rem, 1.1rem + 1.4vw, 2.1rem); line-height: 1.15; max-width: 24ch; margin-bottom: var(--space-sm); }
-        .endpoint-search { margin: 0 0 var(--space-xs); }
-        .endpoint-search .form-input { height: var(--control-h-sm); font-size: var(--text-sm); }
+        .endpoint-search { margin: var(--space-xs) 0 0; }
+        .endpoint-search .form-input { width: 100%; }
+        a.sidebar-item { text-decoration: none; }
+
+        /* Reference and Guides: a heading, then cards; an area opens to ruled rows */
+        .tab-head { display: grid; gap: var(--space-2xs); max-width: 40rem; margin-bottom: var(--space-lg); }
+        .tab-title { font-size: var(--text-xl); }
+        .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: var(--space-sm); }
+        .domain-card {
+            display: flex; flex-direction: column; gap: var(--space-2xs);
+            padding: var(--space-md); text-align: left; cursor: pointer;
+            background: var(--color-paper); color: var(--color-ink);
+            border: var(--rule-hair) solid var(--color-rule); border-radius: var(--radius-card);
+            transition: border-color var(--dur-micro) var(--ease-out);
+        }
+        .domain-card:hover { border-color: var(--color-accent); }
+        .domain-name { font-family: var(--font-serif); font-size: var(--text-lg); line-height: 1.2; }
+        .domain-count { font-size: var(--text-xs); font-weight: 700; color: var(--color-accent); }
+        .domain-sample { font-size: var(--text-sm); color: var(--color-muted); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+        .back-link { font-size: var(--text-sm); }
+        .area-title { font-size: var(--text-xl); margin: var(--space-xs) 0 var(--space-sm); }
+        .ref-rows { display: grid; border-top: var(--rule-hair) solid var(--color-rule); }
+        .ref-row {
+            display: flex; align-items: baseline; gap: var(--space-sm); width: 100%;
+            padding: var(--space-xs) var(--space-2xs); border: 0; border-bottom: var(--rule-hair) solid var(--color-rule);
+            background: none; color: var(--color-ink-2); text-align: left; cursor: pointer;
+        }
+        .ref-row:hover { background: var(--color-paper-2); color: var(--color-ink); }
+        .ref-row-desc { min-width: 0; font-size: var(--text-sm); }
+        .ref-row-name { margin-left: auto; font-family: var(--font-outlier); font-size: var(--text-xs); color: var(--color-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 40%; }
+        @media (max-width: 40rem) { .ref-row-name { display: none; } }
         .endpoint-card .param-table { width: 100%; border-collapse: collapse; font-size: var(--text-xs); margin: var(--space-xs) 0; }
         .endpoint-card .param-table th, .endpoint-card .param-table td { text-align: left; padding: var(--space-3xs) var(--space-2xs); border-bottom: var(--rule-hair) solid var(--color-rule); vertical-align: top; }
         .endpoint-card .param-table code { overflow-wrap: anywhere; }
         .endpoint-card pre { max-height: 18lh; overflow: auto; font-size: var(--text-xs); }
         .endpoint-card .choice-row { margin-top: var(--space-sm); }
-        .area-list { list-style: none; padding: 0; margin: var(--space-xs) 0; display: grid; gap: var(--space-xs); }
-        .area-list li { font-size: var(--text-sm); }
         .guide-steps { padding-left: var(--space-md); display: grid; gap: var(--space-xs); }
         .linkish { background: none; border: 0; padding: 0; color: var(--color-link); cursor: pointer; font: inherit; font-size: var(--text-xs); font-weight: 700; text-decoration: none; }
         .linkish:hover { text-decoration: underline; }
@@ -840,55 +859,16 @@
             </details>
 
             <details class="sidebar-section" open>
-                <summary class="sidebar-title">API reference</summary>
-                <form class="endpoint-search" role="search" onsubmit="searchEndpoints(event)">
-                    <input id="endpointSearch" class="form-input" type="search" placeholder="Search, e.g. change phone number"
-                           aria-label="Search the BaNCS endpoints" autocomplete="off">
-                </form>
-                <div id="endpointList">
-                    <div class="typing-indicator" role="status" aria-label="Loading endpoints">
-                        <div class="typing-dot"></div>
-                        <div class="typing-dot"></div>
-                        <div class="typing-dot"></div>
-                    </div>
-                </div>
-            </details>
-
-            <details class="sidebar-section" open>
-                <summary class="sidebar-title">Guides</summary>
-                <div id="guideList"></div>
-            </details>
-
-            <details class="sidebar-section" open>
-                <summary class="sidebar-title">Build</summary>
-                <button type="button" class="sidebar-item" data-needs="build" hidden onclick="showBuild()">
-                    <i data-lucide="hammer" style="width: 16px; height: 16px;" aria-hidden="true"></i>
-                    <span>Build &amp; run</span>
-                </button>
-                <button type="button" class="sidebar-item" onclick="switchTab('playground')">
-                    <i data-lucide="play" style="width: 16px; height: 16px;" aria-hidden="true"></i>
-                    <span>Playground</span>
-                </button>
-                <button type="button" class="sidebar-item" data-needs="build" hidden onclick="startTask('Write a Python script that checks the balance of account 101000000101814, run it, and show the result')">
-                    <i data-lucide="code-2" style="width: 16px; height: 16px;" aria-hidden="true"></i>
-                    <span>Python example</span>
-                </button>
-            </details>
-
-            <details class="sidebar-section" open>
                 <summary class="sidebar-title">Integrate</summary>
                 <button type="button" class="sidebar-item" onclick="showMCPTools()">
                     <i data-lucide="plug" style="width: 16px; height: 16px;" aria-hidden="true"></i>
                     <span>MCP server</span>
                 </button>
-                <button type="button" class="sidebar-item" onclick="fetchOpenAPISpec()">
-                    <i data-lucide="file-text" style="width: 16px; height: 16px;" aria-hidden="true"></i>
-                    <span>OpenAPI spec</span>
-                </button>
-                <button type="button" class="sidebar-item" onclick="exportPostmanCollection()">
+                <!-- Postman, Insomnia and Hoppscotch all import this file directly -->
+                <a class="sidebar-item" href="/api/openapi?version=3.0" download="bancs-openapi.json">
                     <i data-lucide="download" style="width: 16px; height: 16px;" aria-hidden="true"></i>
-                    <span>Postman collection</span>
-                </button>
+                    <span>OpenAPI spec (JSON)</span>
+                </a>
             </details>
         </aside>
         
@@ -899,6 +879,14 @@
                 <button type="button" class="tab active" onclick="switchTab('chat', this)">
                     <i data-lucide="message-circle" style="width: 16px; height: 16px;" aria-hidden="true"></i>
                     <span>Chat</span>
+                </button>
+                <button type="button" class="tab" onclick="switchTab('reference', this)">
+                    <i data-lucide="library" style="width: 16px; height: 16px;" aria-hidden="true"></i>
+                    <span>Reference</span>
+                </button>
+                <button type="button" class="tab" onclick="switchTab('guides', this)">
+                    <i data-lucide="map" style="width: 16px; height: 16px;" aria-hidden="true"></i>
+                    <span>Guides</span>
                 </button>
                 <button type="button" class="tab" onclick="switchTab('playground', this)">
                     <i data-lucide="play" style="width: 16px; height: 16px;" aria-hidden="true"></i>
@@ -921,8 +909,8 @@
                                 <div class="starter-grid">
                                     <div class="starter-card">
                                         <h3>Find an endpoint</h3>
-                                        <p>Search the 950 endpoints on the left, or browse them by business area. Each one opens with its parameters, body and a curl command.</p>
-                                        <button type="button" class="btn btn-secondary btn-sm" onclick="showApiAreas()">Browse API areas</button>
+                                        <p>Search the 950 endpoints, or browse them by business area. Each one opens with its parameters, body and a curl command.</p>
+                                        <button type="button" class="btn btn-secondary btn-sm" onclick="switchTab('reference')">Open the reference</button>
                                     </div>
                                     <div class="starter-card" data-needs="build" hidden>
                                         <h3>Build &amp; run</h3>
@@ -962,6 +950,34 @@
                 </div>
             </div>
             
+            <!-- Reference: search, then one card per business area; an area opens to its endpoints -->
+            <div id="referenceTab" class="tab-content hidden">
+                <div class="tab-head">
+                    <h2 class="tab-title">API reference</h2>
+                    <p class="text-muted" id="refSummary">The BaNCS endpoints by business area.</p>
+                    <form class="endpoint-search" role="search" onsubmit="searchEndpoints(event)">
+                        <input id="endpointSearch" class="form-input" type="search" placeholder="Search, e.g. change phone number"
+                               aria-label="Search the BaNCS endpoints" autocomplete="off">
+                    </form>
+                </div>
+                <div id="endpointList">
+                    <div class="typing-indicator" role="status" aria-label="Loading endpoints">
+                        <div class="typing-dot"></div>
+                        <div class="typing-dot"></div>
+                        <div class="typing-dot"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Guides: multi-step flows, one card each -->
+            <div id="guidesTab" class="tab-content hidden">
+                <div class="tab-head">
+                    <h2 class="tab-title">Guides</h2>
+                    <p class="text-muted">Multi-step flows on real BaNCS operations, each tested against the demo bank. Open one for its steps.</p>
+                </div>
+                <div id="guideList" class="card-grid"></div>
+            </div>
+
             <!-- Enhanced Playground Tab -->
             <div id="playgroundTab" class="tab-content hidden">
                 <div class="playground-container" id="playgroundContainer">
@@ -1549,28 +1565,46 @@
             return (AREA_ALIASES[area] || area).replace(/([a-z])([A-Z])/g, '$1 $2').replace(/^./, c => c.toUpperCase());
         }
 
+        function endpointRows(eps) {
+            return `<div class="ref-rows">${eps.map(e => `
+                <button type="button" class="ref-row" onclick="showEndpointCard(${jsArg(e.name)})">
+                    <span class="method-badge method-${escapeHtml((e.method || '').toLowerCase())}">${escapeHtml(e.method || '')}</span>
+                    <span class="ref-row-desc">${escapeHtml(e.description || e.name)}</span>
+                    <span class="ref-row-name">${escapeHtml(e.name)}</span>
+                </button>`).join('')}</div>`;
+        }
+
         function displayEndpoints(endpoints) {
             const container = document.getElementById('endpointList');
             if (!endpoints || endpoints.length === 0) {
                 container.innerHTML = '<div class="text-muted text-small">No endpoints available</div>';
                 return;
             }
-            const areas = {};
-            endpoints.forEach(e => { (areas[areaLabel(e.category || 'other')] ||= []).push(e); });
-            const sorted = Object.keys(areas).sort();
-            container.innerHTML = sorted.map(a => `<details class="ref-area">
-                <summary class="sidebar-item"><span>${escapeHtml(a)}</span><span class="sidebar-count">${areas[a].length}</span></summary></details>`).join('');
-            container.querySelectorAll('.ref-area').forEach((d, n) => d.addEventListener('toggle', () => {
-                if (!d.open || d.dataset.filled) return;
-                d.dataset.filled = '1';
-                d.insertAdjacentHTML('beforeend', areas[sorted[n]].map(e => `
-                    <button type="button" class="sidebar-item" onclick="showEndpointCard(${jsArg(e.name)})" title="${escapeHtml(e.name)}">
-                        <span class="method-badge method-${escapeHtml(e.method.toLowerCase())}">${escapeHtml(e.method)}</span>
-                        <span class="text-small">${escapeHtml(e.description || e.name)}</span>
-                    </button>`).join(''));
-            }));
+            state.areas = {};
+            endpoints.forEach(e => { (state.areas[areaLabel(e.category || 'other')] ||= []).push(e); });
+            showAreaGrid();
         }
-        
+
+        function showAreaGrid() {
+            const names = Object.keys(state.areas || {}).sort();
+            document.getElementById('refSummary').textContent =
+                `${state.endpoints.length} endpoints in ${names.length} business areas. Search, or open an area.`;
+            document.getElementById('endpointList').innerHTML = `<div class="card-grid">${names.map(a => `
+                <button type="button" class="domain-card" onclick="showArea(${jsArg(a)})">
+                    <span class="domain-name">${escapeHtml(a)}</span>
+                    <span class="domain-count">${state.areas[a].length} endpoint${state.areas[a].length === 1 ? '' : 's'}</span>
+                    <span class="domain-sample">${escapeHtml(state.areas[a].slice(0, 3).map(e => e.description || e.name).join(' · '))}</span>
+                </button>`).join('')}</div>`;
+        }
+
+        function showArea(area) {
+            switchTab('reference');
+            document.getElementById('endpointSearch').value = '';
+            document.getElementById('endpointList').innerHTML =
+                `<button type="button" class="linkish back-link" onclick="showAreaGrid()">← All areas</button>
+                 <h3 class="area-title">${escapeHtml(area)}</h3>` + endpointRows(state.areas[area] || []);
+        }
+
         // Load MCP tools
         async function loadMCPTools() {
             try {
@@ -2512,54 +2546,6 @@
            showNotification('Ready to test MCP tool', 'success');
        }
        
-       async function fetchOpenAPISpec() {
-           try {
-               const response = await fetchWithRetry('/api/openapi?version=3.0');
-               const spec = await response.json();
-               
-               switchTab('chat', document.querySelector('.tab'));
-               addMessage('Here\'s the OpenAPI specification:', 'assistant');
-               
-               const messageDiv = document.createElement('div');
-               messageDiv.className = 'message assistant';
-               messageDiv.innerHTML = createCodeBlockHTML(
-                   JSON.stringify(spec, null, 2),
-                   'json'
-               );
-               document.getElementById('chatMessages').appendChild(messageDiv);
-               
-               if (typeof Prism !== 'undefined') {
-                   Prism.highlightAll();
-               }
-               
-           } catch (error) {
-               console.error('Failed to fetch OpenAPI spec:', error);
-               showNotification('Failed to fetch OpenAPI specification', 'error');
-           }
-       }
-       
-       async function exportPostmanCollection() {
-           try {
-               const response = await fetchWithRetry('/api/hoppscotch/collection');
-               const collection = await response.json();
-               
-               const blob = new Blob([JSON.stringify(collection, null, 2)], { type: 'application/json' });
-               const url = URL.createObjectURL(blob);
-               const a = document.createElement('a');
-               a.href = url;
-               a.download = 'tcs-bancs-api-collection.json';
-               document.body.appendChild(a);
-               a.click();
-               document.body.removeChild(a);
-               URL.revokeObjectURL(url);
-               
-               showNotification('Collection exported successfully', 'success');
-           } catch (error) {
-               console.error('Failed to export collection:', error);
-               showNotification('Failed to export collection', 'error');
-           }
-       }
-       
        function showMCPTools() {
            switchTab('mcp');
        }
@@ -2968,20 +2954,6 @@
                : 'Check the request, then press Execute.', 'info');
        }
 
-       async function showApiAreas() {
-           switchTab('chat', document.querySelector('.tab'));
-           let eps = state.allEndpoints;
-           if (!eps) {
-               try { eps = state.allEndpoints = await (await fetch('/api/endpoints')).json(); } catch (e) { eps = []; }
-           }
-           const areas = {};
-           eps.forEach(e => { (areas[e.category || 'other'] ||= []).push(e); });
-           const sorted = Object.entries(areas).sort((a, b) => b[1].length - a[1].length);
-           addPanel('API areas', `<p>${eps.length} endpoints in ${sorted.length} areas. Open one, or search on the left.</p>
-               <ul class="area-list">${sorted.map(([area, list]) => `<li><strong>${escapeHtml(area)}</strong> <span class="text-muted">(${list.length})</span><br>
-               ${list.slice(0, 4).map(e => `<button type="button" class="linkish" onclick="showEndpointCard(${jsArg(e.name)})">${escapeHtml(e.description || e.name)}</button>`).join(' · ')}</li>`).join('')}</ul>`);
-       }
-
        // ---------------------------------------------------------------- guides: real multi-step flows
        // Each step is [method, path, what it does]; a step's output feeds the next. Writes are maker-checker where the bank is.
        const GUIDES = [
@@ -3043,8 +3015,14 @@
        ];
 
        function displayGuides() {
-           document.getElementById('guideList').innerHTML = GUIDES.map((g, i) => `
-               <button type="button" class="sidebar-item" onclick="showGuide(${i})"><span>${escapeHtml(g.title)}</span></button>`).join('');
+           document.getElementById('guideList').innerHTML = GUIDES.map((g, i) => {
+               const writes = g.steps.filter(([m]) => m !== 'GET').length;
+               return `<button type="button" class="domain-card" onclick="showGuide(${i})">
+                   <span class="domain-name">${escapeHtml(g.title)}</span>
+                   <span class="domain-count">${g.steps.length} steps${writes ? ` · ${writes} change${writes === 1 ? '' : 's'} bank data` : ' · read only'}</span>
+                   <span class="domain-sample">${escapeHtml(g.steps.map(([, , why]) => why).join(' '))}</span>
+               </button>`;
+           }).join('');
        }
 
        function endpointFor(method, path) {
@@ -3073,11 +3051,6 @@
            document.getElementById('chatMessages').scrollTo({ top: 0, behavior: 'smooth' });
        }
 
-       function showBuild() {
-           switchTab('chat');
-           document.getElementById('messageInput').focus();
-       }
-
        function showAuthentication() {
            switchTab('chat', document.querySelector('.tab'));
            const curl = "curl 'https://demoapps.tcsbancs.com/Core/accountManagement/account/balanceDetails/101000000101814' \\\n  -H 'entity: GPRDTTSTOU' -H 'userId: 1' -H 'languageCode: 1'";
@@ -3091,24 +3064,22 @@
 
        function clearEndpointSearch() {
            document.getElementById('endpointSearch').value = '';
-           loadEndpoints();
+           showAreaGrid();
        }
 
        async function searchEndpoints(event) {
            if (event) event.preventDefault();
            const query = document.getElementById('endpointSearch').value.trim();
-           if (!query) { loadEndpoints(); return; }
+           if (!query) { showAreaGrid(); return; }
            const list = document.getElementById('endpointList');
            list.innerHTML = '<div class="text-muted text-small">Searching…</div>';
            try {
                const r = await fetch('/api/knowledge/search', { method: 'POST', headers: { 'Content-Type': 'application/json' },
                    body: JSON.stringify({ query, limit: 12 }) });
                const hits = (await r.json()).results || [];
-               list.innerHTML = hits.length ? hits.map(h => `
-                   <button type="button" class="sidebar-item" onclick="showEndpointCard(${jsArg(h.endpoint_name)})" title="${escapeHtml(h.endpoint_name)}">
-                       <span class="method-badge method-${escapeHtml((h.method || '').toLowerCase())}">${escapeHtml(h.method || '')}</span>
-                       <span class="text-small">${escapeHtml(h.description || h.endpoint_name)}</span>
-                   </button>`).join('') + '<button type="button" class="sidebar-more linkish" onclick="clearEndpointSearch()">Clear search</button>'
+               list.innerHTML = hits.length
+                   ? '<button type="button" class="linkish back-link" onclick="clearEndpointSearch()">← All areas</button>'
+                     + endpointRows(hits.map(h => ({ name: h.endpoint_name, method: h.method, description: h.description })))
                    : '<div class="text-muted text-small">No match. Try other words, or describe the task in the chat.</div>';
            } catch (e) {
                list.innerHTML = '<div class="text-muted text-small">Search failed. Try again.</div>';
