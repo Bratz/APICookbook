@@ -305,6 +305,29 @@
             .ref-main { padding: var(--space-lg) var(--space-md); }
         }
 
+        /* ---------- Guide pages ---------- */
+        .guide-page:not([hidden]) { display: grid; gap: var(--space-sm); max-width: 52rem; }
+        .guide-back { font-weight: 700; color: var(--color-link); text-decoration: none; font-size: var(--text-sm); }
+        .guide-meta { font-size: var(--text-sm); font-weight: 700; color: var(--color-accent); }
+        .guide-page-steps { list-style: none; margin: var(--space-sm) 0 0; padding: 0; display: grid; gap: var(--space-sm); }
+        .guide-page-steps li { display: flex; gap: var(--space-md); padding: var(--space-md) var(--space-lg); border-radius: 10px; background: var(--color-paper); box-shadow: 4px 4px 30px rgb(0 0 0 / 0.06); border: var(--rule-hair) solid var(--color-rule); }
+        .guide-num { flex: none; width: 36px; height: 36px; border-radius: 999px; background: var(--color-graphite); color: var(--color-graphite-ink); display: flex; align-items: center; justify-content: center; font-weight: 800; }
+        .guide-step-body { flex: 1 1 auto; min-width: 0; display: grid; gap: var(--space-xs); }
+        .guide-step-body p { color: var(--color-ink-2); line-height: 1.55; }
+        .guide-step-links { display: flex; flex-wrap: wrap; gap: var(--space-md); }
+        .guide-step-links .linkish { font-size: var(--text-sm); }
+        .guide-build { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-md); margin-top: var(--space-md); padding: var(--space-lg); border-radius: var(--radius-card); background: var(--color-paper-2); }
+        .guide-build p { max-width: 36em; line-height: 1.55; }
+
+        /* ---------- Playground with its History drawer ---------- */
+        .pg-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-sm); margin-bottom: var(--space-md); }
+        .pg-body { display: flex; flex-wrap: wrap; gap: var(--space-md); align-items: flex-start; }
+        .pg-body > .playground-container { flex: 999 1 40rem; min-width: 0; }
+        .history-drawer:not([hidden]) { flex: 1 1 18rem; max-width: 24rem; min-width: 0; display: grid; gap: var(--space-sm); padding: var(--space-md); border-radius: var(--radius-card); background: var(--color-paper-2); }
+        .history-drawer-head { display: flex; justify-content: space-between; align-items: center; gap: var(--space-xs); }
+        .history-drawer-head h2 { font-size: var(--text-lg); }
+        @media (max-width: 60rem) { .history-drawer:not([hidden]) { max-width: none; } }
+
         /* ---------- Shell ---------- */
         .app-container {
             display: grid;
@@ -1193,15 +1216,24 @@
 
                         <!-- Guides: multi-step flows, one card each -->
             <div id="guidesTab" class="tab-content hidden" role="region" aria-label="Guides">
-                <div class="tab-head">
+                <div class="tab-head" id="guidesHead">
                     <h1 class="tab-title">Guides</h1>
                     <p class="text-muted">Multi-step flows on real BaNCS operations, each tested against the demo bank. Open one for its steps.</p>
                 </div>
                 <div id="guideList" class="card-grid"></div>
+                <article id="guideView" class="guide-page" hidden></article>
             </div>
 
             <!-- Enhanced Playground Tab -->
             <div id="playgroundTab" class="tab-content hidden" role="region" aria-label="Playground">
+                <div class="pg-head">
+                    <h1 class="tab-title">Playground</h1>
+                    <button type="button" class="btn btn-secondary btn-sm" id="historyToggle" onclick="toggleHistory()" aria-expanded="false" aria-controls="historyDrawer">
+                        <i data-lucide="clock" style="width: 14px; height: 14px;" aria-hidden="true"></i>
+                        History <span id="historyCount"></span>
+                    </button>
+                </div>
+                <div class="pg-body">
                 <div class="playground-container" id="playgroundContainer">
                     <!-- Request Section -->
                     <div class="playground-section">
@@ -1367,6 +1399,21 @@
                         </div>
                     </div>
                 </div>
+                <aside id="historyDrawer" class="history-drawer" aria-label="Request history" hidden>
+                    <div class="history-drawer-head">
+                        <h2>History</h2>
+                        <div class="flex gap-2">
+                            <button type="button" class="btn btn-ghost btn-sm" onclick="clearHistory()">Clear</button>
+                            <button type="button" class="btn btn-ghost btn-sm btn-icon" onclick="toggleHistory(false)" aria-label="Close history">
+                                <i data-lucide="x" style="width: 16px; height: 16px;" aria-hidden="true"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div id="historyList">
+                        <div class="text-muted">No history yet</div>
+                    </div>
+                </aside>
+                </div>
             </div>
             
             <!-- MCP Tools Tab -->
@@ -1395,20 +1442,7 @@
             </div>
             
             <!-- History Tab -->
-            <div id="historyTab" class="tab-content hidden" role="region" aria-label="History">
-                <div class="card">
-                    <div class="flex justify-between items-center mb-3">
-                        <h1 class="tab-title">Request history</h1>
-                        <button class="btn btn-danger btn-sm" onclick="clearHistory()">
-                            <i data-lucide="trash-2" style="width: 14px; height: 14px;"></i>
-                            Clear All
-                        </button>
-                    </div>
-                    <div id="historyList">
-                        <div class="text-muted">No history yet</div>
-                    </div>
-                </div>
-            </div>
+
         </main>
     </div>
     
@@ -1438,6 +1472,7 @@
                 
                 // Load saved history
                 loadHistoryFromStorage();
+                displayHistory();
                 
                 // Check API status
                 await checkStatus();
@@ -2247,8 +2282,17 @@
                const area = Object.keys(state.areas).find(a => slugify(a) === sub);
                if (area) return showArea(area, { fromRouter: true });
            }
+           if (name === 'guides' && sub) {
+               const i = GUIDES.findIndex(g => slugify(g.title) === sub);
+               if (i >= 0) return showGuide(i, { fromRouter: true });
+           }
            showPage(name);
            if (name === 'reference' && !sub && state.areas) showAreaGrid();
+           if (name === 'guides') showGuideList();
+           if (name === 'playground') {
+               document.getElementById('historyDrawer').hidden = true;
+               document.getElementById('historyToggle').setAttribute('aria-expanded', 'false');
+           }
        }
        window.addEventListener('popstate', route);
        window.addEventListener('hashchange', route);
@@ -2259,6 +2303,13 @@
        }
 
        function showPage(tabName) {
+           if (tabName === 'history') {  // History is a drawer in the Playground now
+               showPage('playground');
+               document.getElementById('historyDrawer').hidden = false;
+               document.getElementById('historyToggle').setAttribute('aria-expanded', 'true');
+               displayHistory();
+               return;
+           }
            document.body.dataset.page = tabName;
            document.querySelectorAll('.top-nav a').forEach(link => {
                if (link.dataset.page === tabName) link.setAttribute('aria-current', 'page');
@@ -2694,14 +2745,22 @@
            }
            
            saveHistoryToStorage();
-           
-           if (!document.getElementById('historyTab').classList.contains('hidden')) {
-               displayHistory();
-           }
+           displayHistory();
+       }
+
+       // History opens beside the Playground's request and response; #/history opens it too.
+       function toggleHistory(open) {
+           const drawer = document.getElementById('historyDrawer');
+           const show = open ?? drawer.hidden;
+           drawer.hidden = !show;
+           document.getElementById('historyToggle').setAttribute('aria-expanded', String(show));
+           if (show) displayHistory();
+           setRoute(show ? 'history' : 'playground');
        }
        
        function displayHistory() {
            const container = document.getElementById('historyList');
+           document.getElementById('historyCount').textContent = state.playgroundHistory.length ? `(${state.playgroundHistory.length})` : '';
            
            if (state.playgroundHistory.length === 0) {
                container.innerHTML = '<div class="text-muted">No history yet</div>';
@@ -3357,7 +3416,7 @@
                return `<button type="button" class="domain-card" onclick="showGuide(${i})">
                    <i data-lucide="${iconFor(g.title)}" class="domain-icon" aria-hidden="true"></i>
                    <span class="domain-name">${escapeHtml(g.title)}</span>
-                   <span class="domain-count">${g.steps.length} steps${writes ? ` · ${writes} change${writes === 1 ? '' : 's'} bank data` : ' · read only'}</span>
+                   <span class="domain-count">${g.steps.length} steps${writes ? ` · ${writes} change${writes === 1 ? '' : 's'} to bank data` : ' · read only'}</span>
                    <span class="domain-sample">${escapeHtml(g.steps.map(([, , why]) => why).join(' '))}</span>
                    <span class="card-link">Open the guide →</span>
                </button>`;
@@ -3369,21 +3428,56 @@
            return (state.endpoints || []).find(e => e.method === method && e.path.trim() === path);
        }
 
-       function showGuide(i) {
-           switchTab('chat');
+       function showGuideList() {
+           document.getElementById('guidesHead').hidden = false;
+           document.getElementById('guideList').hidden = false;
+           document.getElementById('guideView').hidden = true;
+       }
+
+       // One guide as a page of its own: numbered steps, each linked to its operation; then Build & run.
+       function showGuide(i, { fromRouter = false } = {}) {
            const g = GUIDES[i];
-           const el = addPanel('Guide', `<h3>${escapeHtml(g.title)}</h3><ol class="guide-steps">${g.steps.map(([m, path, why], n) => `<li>
-               <div class="plan-step-head"><span class="method-badge method-${m.toLowerCase()}">${m}</span>
-               <button type="button" class="linkish" data-step="${n}"><code>${escapeHtml(path)}</code></button></div>
-               <span class="text-small text-muted">${escapeHtml(why)}</span></li>`).join('')}</ol>
-               ${state.buildAvailable ? `<p class="text-small text-muted">Build &amp; run: “${escapeHtml(g.task)}”</p>
-               <button type="button" class="btn btn-secondary btn-sm" data-act="build">Build &amp; run it</button>` : ''}`);
-           el.querySelectorAll('[data-step]').forEach(b => b.addEventListener('click', () => {
-               const [m, path] = g.steps[b.dataset.step];
-               const ep = endpointFor(m, path);
+           if (!g) return;
+           showPage('guides');
+           if (!fromRouter) setRoute('guides/' + slugify(g.title));
+           document.title = `${g.title} · TCS BaNCS API Cookbook`;
+           const writes = g.steps.filter(([m]) => m !== 'GET').length;
+           const view = document.getElementById('guideView');
+           view.innerHTML = `
+               <a class="guide-back" href="#/guides">← All guides</a>
+               <h1 class="tab-title">${escapeHtml(g.title)}</h1>
+               <p class="guide-meta">${g.steps.length} steps · ${writes ? `${writes} change${writes === 1 ? '' : 's'} to bank data` : 'read only'}</p>
+               <ol class="guide-page-steps">${g.steps.map(([m, path, why], n) => `<li>
+                   <span class="guide-num" aria-hidden="true">${n + 1}</span>
+                   <div class="guide-step-body">
+                       <div class="ref-op-line"><span class="method-badge method-${m.toLowerCase()}">${m}</span><code>/Core${escapeHtml(path)}</code></div>
+                       <p>${escapeHtml(why)}</p>
+                       <div class="guide-step-links">
+                           <button type="button" class="linkish" data-ref="${n}">Read the reference</button>
+                           <button type="button" class="linkish" data-try="${n}">Try this step</button>
+                       </div>
+                   </div></li>`).join('')}</ol>
+               ${state.buildAvailable ? `<div class="guide-build">
+                   <p>Run the whole flow: Build &amp; run writes the code for these steps and runs it. Every change to bank data waits for your approval.</p>
+                   <button type="button" class="btn btn-primary" data-act="build">Build &amp; run this guide</button></div>` : ''}`;
+           document.getElementById('guidesHead').hidden = true;
+           document.getElementById('guideList').hidden = true;
+           view.hidden = false;
+           document.getElementById('guidesTab').scrollTop = 0;
+           const stepEndpoint = (n) => { const [m, path] = g.steps[n]; return endpointFor(m, path); };
+           view.querySelectorAll('[data-ref]').forEach(b => b.addEventListener('click', () => {
+               const ep = stepEndpoint(b.dataset.ref);
                ep ? showEndpointCard(ep.name) : showNotification('That endpoint is not in the loaded spec.', 'error');
            }));
-           el.querySelector('[data-act="build"]')?.addEventListener('click', () => startTask(g.task));
+           view.querySelectorAll('[data-try]').forEach(b => b.addEventListener('click', async () => {
+               const ep = stepEndpoint(b.dataset.try);
+               if (!ep) return showNotification('That endpoint is not in the loaded spec.', 'error');
+               try {
+                   const r = await fetch('/api/endpoint/' + encodeURIComponent(ep.name));
+                   tryInPlayground(r.ok ? await r.json() : ep);
+               } catch (e) { tryInPlayground(ep); }
+           }));
+           view.querySelector('[data-act="build"]')?.addEventListener('click', () => startTask(g.task));
        }
 
        // Two-tone icons drawn for this portal: thin lines over offset light-green shapes, 56 px.
