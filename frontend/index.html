@@ -2999,11 +2999,10 @@
                ['GET', '/accountManagement/account/details/{accountReference}', 'Read the new account back.']],
              task: 'Create an individual customer named Ada Test, open a savings account for that customer, then fetch the new account details' },
            { title: 'Customer 360', steps: [
-               ['GET', '/customerManagement/customer/details', 'The customer record.'],
-               ['GET', '/accountManagement/account/list', 'Every account the customer holds.'],
-               ['GET', '/accountManagement/account/balanceDetails/{accountReference}', 'The balance of each account.'],
+               ['GET', '/customerManagement/customer/detail', 'The customer record (JSON; /details fails when a customer has no postal address).'],
+               ['GET', '/accountManagement/account/CASABalanceList', 'Every current and savings account, with its balance.'],
                ['GET', '/loans/accountConductDetails/{customerReference}', 'How the customer has run their loans.']],
-             task: 'Pick a real customer, then show their details, all their accounts with balances, and their loan account conduct' },
+             task: 'For customer 146190, show their details, all their accounts with balances, and their loan account conduct' },
            { title: 'Hold funds, then release them', steps: [
                ['POST', '/accountManagement/account/cashBlock', 'Block an amount on an account; keep the cash block ID.'],
                ['GET', '/accountManagement/account/blockList/{accountReference}', 'See the block on the account.'],
@@ -3026,21 +3025,23 @@
                ['POST', '/accountManagement/account/accountBalanceStatement', 'Opening and closing balances for the period.']],
              task: 'For a real account, fetch its transactions and balance statement and write them to statement.csv' },
            { title: 'Part-withdraw a term deposit', steps: [
-               ['GET', '/deposits/depositList', 'Find the deposit.'],
+               ['GET', '/accountManagement/fecthDepositList', 'Find the customer’s deposits (dealPosNum is the accountId below).'],
                ['GET', '/deposits/partWithdrawal/trialPartWithdrawal', 'Preview what a withdrawal would do.'],
                ['POST', '/deposits/partWithdrawal', 'Make the withdrawal; it waits for authorisation.'],
                ['POST', '/deposits/partWithdrawal/auth', 'Authorise it.']],
-             task: 'Find a real term deposit and show a trial part withdrawal of 100 for it, without making the withdrawal' },
-           { title: 'Deposit maturity planner', steps: [
-               ['GET', '/deposits/deposits/productList', 'Term and recurring deposit products.'],
-               ['GET', '/deposits/deposits/maturityGoalCalculator', 'Maturity or instalment amount for a goal.'],
-               ['GET', '/deposits/productMaturityDetails', 'The product’s maturity rules.']],
-             task: 'List the term deposit products, then calculate the maturity amount of 10000 for 12 months on the first one' },
+             task: 'For customer 146048, find their term deposit 101000000105385 and show a trial part withdrawal of 100 for it, without making the withdrawal' },
+           { title: 'Term deposit review', steps: [
+               ['GET', '/accountManagement/fecthDepositList', 'The customer’s term deposits.'],
+               ['GET', '/deposits/deposit/statement/{depositAccountReference}', 'What happened on one deposit.'],
+               ['GET', '/deposits/fetchDepositRelations', 'Who is linked to it, and its deal events.'],
+               ['GET', '/accountManagement/account/interestCondition', 'The rate it earns.']],
+             task: 'For customer 146190, list their term deposits, then show the statement, relations and interest rate of the first one' },
            { title: 'Loan reschedule what-if', steps: [
+               ['GET', '/loans/enquiry/loanList/{primaryBorrowerId}', 'Find a borrower’s active loans.'],
                ['GET', '/loans/repaymentSchedule/{loanReference}', 'The current schedule.'],
                ['GET', '/loans/repayments/simulateLoanReSchedule', 'Simulate the new schedule.'],
                ['POST', '/loans/repayments/loanReSchedule', 'Apply it.']],
-             task: 'For a real loan, show its repayment schedule and a simulated reschedule over a longer term, without applying it' },
+             task: 'For loan 101000000110716, show its repayment schedule and a simulated reschedule from 12 to 24 months, without applying it' },
            { title: 'Secure a loan with collateral', steps: [
                ['POST', '/collateral/vehicleAndHeavyMachinery', 'Register a vehicle as collateral; keep its reference.'],
                ['POST', '/collateral/collateralLink', 'Link it to the loan.'],
