@@ -4,7 +4,7 @@ Enhanced with improved error handling, validation, and fallback mechanisms
 BERT/PyTorch are now completely optional
 """
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, UploadFile, File, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, WebSocket, WebSocketDisconnect, UploadFile, File, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -13,6 +13,7 @@ import asyncio
 import contextlib
 import logging
 import json
+import hmac
 import os
 import re
 import sys
@@ -808,6 +809,14 @@ async def mcp_rate_limit(request: Request, call_next):
     return await call_next(request)
 
 
+def operator_only(authorization: str = Header("")):
+    """Routes that change the shared knowledge base, or call the bank on the server's behalf: RUNNER_TOKEN only.
+    (Caddy also blocks the two knowledge-base writes; this covers every route, behind any proxy.)"""
+    token = os.getenv("RUNNER_TOKEN", "")
+    if len(token) < 32 or not hmac.compare_digest(authorization.encode(), f"Bearer {token}".encode()):
+        raise HTTPException(status_code=403, detail="Operator only.")
+
+
 class WriteDecision(BaseModel):
     approve: bool
 
@@ -1182,7 +1191,7 @@ async def search_knowledge(request: Request):
             content={"error": f"Knowledge search failed: {str(e)}"}
         )
 
-@app.post("/api/knowledge/add")
+@app.post("/api/knowledge/add", dependencies=[Depends(operator_only)])
 async def add_to_knowledge(request: Request):
     """Add new information to the knowledge base"""
     request_id = str(uuid.uuid4())[:8]
@@ -1273,7 +1282,7 @@ async def get_knowledge_endpoints():
             content={"error": f"Failed to get endpoints: {str(e)}"}
         )
 
-@app.delete("/api/knowledge/{endpoint_name}")
+@app.delete("/api/knowledge/{endpoint_name}", dependencies=[Depends(operator_only)])
 async def remove_from_knowledge(endpoint_name: str):
     """Remove an endpoint from the knowledge base"""
     request_id = str(uuid.uuid4())[:8]
@@ -2120,7 +2129,7 @@ async def export_to_hoppscotch():
         logger.error(f"Hoppscotch export error: {e}")
         raise HTTPException(status_code=500, detail="Failed to export collections")
 
-@app.post("/api/hoppscotch/import")
+@app.post("/api/hoppscotch/import", dependencies=[Depends(operator_only)])
 async def import_from_hoppscotch(file: UploadFile = File(...)):
     """Import Hoppscotch collection and add to knowledge base"""
     try:
@@ -2351,7 +2360,7 @@ async def get_bert_status():
     
     return status
 
-@app.post("/api/developer/reload-knowledge")
+@app.post("/api/developer/reload-knowledge", dependencies=[Depends(operator_only)])
 async def reload_knowledge_base():
     """Reload the knowledge base"""
     try:
@@ -2439,7 +2448,7 @@ async def get_recent_logs(level: str = "INFO", limit: int = 100):
             "error": str(e)
         }
 
-@app.post("/api/developer/test-endpoint")
+@app.post("/api/developer/test-endpoint", dependencies=[Depends(operator_only)])
 async def test_endpoint(endpoint_name: str, params: Optional[Dict[str, Any]] = None):
     """Test a specific endpoint with optional parameters"""
     try:

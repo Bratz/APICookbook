@@ -73,12 +73,29 @@ def test_knowledge_search_requires_query(client):
     assert client.post("/api/knowledge/search", json={}).status_code == 400
 
 
-def test_knowledge_add_and_delete(client):
+def test_knowledge_add_and_delete(client, monkeypatch):
+    monkeypatch.setenv("RUNNER_TOKEN", "op-token-0123456789abcdef0123456789abcdef")
+    op = {"Authorization": "Bearer op-token-0123456789abcdef0123456789abcdef"}
     body = {"endpoint_name": "PytestEP", "data": {"method": "GET", "url": "/pytest", "description": "tmp"}}
-    assert client.post("/api/knowledge/add", json=body).status_code == 200
+    assert client.post("/api/knowledge/add", json=body, headers=op).status_code == 200
     assert any(e["name"] == "PytestEP" for e in client.get("/api/knowledge/endpoints").json()["endpoints"])
-    assert client.delete("/api/knowledge/PytestEP").status_code == 200
-    assert client.delete("/api/knowledge/PytestEP").status_code == 404
+    assert client.delete("/api/knowledge/PytestEP", headers=op).status_code == 200
+    assert client.delete("/api/knowledge/PytestEP", headers=op).status_code == 404
+
+
+SHARED_STATE_ROUTES = [("POST", "/api/knowledge/add"), ("DELETE", "/api/knowledge/GetAccountBalance"),
+                       ("POST", "/api/developer/reload-knowledge"), ("POST", "/api/developer/test-endpoint?endpoint_name=GetAccountBalance"),
+                       ("POST", "/api/hoppscotch/import")]
+
+
+@pytest.mark.parametrize("token", ["", "op-token-0123456789abcdef0123456789abcdef"])
+def test_routes_that_change_shared_state_are_operator_only(client, monkeypatch, token):
+    # No token configured (""): even a bare "Bearer " must not pass. Token configured: a wrong one must not.
+    monkeypatch.setenv("RUNNER_TOKEN", token)
+    for method, path in SHARED_STATE_ROUTES:
+        for auth in ({}, {"Authorization": "Bearer "}, {"Authorization": "Bearer wrong"}):
+            assert client.request(method, path, headers=auth).status_code == 403, (method, path, auth)
+    assert any(e["name"] == "GetAccountBalance" for e in client.get("/api/knowledge/endpoints").json()["endpoints"])
 
 
 def test_semantic_search_finds_by_meaning(client):
