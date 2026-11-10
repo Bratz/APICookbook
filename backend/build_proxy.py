@@ -38,7 +38,7 @@ logger = logging.getLogger(__name__)
 WRITE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 WRITE_TIMEOUT_S = 120.0  # a held write the visitor doesn't answer counts as rejected
 TOKEN_NEEDED = ("This call reaches the bank, so it needs your BaNCS access token. Add it under "
-                "Get started > Authentication, or send it in the Accesstoken header.")
+                "Authentication & headers on the home page, or send it in the Accesstoken header.")
 RUN_TTL_S = 20 * 60  # a token dies with its run, or after this, whichever comes first
 MAX_CALLS_PER_RUN = 300
 MAX_BODY_BYTES = 256 * 1024
