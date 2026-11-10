@@ -3179,6 +3179,8 @@
                available = r.ok && (await r.json()).available === true;
            } catch (e) {}
            state.buildAvailable = state.buildMode = available;
+           // A guide or an operation opened from a link drew before this answer came: draw it again with its Build & run button.
+           if (available && /^#\/(guides\/|reference\/[^/]+\/)/.test(location.hash)) route();
            document.querySelectorAll('[data-needs="build"]').forEach(el => { el.hidden = !available; });
            document.querySelectorAll('[data-needs="nobuild"]').forEach(el => { el.hidden = available; });
            document.getElementById('agentNote').textContent = available
