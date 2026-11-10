@@ -234,8 +234,13 @@
         .sidebar-item:active { background: var(--color-rule); }
         .sidebar-item > span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         #endpointList { max-height: 46dvh; overflow-y: auto; }
+        .ref-area > summary { list-style: none; font-weight: 500; }
+        .ref-area > summary::-webkit-details-marker { display: none; }
+        .ref-area[open] > summary { color: var(--color-ink); }
+        .ref-area > button.sidebar-item { padding-left: var(--space-m); }
         #endpointList .sidebar-item { align-items: flex-start; }
-        #endpointList .sidebar-item > span:last-child { font-family: var(--font-outlier); font-size: var(--text-xs); line-height: 1.6; white-space: normal; overflow-wrap: anywhere; }
+        #endpointList summary.sidebar-item > span:last-child { white-space: nowrap; }
+        #endpointList .sidebar-item > span:last-child { font-size: var(--text-xs); line-height: 1.6; white-space: normal; overflow-wrap: anywhere; }
         .sidebar-more { padding: var(--space-xs); font-size: var(--text-xs); color: var(--color-muted); }
 
         /* HTTP method: the label face on a hairline key, coloured by verb, never white on a fill */
@@ -313,14 +318,14 @@
         .request-type-btn { height: 28px; font-size: var(--text-xs); }
 
         /* The one container recipe: hairline, paper, a cut corner where supported */
-        .chat-container, .playground-section, .card, .recipe-grid {
+        .chat-container, .playground-section, .card {
             background: var(--color-paper);
             border: var(--rule-hair) solid var(--color-rule);
             border-radius: var(--radius-card);
             box-shadow: var(--shadow-card);
         }
         @supports (corner-shape: bevel) {
-            .chat-container, .playground-section, .card, .recipe-grid { border-radius: 16px 4px 16px 4px; corner-shape: bevel round bevel round; }
+            .chat-container, .playground-section, .card { border-radius: 16px 4px 16px 4px; corner-shape: bevel round bevel round; }
         }
         .card { padding: var(--space-md); }
 
@@ -612,39 +617,6 @@
         }
         @keyframes spin { to { transform: rotate(360deg); } }
 
-        /* ---------- Cookbook: the reference as ruled rows ---------- */
-        .recipe-grid { display: grid; grid-template-columns: minmax(0, 1fr); overflow: hidden; }
-        .recipe-card {
-            display: grid;
-            grid-template-columns: minmax(0, 24rem) minmax(0, 1fr) auto;
-            align-items: center;
-            gap: var(--space-md);
-            width: 100%;
-            min-height: 44px;
-            padding: var(--space-xs) var(--space-md);
-            border: 0;
-            border-bottom: var(--rule-hair) solid var(--color-rule);
-            background: transparent;
-            text-align: left;
-            cursor: pointer;
-            transition: background-color var(--dur-micro) var(--ease-out);
-        }
-        .recipe-card:last-child { border-bottom: 0; }
-        .recipe-card:hover { background: var(--color-paper-2); }
-        .recipe-card:active { background: var(--color-paper-3); }
-        .recipe-title { font-family: var(--font-outlier); font-size: var(--text-sm); font-weight: 500; color: var(--color-ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .recipe-description { font-size: var(--text-sm); color: var(--color-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .recipe-tags { display: flex; gap: var(--space-2xs); }
-        .recipe-tag {
-            padding: 0 var(--space-2xs);
-            border: var(--rule-hair) solid var(--color-rule-2);
-            border-radius: var(--radius-chip);
-            font-size: var(--text-xs);
-            line-height: 1.6;
-            color: var(--color-ink-2);
-        }
-        .recipe-tag + .recipe-tag { border-color: transparent; color: var(--color-muted); }
-        .recipe-grid > .card { border: 0; box-shadow: none; }
         .load-error { padding: var(--space-xs); font-size: var(--text-sm); color: var(--color-error); }
 
         /* ---------- Playground ---------- */
@@ -801,8 +773,6 @@
             .chat-container { height: calc(100dvh - var(--bar-h) - 80px); }
             .sidebar { order: 2; position: static; height: auto; border-right: 0; border-top: var(--rule-hair) solid var(--color-rule); }
             .playground-container { grid-template-columns: minmax(0, 1fr); }
-            .recipe-card { grid-template-columns: minmax(0, 1fr) auto; }
-            .recipe-description { display: none; }
             .tool-row { grid-template-columns: minmax(0, 1fr) auto; }
             .tool-row .text-muted { grid-column: 1 / -1; grid-row: 2; }
         }
@@ -859,9 +829,25 @@
     <div class="app-container">
         <!-- Sidebar -->
         <aside class="sidebar" id="sidebar">
-            <!-- The reference first: every row opens the endpoint in chat -->
+            <!-- A portal's order: start, reference, build, integrate -->
             <details class="sidebar-section" open>
-                <summary class="sidebar-title">API Endpoints</summary>
+                <summary class="sidebar-title">Get started</summary>
+                <button type="button" class="sidebar-item" onclick="showOverview()">
+                    <i data-lucide="compass" style="width: 16px; height: 16px;" aria-hidden="true"></i>
+                    <span>Overview</span>
+                </button>
+                <button type="button" class="sidebar-item" onclick="showAuthentication()">
+                    <i data-lucide="key" style="width: 16px; height: 16px;" aria-hidden="true"></i>
+                    <span>Authentication &amp; headers</span>
+                </button>
+                <button type="button" class="sidebar-item" onclick="quickTestAccount()">
+                    <i data-lucide="play-circle" style="width: 16px; height: 16px;" aria-hidden="true"></i>
+                    <span>Your first call</span>
+                </button>
+            </details>
+
+            <details class="sidebar-section" open>
+                <summary class="sidebar-title">API reference</summary>
                 <form class="endpoint-search" role="search" onsubmit="searchEndpoints(event)">
                     <input id="endpointSearch" class="form-input" type="search" placeholder="Search, e.g. change phone number"
                            aria-label="Search the BaNCS endpoints" autocomplete="off">
@@ -876,42 +862,34 @@
             </details>
 
             <details class="sidebar-section" open>
-                <summary class="sidebar-title">Quick Actions</summary>
-                <button type="button" class="sidebar-item" onclick="showApiAreas()">
-                    <i data-lucide="database" style="width: 16px; height: 16px;" aria-hidden="true"></i>
-                    <span>Browse API areas</span>
+                <summary class="sidebar-title">Build</summary>
+                <button type="button" class="sidebar-item" data-needs="build" hidden onclick="showBuild()">
+                    <i data-lucide="hammer" style="width: 16px; height: 16px;" aria-hidden="true"></i>
+                    <span>Build &amp; run</span>
                 </button>
-                <button type="button" class="sidebar-item" onclick="document.getElementById('endpointSearch').focus()">
-                    <i data-lucide="search" style="width: 16px; height: 16px;" aria-hidden="true"></i>
-                    <span>Search endpoints</span>
+                <button type="button" class="sidebar-item" onclick="switchTab('playground')">
+                    <i data-lucide="play" style="width: 16px; height: 16px;" aria-hidden="true"></i>
+                    <span>Playground</span>
                 </button>
-                <button type="button" class="sidebar-item" onclick="quickTestAccount()">
-                    <i data-lucide="play-circle" style="width: 16px; height: 16px;" aria-hidden="true"></i>
-                    <span>Try a balance call</span>
-                </button>
-                <button type="button" class="sidebar-item" onclick="showAuthentication()">
-                    <i data-lucide="key" style="width: 16px; height: 16px;" aria-hidden="true"></i>
-                    <span>Authentication &amp; headers</span>
-                </button>
-                <button type="button" class="sidebar-item" onclick="startTask('Write a Python script that checks the balance of account 101000000101814, run it, and show the result')">
+                <button type="button" class="sidebar-item" data-needs="build" hidden onclick="startTask('Write a Python script that checks the balance of account 101000000101814, run it, and show the result')">
                     <i data-lucide="code-2" style="width: 16px; height: 16px;" aria-hidden="true"></i>
                     <span>Python example</span>
                 </button>
             </details>
 
             <details class="sidebar-section" open>
-                <summary class="sidebar-title">Resources</summary>
+                <summary class="sidebar-title">Integrate</summary>
+                <button type="button" class="sidebar-item" onclick="showMCPTools()">
+                    <i data-lucide="plug" style="width: 16px; height: 16px;" aria-hidden="true"></i>
+                    <span>MCP server</span>
+                </button>
                 <button type="button" class="sidebar-item" onclick="fetchOpenAPISpec()">
                     <i data-lucide="file-text" style="width: 16px; height: 16px;" aria-hidden="true"></i>
-                    <span>OpenAPI Spec</span>
+                    <span>OpenAPI spec</span>
                 </button>
                 <button type="button" class="sidebar-item" onclick="exportPostmanCollection()">
                     <i data-lucide="download" style="width: 16px; height: 16px;" aria-hidden="true"></i>
-                    <span>Export Postman</span>
-                </button>
-                <button type="button" class="sidebar-item" onclick="showMCPTools()">
-                    <i data-lucide="wrench" style="width: 16px; height: 16px;" aria-hidden="true"></i>
-                    <span>MCP Tools</span>
+                    <span>Postman collection</span>
                 </button>
             </details>
         </aside>
@@ -924,17 +902,9 @@
                     <i data-lucide="message-circle" style="width: 16px; height: 16px;" aria-hidden="true"></i>
                     <span>Chat</span>
                 </button>
-                <button type="button" class="tab" onclick="switchTab('cookbook', this)">
-                    <i data-lucide="book-open" style="width: 16px; height: 16px;" aria-hidden="true"></i>
-                    <span>Cookbook</span>
-                </button>
                 <button type="button" class="tab" onclick="switchTab('playground', this)">
                     <i data-lucide="play" style="width: 16px; height: 16px;" aria-hidden="true"></i>
                     <span>Playground</span>
-                </button>
-                <button type="button" class="tab" onclick="switchTab('mcp', this)">
-                    <i data-lucide="cpu" style="width: 16px; height: 16px;" aria-hidden="true"></i>
-                    <span>MCP Tools</span>
                 </button>
                 <button type="button" class="tab" onclick="switchTab('history', this)">
                     <i data-lucide="clock" style="width: 16px; height: 16px;" aria-hidden="true"></i>
@@ -991,13 +961,6 @@
                         </div>
                         <p class="composer-note" id="agentNote"></p>
                     </div>
-                </div>
-            </div>
-            
-            <!-- Cookbook Tab -->
-            <div id="cookbookTab" class="tab-content hidden">
-                <div class="recipe-grid" id="recipeGrid">
-                    <!-- Recipes will be loaded here -->
                 </div>
             </div>
             
@@ -1239,7 +1202,6 @@
                 // Load initial data
                 await Promise.all([
                     loadEndpoints(),
-                    loadCookbookRecipes(),
                     loadMCPTools()
                 ]);
                 
@@ -1581,65 +1543,33 @@
             }
         }
         
-        // Display endpoints in sidebar
+        // The reference in the sidebar: grouped by business area, each group filled when opened (950 rows is too many up front).
+        const AREA_ALIASES = { account: 'AccountManagement', customer: 'CustomerManagement', transaction: 'Payments',
+                               'COLLATERAL AUTH': 'CollateralManagement' };  // one-off categories from the Postman collection
+        function areaLabel(area) {
+            return (AREA_ALIASES[area] || area).replace(/([a-z])([A-Z])/g, '$1 $2').replace(/^./, c => c.toUpperCase());
+        }
+
         function displayEndpoints(endpoints) {
             const container = document.getElementById('endpointList');
-            
             if (!endpoints || endpoints.length === 0) {
                 container.innerHTML = '<div class="text-muted text-small">No endpoints available</div>';
                 return;
             }
-            
-            // Limit to first 20 endpoints for UI performance
-            const displayEndpoints = endpoints.slice(0, 20);
-            
-            container.innerHTML = displayEndpoints.map(endpoint => `
-                <button type="button" class="sidebar-item" onclick="askAboutEndpoint(${jsArg(endpoint.name)})" title="${escapeHtml(endpoint.name)}">
-                    <span class="method-badge method-${escapeHtml(endpoint.method.toLowerCase())}">${escapeHtml(endpoint.method)}</span>
-                    <span class="text-small">${escapeHtml(endpoint.name)}</span>
-                </button>
-            `).join('');
-            
-            if (endpoints.length > 20) {
-                container.innerHTML += `
-                    <div class="sidebar-more">
-                        … and ${endpoints.length - 20} more
-                    </div>
-                `;
-            }
-        }
-        
-        // Load cookbook recipes
-        async function loadCookbookRecipes() {
-            try {
-                const response = await fetchWithRetry('/api/cookbook');
-                const recipes = await response.json();
-                displayRecipes(recipes);
-            } catch (error) {
-                console.error('Failed to load recipes:', error);
-                document.getElementById('recipeGrid').innerHTML =
-                    '<div class="card load-error">Could not load the cookbook. Reload the page to try again.</div>';
-            }
-        }
-        
-        // Display cookbook recipes
-        function displayRecipes(recipes) {
-            const container = document.getElementById('recipeGrid');
-            
-            if (!recipes || recipes.length === 0) {
-                container.innerHTML = '<div class="card">No recipes available</div>';
-                return;
-            }
-            
-            container.innerHTML = recipes.map(recipe => `
-                <button type="button" class="recipe-card" onclick="loadRecipe(${jsArg(recipe.id)})">
-                    <span class="recipe-title">${escapeHtml(recipe.title)}</span>
-                    <span class="recipe-description">${escapeHtml(recipe.description)}</span>
-                    <span class="recipe-tags">
-                        ${recipe.tags?.map(tag => `<span class="recipe-tag">${escapeHtml(tag)}</span>`).join('') || ''}
-                    </span>
-                </button>
-            `).join('');
+            const areas = {};
+            endpoints.forEach(e => { (areas[areaLabel(e.category || 'other')] ||= []).push(e); });
+            const sorted = Object.keys(areas).sort();
+            container.innerHTML = sorted.map(a => `<details class="ref-area">
+                <summary class="sidebar-item"><span>${escapeHtml(a)}</span><span class="sidebar-count">${areas[a].length}</span></summary></details>`).join('');
+            container.querySelectorAll('.ref-area').forEach((d, n) => d.addEventListener('toggle', () => {
+                if (!d.open || d.dataset.filled) return;
+                d.dataset.filled = '1';
+                d.insertAdjacentHTML('beforeend', areas[sorted[n]].map(e => `
+                    <button type="button" class="sidebar-item" onclick="showEndpointCard(${jsArg(e.name)})" title="${escapeHtml(e.name)}">
+                        <span class="method-badge method-${escapeHtml(e.method.toLowerCase())}">${escapeHtml(e.method)}</span>
+                        <span class="text-small">${escapeHtml(e.description || e.name)}</span>
+                    </button>`).join(''));
+            }));
         }
         
         // Load MCP tools
@@ -2070,9 +2000,7 @@
            });
            document.getElementById(`${tabName}Tab`).classList.remove('hidden');
            
-           if (tabName === 'cookbook' && !document.getElementById('recipeGrid').innerHTML) {
-               loadCookbookRecipes();
-           } else if (tabName === 'mcp' && !state.mcpTools.length) {
+           if (tabName === 'mcp' && !state.mcpTools.length) {
                loadMCPTools();
            } else if (tabName === 'history') {
                displayHistory();
@@ -2576,22 +2504,7 @@
        }
        
        // Other functions
-       function askAboutEndpoint(endpointName) {
-           showEndpointCard(endpointName);  // straight from the spec: the search chat named the wrong endpoints
-       }
-       
-       async function loadRecipe(recipeId) {
-           try {
-               const response = await fetchWithRetry(`/api/cookbook/${encodeURIComponent(recipeId)}`);
-               const recipe = await response.json();
-               
-               showEndpointCard(recipe.endpoint || recipe.title);
-           } catch (error) {
-               console.error('Failed to load recipe:', error);
-               showNotification('Failed to load recipe', 'error');
-           }
-       }
-       
+
        function testMCPTool(toolName) {
            switchTab('playground', document.querySelector('.tab:nth-child(3)'));
            setRequestType('mcp', document.querySelector('.request-type-btn:nth-child(2)'));
@@ -2649,7 +2562,7 @@
        }
        
        function showMCPTools() {
-           switchTab('mcp', document.querySelector('.tab:nth-child(4)'));
+           switchTab('mcp');
        }
        
        function showSettings() {
@@ -3068,6 +2981,16 @@
            addPanel('API areas', `<p>${eps.length} endpoints in ${sorted.length} areas. Open one, or search on the left.</p>
                <ul class="area-list">${sorted.map(([area, list]) => `<li><strong>${escapeHtml(area)}</strong> <span class="text-muted">(${list.length})</span><br>
                ${list.slice(0, 4).map(e => `<button type="button" class="linkish" onclick="showEndpointCard(${jsArg(e.name)})">${escapeHtml(e.description || e.name)}</button>`).join(' · ')}</li>`).join('')}</ul>`);
+       }
+
+       function showOverview() {
+           switchTab('chat');
+           document.getElementById('chatMessages').scrollTo({ top: 0, behavior: 'smooth' });
+       }
+
+       function showBuild() {
+           switchTab('chat');
+           document.getElementById('messageInput').focus();
        }
 
        function showAuthentication() {
