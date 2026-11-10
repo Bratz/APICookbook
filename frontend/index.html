@@ -3016,10 +3016,10 @@
                ['GET', '/payments/transfers/view', 'Read the final record.']],
              task: 'Validate and create a fund transfer of 1 between two real accounts of the same customer, authorise it, then show the transfer record' },
            { title: 'Update contact details', steps: [
-               ['GET', '/customerManagement/customer/communicationDetails', 'What the bank holds now.'],
-               ['PUT', '/customerManagement/customer/contact', 'Change the phone number.'],
+               ['GET', '/customerManagement/customer/detail', 'What the bank holds now: the phone is contact.nationalNumber (communicationDetails leaves it empty).'],
+               ['PUT', '/customerManagement/customer/contact', 'Amend the phone number, with the same contact type and country code. There is no delete.'],
                ['PUT', '/customerManagement/customer/address', 'Change the postal address.']],
-             task: 'Show a real customer’s communication details, change their phone number, then show the details again' },
+             task: 'Customer 146190 has a local mobile on file (contact type 31, number 1234567890, country code 0, under contact in GET /customerManagement/customer/detail). Change it to 4155550123, show the contact, then change it back to 1234567890 and show that it matches the original' },
            { title: 'Account statement as CSV', steps: [
                ['GET', '/accountManagement/account/CASATransactions/{accountReference}', 'The account’s transactions.'],
                ['POST', '/accountManagement/account/accountBalanceStatement', 'Opening and closing balances for the period.']],
