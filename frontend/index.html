@@ -555,6 +555,7 @@
         .endpoint-card .choice-row { margin-top: var(--space-sm); }
         .area-list { list-style: none; padding: 0; margin: var(--space-xs) 0; display: grid; gap: var(--space-xs); }
         .area-list li { font-size: var(--text-sm); }
+        .guide-steps { padding-left: var(--space-m); display: grid; gap: var(--space-xs); }
         .linkish { background: none; border: 0; padding: 0; color: var(--color-accent); cursor: pointer; font: inherit; font-size: var(--text-xs); text-decoration: underline; }
 
         /* Build & run (decode fork F3): live steps, bank calls, held-write cards */
@@ -859,6 +860,11 @@
                         <div class="typing-dot"></div>
                     </div>
                 </div>
+            </details>
+
+            <details class="sidebar-section" open>
+                <summary class="sidebar-title">Guides</summary>
+                <div id="guideList"></div>
             </details>
 
             <details class="sidebar-section" open>
@@ -1536,6 +1542,7 @@
                 const endpoints = await response.json();
                 state.endpoints = endpoints;
                 displayEndpoints(endpoints);
+                displayGuides();
             } catch (error) {
                 console.error('Failed to load endpoints:', error);
                 document.getElementById('endpointList').innerHTML =
@@ -2981,6 +2988,91 @@
            addPanel('API areas', `<p>${eps.length} endpoints in ${sorted.length} areas. Open one, or search on the left.</p>
                <ul class="area-list">${sorted.map(([area, list]) => `<li><strong>${escapeHtml(area)}</strong> <span class="text-muted">(${list.length})</span><br>
                ${list.slice(0, 4).map(e => `<button type="button" class="linkish" onclick="showEndpointCard(${jsArg(e.name)})">${escapeHtml(e.description || e.name)}</button>`).join(' · ')}</li>`).join('')}</ul>`);
+       }
+
+       // ---------------------------------------------------------------- guides: real multi-step flows
+       // Each step is [method, path, what it does]; a step's output feeds the next. Writes are maker-checker where the bank is.
+       const GUIDES = [
+           { title: 'Onboard a customer and open an account', steps: [
+               ['POST', '/customerManagement/customer', 'Create the customer; keep the customer ID it returns.'],
+               ['POST', '/accountManagement/account', 'Open an account for that customer ID.'],
+               ['GET', '/accountManagement/account/details/{accountReference}', 'Read the new account back.']],
+             task: 'Create an individual customer named Ada Test, open a savings account for that customer, then fetch the new account details' },
+           { title: 'Customer 360', steps: [
+               ['GET', '/customerManagement/customer/details', 'The customer record.'],
+               ['GET', '/accountManagement/account/list', 'Every account the customer holds.'],
+               ['GET', '/accountManagement/account/balanceDetails/{accountReference}', 'The balance of each account.'],
+               ['GET', '/loans/accountConductDetails/{customerReference}', 'How the customer has run their loans.']],
+             task: 'Pick a real customer, then show their details, all their accounts with balances, and their loan account conduct' },
+           { title: 'Hold funds, then release them', steps: [
+               ['POST', '/accountManagement/account/cashBlock', 'Block an amount on an account; keep the cash block ID.'],
+               ['GET', '/accountManagement/account/blockList/{accountReference}', 'See the block on the account.'],
+               ['PUT', '/accountManagement/account/cashblocks/{cashBlockId}/update', 'Change the amount or expiry.'],
+               ['DELETE', '/accountManagement/account/cashBlock/{cashBlockId}/cancel', 'Release it.']],
+             task: 'On a real account with a positive balance, create a cash block of 10, list the account blocks to show it, then cancel the block' },
+           { title: 'Maker-checker fund transfer', steps: [
+               ['POST', '/payments/fundTransfer/validate', 'Check the transfer before creating it.'],
+               ['POST', '/payments/fundTransfer/create', 'Create it; it waits for authorisation.'],
+               ['POST', '/payments/transfers/authorize/{transactionId}/{transactionType}', 'A second user authorises it (or rejects it).'],
+               ['GET', '/payments/transfers/view', 'Read the final record.']],
+             task: 'Validate and create a fund transfer of 1 between two real accounts of the same customer, authorise it, then show the transfer record' },
+           { title: 'Update contact details', steps: [
+               ['GET', '/customerManagement/customer/communicationDetails', 'What the bank holds now.'],
+               ['PUT', '/customerManagement/customer/contact', 'Change the phone number.'],
+               ['PUT', '/customerManagement/customer/address', 'Change the postal address.']],
+             task: 'Show a real customer’s communication details, change their phone number, then show the details again' },
+           { title: 'Account statement as CSV', steps: [
+               ['GET', '/accountManagement/account/CASATransactions/{accountReference}', 'The account’s transactions.'],
+               ['POST', '/accountManagement/account/accountBalanceStatement', 'Opening and closing balances for the period.']],
+             task: 'For a real account, fetch its transactions and balance statement and write them to statement.csv' },
+           { title: 'Part-withdraw a term deposit', steps: [
+               ['GET', '/deposits/depositList', 'Find the deposit.'],
+               ['GET', '/deposits/partWithdrawal/trialPartWithdrawal', 'Preview what a withdrawal would do.'],
+               ['POST', '/deposits/partWithdrawal', 'Make the withdrawal; it waits for authorisation.'],
+               ['POST', '/deposits/partWithdrawal/auth', 'Authorise it.']],
+             task: 'Find a real term deposit and show a trial part withdrawal of 100 for it, without making the withdrawal' },
+           { title: 'Deposit maturity planner', steps: [
+               ['GET', '/deposits/deposits/productList', 'Term and recurring deposit products.'],
+               ['GET', '/deposits/deposits/maturityGoalCalculator', 'Maturity or instalment amount for a goal.'],
+               ['GET', '/deposits/productMaturityDetails', 'The product’s maturity rules.']],
+             task: 'List the term deposit products, then calculate the maturity amount of 10000 for 12 months on the first one' },
+           { title: 'Loan reschedule what-if', steps: [
+               ['GET', '/loans/repaymentSchedule/{loanReference}', 'The current schedule.'],
+               ['GET', '/loans/repayments/simulateLoanReSchedule', 'Simulate the new schedule.'],
+               ['POST', '/loans/repayments/loanReSchedule', 'Apply it.']],
+             task: 'For a real loan, show its repayment schedule and a simulated reschedule over a longer term, without applying it' },
+           { title: 'Secure a loan with collateral', steps: [
+               ['POST', '/collateral/vehicleAndHeavyMachinery', 'Register a vehicle as collateral; keep its reference.'],
+               ['POST', '/collateral/collateralLink', 'Link it to the loan.'],
+               ['GET', '/collateral/list', 'See it on the list.'],
+               ['POST', '/collateral/collateralDischarge', 'Discharge it when the loan is repaid.']],
+             task: 'List the collateral held for a real customer and show the details of one of them' },
+       ];
+
+       function displayGuides() {
+           document.getElementById('guideList').innerHTML = GUIDES.map((g, i) => `
+               <button type="button" class="sidebar-item" onclick="showGuide(${i})"><span>${escapeHtml(g.title)}</span></button>`).join('');
+       }
+
+       function endpointFor(method, path) {
+           return (state.endpoints || []).find(e => e.method === method && e.path.trim() === path);
+       }
+
+       function showGuide(i) {
+           switchTab('chat');
+           const g = GUIDES[i];
+           const el = addPanel('Guide', `<h3>${escapeHtml(g.title)}</h3><ol class="guide-steps">${g.steps.map(([m, path, why], n) => `<li>
+               <div class="plan-step-head"><span class="method-badge method-${m.toLowerCase()}">${m}</span>
+               <button type="button" class="linkish" data-step="${n}"><code>${escapeHtml(path)}</code></button></div>
+               <span class="text-small text-muted">${escapeHtml(why)}</span></li>`).join('')}</ol>
+               ${state.buildAvailable ? `<p class="text-small text-muted">Build &amp; run: “${escapeHtml(g.task)}”</p>
+               <button type="button" class="btn btn-secondary btn-sm" data-act="build">Build &amp; run it</button>` : ''}`);
+           el.querySelectorAll('[data-step]').forEach(b => b.addEventListener('click', () => {
+               const [m, path] = g.steps[b.dataset.step];
+               const ep = endpointFor(m, path);
+               ep ? showEndpointCard(ep.name) : showNotification('That endpoint is not in the loaded spec.', 'error');
+           }));
+           el.querySelector('[data-act="build"]')?.addEventListener('click', () => startTask(g.task));
        }
 
        function showOverview() {
