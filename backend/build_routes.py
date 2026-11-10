@@ -16,25 +16,30 @@ Who may do what (F4, decided 2026-11-09: every visitor, with caps):
            step (each tool call / result) · write (held, waiting) · write_decided · bank_call · done
     POST   /api/build/runs/{id}/writes/{write}    {"approve": true|false}
     DELETE /api/build/runs/{id}                   stop it
+    GET    /api/build/runs/{id}/files             the files the agent wrote, pointed at the real bank
+    GET    /api/build/runs/{id}/files.zip         the same, as a zip with a README
 """
 
 from __future__ import annotations
 
 import asyncio
 import hmac
+import io
 import json
 import os
 import secrets
 import time
+import zipfile
 from dataclasses import dataclass, field
 from typing import Any, AsyncIterator, Optional
 
 import httpx
 from fastapi import APIRouter, Header, HTTPException, Request
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field
 
-from backend import build_proxy
+from backend import api_lookup, build_proxy
+from backend.config import settings
 from backend.agent_guard import AgentGuard
 
 router = APIRouter(prefix="/api/build")
@@ -212,6 +217,53 @@ async def stop(run_id: str, authorization: str = Header(""), x_run_key: str = He
     build_proxy.end_run(run.token)
     response = await _call_runner("DELETE", f"/runs/{run_id}")
     return {"id": run_id, "stopping": response.status_code == 200}
+
+
+_README = """Code written by APICookbook Build & run (https://apicookbook.vercel.app).
+
+It calls the TCS BaNCS demo bank directly:
+  Base URL   {base}
+  Headers    entity: {entity}   userId: {user}   languageCode: {lang}
+             Content-Type: application/json on a request with a body
+No sign-in or token. The demo data is shared: a write you send changes what every user sees.
+"""
+
+
+async def _run_files(run_id: str, authorization: str, x_run_key: str) -> dict[str, Any]:
+    """The run's files from the runner, with the private proxy address swapped for the bank's, so the
+    code runs on the visitor's machine as it is."""
+    run = _run_for(run_id, authorization, x_run_key)
+    response = await _call_runner("GET", f"/runs/{run_id}/files")
+    if response.status_code != 200:
+        raise HTTPException(status_code=response.status_code, detail="the runner does not know this run")
+    listing = response.json()
+    private = build_proxy.public_base(run.token)
+    bank_root = api_lookup.BASE_URL.removesuffix("/Core")
+    listing["files"] = [
+        {**f, "content": f["content"].replace(f"{private}/Core", api_lookup.BASE_URL).replace(private, bank_root)}
+        for f in listing.get("files", [])
+        if not f["path"].startswith("/") and ".." not in f["path"].split("/")
+    ]
+    return listing
+
+
+@router.get("/runs/{run_id}/files")
+async def files(run_id: str, authorization: str = Header(""), x_run_key: str = Header("")) -> dict[str, Any]:
+    return await _run_files(run_id, authorization, x_run_key)
+
+
+@router.get("/runs/{run_id}/files.zip")
+async def files_zip(run_id: str, authorization: str = Header(""), x_run_key: str = Header("")) -> Response:
+    listing = await _run_files(run_id, authorization, x_run_key)
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        for f in listing["files"]:
+            archive.writestr(f"bancs-run/{f['path']}", f["content"])
+        archive.writestr("bancs-run/README.txt", _README.format(
+            base=api_lookup.BASE_URL, entity=settings.bancs_entity, user=settings.bancs_user_id,
+            lang=settings.bancs_language_code))
+    return Response(buffer.getvalue(), media_type="application/zip",
+                    headers={"Content-Disposition": f'attachment; filename="bancs-run-{run_id[:8]}.zip"'})
 
 
 STREAM_POLL_S = 1.0

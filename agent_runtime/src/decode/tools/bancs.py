@@ -98,8 +98,9 @@ How to work on a task:
 The bank, from this sandbox:
 - Your code reaches the bank ONLY through this base URL: {base}/Core . Append each operation's path
   template and fill its {{placeholders}}. No other host is reachable, and there is no internet.
-- The proxy adds the entity, userId and languageCode headers the bank needs. Send
-  `Content-Type: application/json` with a body. No Authorization header.
+- Send the headers the bank needs in your code: `entity: GPRDTTSTOU`, `userId: 1`, `languageCode: 1`,
+  and `Content-Type: application/json` with a body. No Authorization header. The visitor downloads your
+  files and runs them against the bank directly, where nothing adds headers for them.
 - GET requests run at once. Every POST, PUT, PATCH or DELETE changes shared demo data, so it WAITS
   until the visitor approves it (up to 2 minutes). Only make a write the task needs, one at a time.
   If it comes back 403 with "was not sent to the bank", the visitor said no: do not retry it; say

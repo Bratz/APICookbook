@@ -5,8 +5,10 @@ asyncio.Event, exactly as in production, where the proxy shares the app's loop).
 """
 
 import asyncio
+import io
 import pathlib
 import tempfile
+import zipfile
 
 import httpx
 import pytest
@@ -245,3 +247,29 @@ async def test_the_stream_merges_steps_writes_and_bank_calls_then_ends(monkeypat
     assert kinds == ["step", "write", "bank_call", "write_decided", "bank_call", "done"]
     assert '"answer": "done"' in chunks[-1]
     assert not run.alive  # the stream ends the run's token with it
+
+
+def test_a_runs_files_come_back_pointed_at_the_real_bank(client, open_build, monkeypatch):
+    started = client.post("/api/build/runs", json={"task": "list customers"}).json()
+    run_id, key = started["id"], started["key"]
+    private = build_proxy.public_base(build_routes._RUNS[run_id].token)
+    code = f'BASE = "{private}/Core"\nrequests.get(BASE + "/customerManagement/customer/list/1")\n'
+
+    async def fake_runner(method, path, json=None):
+        assert path == f"/runs/{run_id}/files"
+        return httpx.Response(200, json={"status": "completed", "skipped": 1, "files": [
+            {"path": "list.py", "content": code}, {"path": "../escape.py", "content": "x"}]})
+
+    monkeypatch.setattr(build_routes, "_call_runner", fake_runner)
+
+    listing = client.get(f"/api/build/runs/{run_id}/files", headers={"X-Run-Key": key}).json()
+    assert [f["path"] for f in listing["files"]] == ["list.py"]  # nothing that climbs out of the folder
+    assert listing["files"][0]["content"].startswith('BASE = "https://demoapps.tcsbancs.com/Core"')
+    assert "/r/" not in listing["files"][0]["content"]  # the run's private proxy token is gone
+
+    zipped = client.get(f"/api/build/runs/{run_id}/files.zip", headers={"X-Run-Key": key})
+    assert zipped.headers["content-type"] == "application/zip"
+    with zipfile.ZipFile(io.BytesIO(zipped.content)) as archive:
+        assert sorted(archive.namelist()) == ["bancs-run/README.txt", "bancs-run/list.py"]
+        assert "entity: GPRDTTSTOU" in archive.read("bancs-run/README.txt").decode()
+    assert client.get(f"/api/build/runs/{run_id}/files").status_code == 404  # no key, nothing

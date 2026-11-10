@@ -146,3 +146,46 @@ def test_a_runs_steps_stream_through_a_cursor(server, runner):
 
     _, rest = _call(f"{server}/runs/{body['id']}/events?after=2")
     assert rest["events"] == [] and rest["next"] == 2  # nothing new past the cursor
+
+
+def test_a_finished_runs_text_files_come_back_but_not_links_hidden_or_binary(runner):
+    run = runner.start("list accounts")
+    _wait(runner, run.id)
+    workspace = run.directory / ".decode" / "sandbox"
+    (workspace / "pkg").mkdir(parents=True)
+    (workspace / "main.py").write_bytes(b"print('hi')\n")
+    (workspace / "pkg" / "util.py").write_text("X = 1\n")
+    (workspace / ".env").write_text("SECRET=1\n")
+    (workspace / ".git").mkdir()
+    (workspace / ".git" / "config").write_text("[core]\n")
+    (workspace / "blob.bin").write_bytes(bytes([0, 1, 2]))
+    outside = run.directory / "stderr.txt"  # a host file next to the Workspace
+    outside.write_text("runner secret")
+    try:
+        (workspace / "link.txt").symlink_to(outside)
+    except OSError:
+        pass  # no symlink rights here: the regular-file check is still exercised by the rest
+
+    body = runner.files(run.id)
+
+    assert [f["path"] for f in body["files"]] == ["main.py", "pkg/util.py"]
+    assert body["files"][0]["content"] == "print('hi')\n"
+    assert all("runner secret" not in f["content"] for f in body["files"])
+    assert runner.files("0" * 32) is None
+
+
+def test_files_come_back_over_http_only_after_the_run(server, runner):
+    code, started = _call(f"{server}/runs", "POST", {"task": "sleep a while"})
+    assert code == 202
+    run = runner._runs[started["id"]]
+    (run.directory / ".decode" / "sandbox").mkdir(parents=True)
+    (run.directory / ".decode" / "sandbox" / "main.py").write_bytes(b"print(1)\n")
+
+    assert _call(f"{server}/runs/{run.id}/files")[1]["files"] == []  # still running
+
+    run.process.kill()
+    _wait(runner, run.id)
+    code, body = _call(f"{server}/runs/{run.id}/files")
+    assert code == 200
+    assert body["files"] == [{"path": "main.py", "content": "print(1)\n"}]
+    assert _call(f"{server}/runs/{run.id}/files", token="wrong")[0] == 401

@@ -581,6 +581,17 @@
         .build-log details { flex-basis: 100%; margin-left: 1.4em; }
         .build-log details pre { max-height: 14lh; overflow: auto; font-size: var(--text-xs); margin: var(--space-3xs) 0 0; }
         .build-log .bank { color: var(--color-ink-2); }
+        .run-files { margin-top: var(--space-sm); border: var(--rule-hair) solid var(--color-rule); border-radius: var(--radius-card); overflow: hidden; }
+        .run-files-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-xs) var(--space-sm); padding: var(--space-xs) var(--space-sm); background: var(--color-paper-2); }
+        .run-files-head [data-zip] { margin-left: auto; }
+        .run-files-tabs { display: flex; gap: var(--space-2xs); overflow-x: auto; padding: 0 var(--space-sm); background: var(--color-paper-2); border-bottom: var(--rule-hair) solid var(--color-rule); }
+        .file-tab { flex: none; border: 0; background: none; padding: var(--space-2xs) var(--space-xs); font-family: var(--font-outlier); font-size: var(--text-xs); color: var(--color-muted); cursor: pointer; white-space: nowrap; }
+        .file-tab:hover { color: var(--color-ink); }
+        .file-tab.active { color: var(--color-ink); box-shadow: inset 0 -2px 0 var(--color-accent); }
+        .run-file { position: relative; }
+        .run-file pre { margin: 0; max-height: 28lh; overflow: auto; border-radius: 0; }
+        .run-file [data-copy] { position: absolute; top: var(--space-xs); right: var(--space-xs); z-index: 1; color: var(--color-graphite-ink); }
+        .run-file [data-copy]:hover:not(:disabled) { background: var(--color-graphite-2); color: var(--color-graphite-ink); }
         .write-card { margin: var(--space-xs) 0; padding: var(--space-sm); border: var(--rule-hair) solid var(--color-warning); border-radius: var(--radius-card); background: var(--color-paper-2); }
         .write-card.decided { border-color: var(--color-rule-2); }
         .write-card h4 { margin: 0 0 var(--space-2xs); font-size: var(--text-sm); }
@@ -2830,7 +2841,8 @@
        state.buildMode = false;
        const PROXY_RE = /https?:\/\/10\.0\.0\.49:7601\/r\/[A-Za-z0-9_-]+/g;
 
-       function maskProxy(text) { return String(text ?? '').replace(PROXY_RE, '$BANK'); }
+       // The sandbox's private proxy address reads as the bank's, as the downloaded files do (the server swaps it there).
+       function maskProxy(text) { return String(text ?? '').replace(PROXY_RE, 'https://demoapps.tcsbancs.com'); }
 
        async function initBuildMode() {
            let available = false;
@@ -3198,7 +3210,56 @@
                body.querySelectorAll('pre code').forEach(b => window.hljs?.highlightElement?.(b));
            }
            writes.querySelectorAll('.write-card:not(.decided)').forEach(card => settleWriteCard(card, 'rejected'));
+           await showRunFiles(el, runId, runKey);
            scroll();
+       }
+
+       // The files the agent wrote, as Claude Code hands back a workspace: browse, copy, or take them all.
+       // They point at the bank itself (the server swaps the sandbox's proxy address), so they run as they are.
+       const LANGS = { py: 'python', js: 'javascript', json: 'json', sh: 'bash', java: 'java' };
+       async function showRunFiles(el, runId, runKey) {
+           let listing;
+           try {
+               const r = await buildFetch(`/runs/${runId}/files`, {}, runKey);
+               if (!r.ok) return;
+               listing = await r.json();
+           } catch (e) { return; }
+           const files = listing.files || [];
+           if (!files.length) return;
+           const box = document.createElement('div');
+           box.className = 'run-files';
+           const note = `${files.length} file${files.length === 1 ? '' : 's'}`
+               + (listing.skipped ? ` · ${listing.skipped} not shown (binary, hidden or too large)` : '')
+               + ' · they call the bank directly · available while this page is open';
+           box.innerHTML = `<div class="run-files-head"><strong>Files</strong><span class="text-small text-muted">${note}</span>
+               <button type="button" class="btn btn-secondary btn-sm" data-zip>Download all (.zip)</button></div>
+               <div class="run-files-tabs" role="tablist">${files.map((f, i) =>
+                   `<button type="button" role="tab" class="file-tab" data-i="${i}">${escapeHtml(f.path)}</button>`).join('')}</div>
+               <div class="run-file"><button type="button" class="btn btn-ghost btn-sm" data-copy>Copy</button><pre><code></code></pre></div>`;
+           const code = box.querySelector('code');
+           let current = 0;
+           const show = i => {
+               current = i;
+               box.querySelectorAll('.file-tab').forEach((t, j) => { t.classList.toggle('active', j === i); t.setAttribute('aria-selected', j === i); });
+               code.className = 'language-' + (LANGS[files[i].path.split('.').pop()] || 'none');
+               code.textContent = files[i].content;
+               window.Prism?.highlightElement?.(code);
+           };
+           box.querySelectorAll('.file-tab').forEach(t => { t.onclick = () => show(+t.dataset.i); });
+           box.querySelector('[data-copy]').onclick = async (e) => {
+               try { await navigator.clipboard.writeText(files[current].content); e.target.textContent = 'Copied'; } catch (err) {}
+               setTimeout(() => { e.target.textContent = 'Copy'; }, 1500);
+           };
+           box.querySelector('[data-zip]').onclick = async () => {
+               const r = await buildFetch(`/runs/${runId}/files.zip`, {}, runKey).catch(() => null);
+               if (!r || !r.ok) { showNotification('The files are not available any more.', 'error'); return; }
+               const url = URL.createObjectURL(await r.blob());
+               const a = Object.assign(document.createElement('a'), { href: url, download: `bancs-run-${runId.slice(0, 8)}.zip` });
+               document.body.appendChild(a); a.click(); a.remove();
+               URL.revokeObjectURL(url);
+           };
+           el.querySelector('.message-content').appendChild(box);
+           show(0);
        }
 
        function renderHeldWrite(runId, runKey, write) {

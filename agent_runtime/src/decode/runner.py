@@ -7,6 +7,8 @@ log and Workspace are separate), because decode keeps per-process state (the bas
     POST   /runs          {"task", "model"?, "proxy_url"?}  → 202 {"id"} · 429 when all slots are busy
     GET    /runs/<id>     → {"id", "status", "exit_code", "answer", "summary", "stderr_tail"}
     GET    /runs/<id>/events?after=N  → {"status", "events": [...from line N], "next"}  (F2b)
+    GET    /runs/<id>/files  → {"status", "files": [{"path", "content"}], "skipped"}  (text files the agent
+           wrote; empty while the run is still going)
     DELETE /runs/<id>     → stop it (process group killed, its worker container removed)
     GET    /health        → {"ok", "active", "max"}  (no token: a liveness probe)
 
@@ -30,6 +32,7 @@ import os  # noqa: E402
 import re  # noqa: E402
 import shutil  # noqa: E402
 import signal  # noqa: E402
+import stat  # noqa: E402
 import subprocess  # noqa: E402
 import sys  # noqa: E402
 import threading  # noqa: E402
@@ -50,6 +53,10 @@ _TAIL_CHARS = 4000
 _RUN_PATH = re.compile(r"^/runs/([0-9a-f]{32})$")
 _EVENTS_PATH = re.compile(r"^/runs/([0-9a-f]{32})/events(?:\?after=(\d{1,6}))?$")
 _MAX_EVENTS_PER_READ = 200
+_FILES_PATH = re.compile(r"^/runs/([0-9a-f]{32})/files$")
+# ponytail: caps sized for scripts, not projects; a zip of the raw folder when someone needs more
+_MAX_FILES, _MAX_FILE_BYTES, _MAX_FILES_BYTES = 50, 200_000, 1_000_000
+_SKIP_DIRS = {"__pycache__", "node_modules", "venv"}
 
 
 @dataclass
@@ -157,6 +164,42 @@ class Runner:
                 break  # a line still being written: stop here and send it next time
         return {"status": status, "events": events, "next": after + len(events)}
 
+    def files(self, run_id: str) -> dict[str, object] | None:
+        """The text files the agent left in its Workspace, once the run has finished.
+
+        Read on the host, so: only after the run (its worker container is gone, nothing can swap a file),
+        only regular files (a symlink could point at this process's secrets), no hidden paths.
+        """
+        run = self._runs.get(run_id)
+        if run is None:
+            return None
+        if run.status == "running":
+            return {"status": run.status, "files": [], "skipped": 0}
+        root = run.directory / settings.sandbox_workspace_dir
+        files: list[dict[str, str]] = []
+        skipped = total = 0
+        if root.is_dir() and not root.is_symlink():
+            for here, dirs, names in os.walk(root):  # followlinks=False: a linked folder is not entered
+                dirs[:] = sorted(d for d in dirs if not d.startswith(".") and d not in _SKIP_DIRS)
+                for name in sorted(names):
+                    path = Path(here) / name
+                    info = path.lstat()
+                    if name.startswith(".") or not stat.S_ISREG(info.st_mode):
+                        skipped += 1
+                        continue
+                    if (len(files) >= _MAX_FILES or info.st_size > _MAX_FILE_BYTES
+                            or total + info.st_size > _MAX_FILES_BYTES):
+                        skipped += 1
+                        continue
+                    data = path.read_bytes()
+                    if b"\0" in data:  # binary: not code to show
+                        skipped += 1
+                        continue
+                    files.append({"path": path.relative_to(root).as_posix(),
+                                  "content": data.decode("utf-8", errors="replace")})
+                    total += len(data)
+        return {"status": run.status, "files": files, "skipped": skipped}
+
     def _watch(self, run: Run) -> None:
         try:
             run.exit_code = run.process.wait(timeout=self.timeout_s)
@@ -261,8 +304,11 @@ def make_handler(runner: Runner, token: str) -> type[BaseHTTPRequestHandler]:
             if not self._authorized():
                 return
             events = _EVENTS_PATH.match(self.path)
+            listing = _FILES_PATH.match(self.path)
             if events:
                 body = runner.events(events.group(1), int(events.group(2) or 0))
+            elif listing:
+                body = runner.files(listing.group(1))
             else:
                 match = _RUN_PATH.match(self.path)
                 body = runner.get(match.group(1)) if match else None
