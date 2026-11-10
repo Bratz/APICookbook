@@ -78,6 +78,22 @@
             --tracking-display: 0;
         }
 
+        /* Dark: the system setting decides. Fills on the accent take dark ink, so the light green stays readable. */
+        @media (prefers-color-scheme: dark) {
+            :root {
+                color-scheme: dark;
+                --color-paper: #141714; --color-paper-2: #1b1f1c; --color-paper-3: #242925;
+                --color-ink: #ecebe6; --color-ink-2: #cfcec7; --color-muted: #a4a39b;
+                --color-rule: #2c322e; --color-rule-2: #3d4540;
+                --color-accent: #7db8a3; --color-accent-2: #4f9a80; --color-accent-wash: #1f3a31; --color-accent-ink: #0f1a16; --color-focus: #7db8a3;
+                --color-accent-edge: #a3d3c1;
+                --color-link: #9db9ff;
+                --color-key-face: #1b1f1c; --color-key-edge: #3d4540;
+                --color-error: #f2a59f; --color-success: #8fd3a8; --color-warning: #e8c37a;
+                --shadow-toast: 0 8px 24px -8px rgb(0 0 0 / 0.6);
+            }
+        }
+
         /* ---------- Base ---------- */
         *, *::before, *::after { box-sizing: border-box; }
         html, body { overflow-x: clip; }
@@ -431,6 +447,7 @@
             overflow: hidden;
         }
         .body-editor:focus-within { outline: 2px solid var(--color-focus); outline-offset: -1px; }
+        .response-editor { height: min(32rem, 60vh); border: var(--rule-hair) solid var(--color-rule-2); border-radius: var(--radius-input); overflow: hidden; }
         .field-help { min-height: 1lh; margin-top: var(--space-2xs); font-size: var(--text-xs); color: var(--color-muted); }
         .field-help.ok { color: var(--color-success); }
         .header-row {
@@ -809,10 +826,15 @@
         /* ---------- Narrow screens ---------- */
         @media (max-width: 60rem) {
             .app-container { grid-template-columns: minmax(0, 1fr); }
-            /* the work comes first; the sidebar follows it as collapsible sections */
             .main-content { order: 1; height: auto; min-height: calc(100dvh - var(--bar-h)); padding: var(--space-sm); }
             .chat-container { height: calc(100dvh - var(--bar-h) - 80px); }
-            .sidebar { order: 2; position: static; height: auto; border-right: 0; border-top: var(--rule-hair) solid var(--color-rule); }
+            /* the developer links come first, as one strip that scrolls sideways on its own */
+            .sidebar { order: 0; position: static; height: auto; display: flex; gap: var(--space-2xs); overflow-x: auto;
+                       padding: var(--space-xs) var(--space-sm); border-right: 0; border-bottom: var(--rule-hair) solid var(--color-rule);
+                       scrollbar-width: none; }
+            .sidebar-section { flex: none; white-space: nowrap; border: 0; padding: 0; }  /* <details> will not take display: contents */
+            .sidebar-title { display: none; }
+            .sidebar-item { display: inline-flex; width: auto; margin-right: var(--space-2xs); border: var(--rule-hair) solid var(--color-rule-2); border-radius: var(--radius-pill); padding-inline: var(--space-sm); background: var(--color-paper); }
             .playground-container { grid-template-columns: minmax(0, 1fr); }
             .tool-row { grid-template-columns: minmax(0, 1fr) auto; }
             .tool-row .text-muted { grid-column: 1 / -1; grid-row: 2; }
@@ -866,7 +888,7 @@
     <!-- Main Application -->
     <div class="app-container">
         <!-- Sidebar -->
-        <aside class="sidebar" id="sidebar">
+        <aside class="sidebar" id="sidebar" aria-label="Developer links">
             <!-- A portal's order: start, reference, build, integrate -->
             <details class="sidebar-section" open>
                 <summary class="sidebar-title">Get started</summary>
@@ -2224,6 +2246,33 @@
            document.getElementById('responseTabs').classList.add('hidden');
        }
        
+       // The bank's answer in a read-only Monaco viewer (fold, search with Ctrl+F, hover) once Monaco has
+       // loaded on a desktop; otherwise the highlighted code block. One viewer, reused for every response.
+       const responseViewer = { editor: null };
+       function showResponseText(text, language) {
+           const holder = document.getElementById('responseContent');
+           responseViewer.editor?.dispose();
+           responseViewer.editor = null;
+           if (!text) {
+               holder.innerHTML = '<p class="text-muted text-small">The bank sent an empty body.</p>';
+               return;
+           }
+           if (!bodyEditor.editor) {  // phones, or Monaco did not load
+               holder.innerHTML = createCodeBlockHTML(text, language);
+               window.Prism?.highlightAllUnder(holder);
+               return;
+           }
+           holder.innerHTML = '<div class="response-editor"></div>';
+           responseViewer.editor = monaco.editor.create(holder.firstChild, {
+               value: text,
+               language: { markup: 'html', text: 'plaintext' }[language] || language,
+               readOnly: true, domReadOnly: true, theme: 'cookbook', ariaLabel: 'Response from the bank',
+               fontFamily: getComputedStyle(document.documentElement).getPropertyValue('--font-outlier'), fontSize: 13,
+               minimap: { enabled: false }, scrollBeyondLastLine: false, automaticLayout: true, wordWrap: 'on',
+               renderLineHighlight: 'none', overviewRulerLanes: 0, folding: true, showFoldingControls: 'always',
+           });
+       }
+
        function displayPlaygroundResponse(result) {
            const responseContent = document.getElementById('responseContent');
            const responseMetadata = document.getElementById('responseMetadata');
@@ -2259,8 +2308,8 @@
                const text = typeof body === 'string' ? body : JSON.stringify(body, null, 2);
                const language = typeof body !== 'string' ? 'json' : /html|xml/.test(response.content_type || '') ? 'markup' : 'text';
                document.getElementById('responseSize').textContent = formatBytes(text.length);
-               responseContent.innerHTML = text ? createCodeBlockHTML(text, language)
-                   : '<p class="text-muted text-small">The bank sent an empty body.</p>';
+               showResponseText(text, language);
+               return;
            } else {
                const statusCode = document.getElementById('statusCode');
                statusCode.textContent = 'Error';
@@ -2301,24 +2350,18 @@
            
            if (!state.currentResponse) return;
            
+           const response = state.currentResponse.result;
            if (tab === 'body') {
-               const body = state.currentResponse.result?.body || state.currentResponse.result;
-               responseContent.innerHTML = createCodeBlockHTML(
-                   JSON.stringify(body, null, 2),
-                   'json'
-               );
+               const body = response && 'body' in response ? response.body : response;
+               const isText = typeof body === 'string';
+               showResponseText(isText ? body : JSON.stringify(body, null, 2),
+                   !isText ? 'json' : /html|xml/.test(response?.content_type || '') ? 'markup' : 'text');
            } else if (tab === 'headers') {
-               const headers = state.currentResponse.result?.headers || {};
-               responseContent.innerHTML = createCodeBlockHTML(
-                   JSON.stringify(headers, null, 2),
-                   'json'
-               );
+               showResponseText(JSON.stringify(response?.headers || {}, null, 2), 'json');
            } else if (tab === 'raw') {
-               responseContent.innerHTML = createCodeBlockHTML(
-                   JSON.stringify(state.currentResponse, null, 2),
-                   'json'
-               );
+               showResponseText(JSON.stringify(state.currentResponse, null, 2), 'json');
            }
+           return;
            
            if (typeof Prism !== 'undefined') {
                Prism.highlightAll();
@@ -2707,10 +2750,10 @@
            return '#' + [r, g, b].map(v => v.toString(16).padStart(2, '0')).join('');
        }
 
-       function mountBodyEditor() {
-           const textarea = document.getElementById('playgroundBody');
+       const darkScheme = window.matchMedia('(prefers-color-scheme: dark)');
+       function defineEditorTheme() {
            monaco.editor.defineTheme('cookbook', {
-               base: 'vs',
+               base: darkScheme.matches ? 'vs-dark' : 'vs',
                inherit: true,
                rules: [
                    { token: 'string.key.json', foreground: tokenHex('--color-ink-2').slice(1) },
@@ -2728,6 +2771,13 @@
                    'editorIndentGuide.background1': tokenHex('--color-rule'),
                },
            });
+           monaco.editor.setTheme('cookbook');  // every editor on the page follows
+       }
+
+       function mountBodyEditor() {
+           const textarea = document.getElementById('playgroundBody');
+           defineEditorTheme();
+           darkScheme.addEventListener('change', defineEditorTheme);
 
            const holder = document.createElement('div');
            holder.className = 'body-editor';
