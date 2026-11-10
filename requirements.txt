@@ -10,7 +10,7 @@ python-multipart==0.0.32
 
 # API and HTTP
 httpx==0.28.1
-requests==2.31.0
+requests==2.34.2  # >=2.32.4: CVE-2024-35195, CVE-2024-47081
 
 # Search and NLP
 fuzzywuzzy==0.18.0
