@@ -1570,6 +1570,7 @@ def generate_code_example(endpoint):
         'entity': '{settings.bancs_entity}',
         'userId': '{settings.bancs_user_id}',
         'languageCode': '{settings.bancs_language_code}',
+        'Accept': 'application/json',
         'Content-Type': 'application/json'
     }}""")
     placeholder = "\n# Replace the {placeholders} in the URL with real values." if '{' in path else ""
@@ -1770,7 +1771,8 @@ async def endpoint_card(name: str):
     url = path + ("?" + "&".join(f"{k}={{{k}}}" for k in required_query) if required_query else "")
     base = settings.api_base_url.rstrip("/")
     curl = (f"curl -X {ep['method']} '{base}{url}' \\\n  -H 'entity: {settings.bancs_entity}' \\\n"
-            f"  -H 'userId: {settings.bancs_user_id}' \\\n  -H 'languageCode: {settings.bancs_language_code}'")
+            f"  -H 'userId: {settings.bancs_user_id}' \\\n  -H 'languageCode: {settings.bancs_language_code}' \\\n"
+            "  -H 'Accept: application/json'")
     if example is not None:
         curl += f" \\\n  -H 'Content-Type: application/json' \\\n  -d '{json.dumps(example)}'"
     return {"name": name, "method": ep["method"], "path": path, "url": url, "description": ep.get("description") or "",
@@ -1895,6 +1897,9 @@ async def execute_playground_request(request: PlaygroundRequest):
                         "userId": str(settings.bancs_user_id),
                         "languageCode": str(settings.bancs_language_code)
                     })
+                # The bank answers XML unless asked for JSON; an Accept the visitor typed wins.
+                if not any(k.lower() == "accept" for k in headers):
+                    headers["Accept"] = "application/json"
                 
                 # Make request
                 response = await client.request(

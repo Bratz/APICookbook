@@ -306,3 +306,14 @@ def test_a_follow_up_carries_the_runs_files_and_a_short_note(client, open_build,
     stranger = client.post("/api/build/runs", headers=operator, json={
         "task": "t", "previous": {"id": first["id"], "key": "not-the-key"}})
     assert stranger.status_code == 404  # only the browser that ran it can follow it up
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(("sent", "expected"), [(None, "application/json"), ("*/*", "application/json"),
+                                                ("application/xml", "application/xml")])
+async def test_the_proxy_asks_the_bank_for_json(proxy, sent, expected):
+    # The bank answers XML to no Accept or */*, which is what requests, httpx and curl send.
+    client, run = proxy
+    headers = {"Accept": sent} if sent else {}
+    await client.get(f"/r/{run.token}/Core/accountManagement/account/balanceDetails/42", headers=headers)
+    assert BANK_CALLS[-1].headers["accept"] == expected

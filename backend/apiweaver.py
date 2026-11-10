@@ -629,6 +629,8 @@ Use get_api_schema("{api_name}", "{endpoint_name}") for full parameter details.
             elif auth_config.type == AuthType.CUSTOM and auth_config.custom_headers:
                 headers.update(auth_config.custom_headers)
         
+        headers.setdefault("Accept", "application/json")  # BaNCS answers XML otherwise
+
         # Create client
         client = httpx.AsyncClient(
             base_url=api_config.base_url,

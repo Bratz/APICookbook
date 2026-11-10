@@ -208,6 +208,11 @@ async def forward(token: str, path: str, request: Request) -> Response:
                         ("languageCode", str(settings.bancs_language_code))):
         if not any(k.lower() == name.lower() for k in headers):
             headers[name] = value  # the agent's code may omit them; the bank requires them
+    # The bank answers XML unless asked for JSON; requests/httpx/curl send */* by default.
+    accept = next((k for k in headers if k.lower() == "accept"), None)
+    if accept is None or headers[accept].strip() in ("", "*/*"):
+        headers.pop(accept, None)
+        headers["Accept"] = "application/json"
     started = time.time()
     try:
         async with _bank_client() as client:

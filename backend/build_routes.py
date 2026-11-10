@@ -261,6 +261,7 @@ _README = """Code written by APICookbook Build & run (https://apicookbook.vercel
 It calls the TCS BaNCS demo bank directly:
   Base URL   {base}
   Headers    entity: {entity}   userId: {user}   languageCode: {lang}
+             Accept: application/json (without it the bank answers in XML)
              Content-Type: application/json on a request with a body
 No sign-in or token. The demo data is shared: a write you send changes what every user sees.
 """

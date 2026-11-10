@@ -236,6 +236,7 @@ def test_playground_allows_bancs_host(client):
     kwargs = sent.call_args.kwargs
     assert kwargs["url"] == f"{settings.api_base_url}/Core/accountManagement/x"
     assert kwargs["headers"]["entity"] == settings.bancs_entity
+    assert kwargs["headers"]["Accept"] == "application/json"  # the bank answers XML otherwise
 
 
 def test_playground_validation(client):

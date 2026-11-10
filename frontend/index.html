@@ -929,12 +929,13 @@
                                         <button type="button" class="btn btn-secondary btn-sm" onclick="startTask('List the first 3 customers and show their IDs and names')">Try: list three customers</button>
                                     </div>
                                 </div>
-                                <p>No sign-in or token: every request goes to the shared BaNCS demo host with three headers, already filled in the Playground.</p>
+                                <p>No sign-in or token: every request goes to the shared BaNCS demo host with three headers, already filled in the Playground. Send <code>Accept: application/json</code> too: without it the bank answers in XML.</p>
                                 <dl class="basics">
                                     <dt>Base URL</dt><dd>https://demoapps.tcsbancs.com/Core</dd>
                                     <dt>entity</dt><dd>GPRDTTSTOU</dd>
                                     <dt>userId</dt><dd>1</dd>
                                     <dt>languageCode</dt><dd>1</dd>
+                                    <dt>Accept</dt><dd>application/json</dd>
                                 </dl>
                             </div>
                         </div>
@@ -1045,6 +1046,13 @@
                                         <div class="header-row">
                                             <input type="text" class="form-input" placeholder="Key" value="languageCode">
                                             <input type="text" class="form-input" placeholder="Value" value="1">
+                                            <button class="btn btn-ghost btn-icon" onclick="removeHeader(this)">
+                                                <i data-lucide="x" style="width: 16px; height: 16px;"></i>
+                                            </button>
+                                        </div>
+                                        <div class="header-row">
+                                            <input type="text" class="form-input" placeholder="Key" value="Accept">
+                                            <input type="text" class="form-input" placeholder="Value" value="application/json">
                                             <button class="btn btn-ghost btn-icon" onclick="removeHeader(this)">
                                                 <i data-lucide="x" style="width: 16px; height: 16px;"></i>
                                             </button>
@@ -2366,6 +2374,13 @@
                            <i data-lucide="x" style="width: 16px; height: 16px;"></i>
                        </button>
                    </div>
+                   <div class="header-row">
+                       <input type="text" class="form-input" placeholder="Key" value="Accept">
+                       <input type="text" class="form-input" placeholder="Value" value="application/json">
+                       <button class="btn btn-ghost btn-icon" onclick="removeHeader(this)">
+                           <i data-lucide="x" style="width: 16px; height: 16px;"></i>
+                       </button>
+                   </div>
                `;
            } else {
                document.getElementById('mcpToolSelect').value = '';
@@ -3079,10 +3094,10 @@
 
        function showAuthentication() {
            switchTab('chat', document.querySelector('.tab'));
-           const curl = "curl 'https://demoapps.tcsbancs.com/Core/accountManagement/account/balanceDetails/101000000101814' \\\n  -H 'entity: GPRDTTSTOU' -H 'userId: 1' -H 'languageCode: 1'";
-           const el = addPanel('Authentication', `<p><strong>There is no sign-in or token.</strong> The demo host identifies the caller by three headers on every request; send <code>Content-Type: application/json</code> too when there is a body.</p>
+           const curl = "curl 'https://demoapps.tcsbancs.com/Core/accountManagement/account/balanceDetails/101000000101814' \\\n  -H 'entity: GPRDTTSTOU' -H 'userId: 1' -H 'languageCode: 1' \\\n  -H 'Accept: application/json'";
+           const el = addPanel('Authentication', `<p><strong>There is no sign-in or token.</strong> The demo host identifies the caller by three headers on every request. Send <code>Accept: application/json</code> as well (without it the bank answers in XML), and <code>Content-Type: application/json</code> when there is a body.</p>
                <dl class="basics"><dt>Base URL</dt><dd>https://demoapps.tcsbancs.com/Core</dd><dt>entity</dt><dd>GPRDTTSTOU</dd>
-               <dt>userId</dt><dd>1</dd><dt>languageCode</dt><dd>1</dd></dl>
+               <dt>userId</dt><dd>1</dd><dt>languageCode</dt><dd>1</dd><dt>Accept</dt><dd>application/json</dd></dl>
                <pre><code class="language-bash">${escapeHtml(curl)}</code></pre>
                <p class="text-small text-muted">The data is a shared demo: anything you change, every other user sees.</p>`);
            el.querySelectorAll('pre code').forEach(b => window.hljs?.highlightElement?.(b));
