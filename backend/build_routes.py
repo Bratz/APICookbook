@@ -10,7 +10,8 @@ Who may do what (F4, decided 2026-11-09: every visitor, with caps):
   watch it, approve its writes or stop it. The operator token works on every run.
 
     GET    /api/build/status                      {"available", caps}
-    POST   /api/build/runs                        {"task"}  → {"id", "key"}
+    POST   /api/build/runs                        {"task", "previous"?: {"id", "key"}}  → {"id", "key"}
+           (with "previous": a follow-up, which starts from that run's files and a note on it)
     GET    /api/build/runs/{id}                   the runner's status + held writes + the bank calls
     GET    /api/build/runs/{id}/events            the run live, as server-sent events (F2b):
            step (each tool call / result) · write (held, waiting) · write_decided · bank_call · done
@@ -59,6 +60,7 @@ class BuildRun:
     started: float = field(default_factory=time.time)
     settled: bool = False
     operator: bool = False  # started with RUNNER_TOKEN (evals, smoke): kept out of the visitors' caps
+    task: str = ""  # what the visitor typed: a follow-up's note quotes it
 
 
 # runner run id -> run. ponytail: in memory, so a cookbook-api restart forgets runs in flight (their
@@ -146,8 +148,36 @@ async def _settle_when_done(run_id: str) -> None:
     await settle(run_id, {"status": "unknown"})
 
 
+class PreviousRun(BaseModel):
+    id: str
+    key: str
+
+
 class StartRequest(BaseModel):
     task: str = Field(min_length=1, max_length=4000)
+    previous: Optional[PreviousRun] = None  # a follow-up of this run (the page holds its key)
+
+
+NOTE_TASK_CHARS, NOTE_ANSWER_CHARS = 600, 1500  # a follow-up's note stays small: the files carry the work
+
+
+async def _follow_up(previous: PreviousRun, task: str, new_token: str) -> tuple[str, list[dict[str, str]]]:
+    """The task for a follow-up run (a short note on the run before, then the new ask) and that run's
+    files, pointed at the new run's proxy. Each run's context stays one task long; the work carries over."""
+    before = _run_for(previous.id, "", previous.key)  # 404 unless this browser started that run
+    listing = await _run_files(previous.id, "", previous.key)  # its files, pointed at the real bank
+    response = await _call_runner("GET", f"/runs/{previous.id}")
+    answer = response.json().get("answer", "") if response.status_code == 200 else ""
+    answer = answer.replace(build_proxy.public_base(before.token), api_lookup.BASE_URL.removesuffix("/Core"))
+    bank_root, proxy = api_lookup.BASE_URL.removesuffix("/Core"), build_proxy.public_base(new_token)
+    files = [{"path": f["path"], "content": f["content"].replace(bank_root, proxy)} for f in listing["files"]]
+    names = ", ".join(f["path"] for f in files) or "none"
+    note = (f"This task follows on from your previous run in this chat.\n"
+            f"Previous task: {before.task[:NOTE_TASK_CHARS]}\n"
+            f"What you reported then (trimmed): {answer.strip()[:NOTE_ANSWER_CHARS]}\n"
+            f"Your files from that run are already in the workspace: {names}. Read them and change them "
+            f"rather than starting over; they already use this run's bank address.\n\nNew task: ")
+    return note + task, files
 
 
 class Decision(BaseModel):
@@ -175,8 +205,15 @@ async def start(body: StartRequest, request: Request, authorization: str = Heade
             message = _CAP_MESSAGES.get(blocked[0], blocked[1]).format(n=_guard().per_hour)
             return JSONResponse(status_code=429, content={"error": blocked[0], "message": message})
     proxy = build_proxy.new_run()
-    response = await _call_runner("POST", "/runs",
-                                  {"task": body.task, "proxy_url": build_proxy.public_base(proxy.token)})
+    task, files = body.task, []
+    if body.previous:
+        try:
+            task, files = await _follow_up(body.previous, body.task, proxy.token)
+        except HTTPException:
+            build_proxy.end_run(proxy.token)
+            raise
+    response = await _call_runner("POST", "/runs", {"task": task, "files": files,
+                                                    "proxy_url": build_proxy.public_base(proxy.token)})
     if response.status_code != 202:
         build_proxy.end_run(proxy.token)
         busy = response.status_code == 429
@@ -184,7 +221,7 @@ async def start(body: StartRequest, request: Request, authorization: str = Heade
             "error": "busy" if busy else "runner_refused",
             "message": "Both sandboxes are busy. Try again in a minute." if busy else "The sandbox could not start the run."})
     run_id = response.json()["id"]
-    _RUNS[run_id] = BuildRun(token=proxy.token, key=secrets.token_urlsafe(24), operator=operator)
+    _RUNS[run_id] = BuildRun(token=proxy.token, key=secrets.token_urlsafe(24), operator=operator, task=body.task)
     asyncio.create_task(_settle_when_done(run_id))
     return {"id": run_id, "key": _RUNS[run_id].key}
 

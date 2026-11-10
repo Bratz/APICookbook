@@ -4,7 +4,8 @@ A small private HTTP service that cookbook-api calls to run ``decode run`` for a
 Each run is its own ``decode run`` subprocess in its own directory (its harness home, so its session
 log and Workspace are separate), because decode keeps per-process state (the bash executor memo).
 
-    POST   /runs          {"task", "model"?, "proxy_url"?}  → 202 {"id"} · 429 when all slots are busy
+    POST   /runs          {"task", "model"?, "proxy_url"?, "files"?}  → 202 {"id"} · 429 when all slots are busy
+           ("files": [{"path", "content"}] written into the new Workspace first: a follow-up run)
     GET    /runs/<id>     → {"id", "status", "exit_code", "answer", "summary", "stderr_tail"}
     GET    /runs/<id>/events?after=N  → {"status", "events": [...from line N], "next"}  (F2b)
     GET    /runs/<id>/files  → {"status", "files": [{"path", "content"}], "skipped"}  (text files the agent
@@ -46,7 +47,7 @@ from decode.config.settings import settings  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
-MAX_TASK_CHARS = 4000
+MAX_TASK_CHARS = 8000  # the visitor's 4000 plus a follow-up's note on the run before
 _STOP_GRACE_S = 5.0
 _KEEP_RUN_DIRS_S = 86_400.0
 _TAIL_CHARS = 4000
@@ -57,6 +58,7 @@ _FILES_PATH = re.compile(r"^/runs/([0-9a-f]{32})/files$")
 # ponytail: caps sized for scripts, not projects; a zip of the raw folder when someone needs more
 _MAX_FILES, _MAX_FILE_BYTES, _MAX_FILES_BYTES = 50, 200_000, 1_000_000
 _SKIP_DIRS = {"__pycache__", "node_modules", "venv"}
+_SEED_PATH = re.compile(r"(?:[\w-][\w.-]*/){0,8}[\w-][\w.-]*")  # relative, no "..", no hidden names
 
 
 @dataclass
@@ -84,7 +86,13 @@ class Runner:
         with self._lock:
             return sum(run.status == "running" for run in self._runs.values())
 
-    def start(self, task: str, model: str | None = None, proxy_url: str = "") -> Run | None:
+    def start(
+        self,
+        task: str,
+        model: str | None = None,
+        proxy_url: str = "",
+        files: list[dict[str, str]] | None = None,
+    ) -> Run | None:
         """Start a run, or return ``None`` when every slot is busy."""
         with self._lock:
             if sum(run.status == "running" for run in self._runs.values()) >= self.max_runs:
@@ -93,6 +101,11 @@ class Runner:
             run_id = uuid.uuid4().hex
             directory = self.runs_dir / run_id
             directory.mkdir(parents=True)
+            workspace = directory / settings.sandbox_workspace_dir
+            for seed in files or []:  # a follow-up starts from the files the run before left
+                target = workspace / seed["path"]
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(seed["content"].encode())
             argv = [*_decode_cmd(), "run", task, "--max-requests", str(self.max_requests)]
             argv += ["--summary-json", str(directory / "summary.json")]
             argv += ["--events-jsonl", str(directory / "events.jsonl")]
@@ -279,6 +292,24 @@ def _valid_proxy_url(url: object) -> bool:
     )
 
 
+def _valid_seed(files: object) -> bool:
+    """Seed files for a follow-up: plain relative paths, text, inside the same caps as the listing."""
+    if not isinstance(files, list) or len(files) > _MAX_FILES:
+        return False
+    total = 0
+    for seed in files:
+        if not (
+            isinstance(seed, dict)
+            and isinstance(seed.get("path"), str)
+            and isinstance(seed.get("content"), str)
+            and _SEED_PATH.fullmatch(seed["path"])
+            and ".." not in seed["path"]
+        ):
+            return False
+        total += len(seed["content"].encode())
+    return total <= _MAX_FILES_BYTES
+
+
 def _read(path: Path) -> str:
     return path.read_text(encoding="utf-8", errors="replace") if path.exists() else ""
 
@@ -330,7 +361,7 @@ def make_handler(runner: Runner, token: str) -> type[BaseHTTPRequestHandler]:
                 return
             try:
                 length = int(self.headers.get("Content-Length", "0"))
-                payload = json.loads(self.rfile.read(min(length, 64_000)) or b"{}")
+                payload = json.loads(self.rfile.read(min(length, 3 * _MAX_FILES_BYTES)) or b"{}")
                 task = str(payload.get("task", "")).strip()
                 model = payload.get("model")
             except (ValueError, AttributeError):
@@ -348,7 +379,13 @@ def make_handler(runner: Runner, token: str) -> type[BaseHTTPRequestHandler]:
             if proxy_url and not _valid_proxy_url(proxy_url):
                 self._send(400, {"error": "proxy_url must be the cookbook proxy's per-run address"})
                 return
-            run = runner.start(task, model, proxy_url)
+            files = payload.get("files") or []
+            if not _valid_seed(files):
+                self._send(
+                    400, {"error": "files must be a list of {path, content} within the caps"}
+                )
+                return
+            run = runner.start(task, model, proxy_url, files)
             if run is None:
                 self._send(429, {"error": "all sandboxes are busy", "max": runner.max_runs})
                 return

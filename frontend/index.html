@@ -956,6 +956,8 @@
                                 Send
                             </button>
                         </div>
+                        <p class="composer-note" id="followNote" hidden>Your next message continues the last run, with its files.
+                            <button type="button" class="linkish" onclick="newTask()">Start a new task instead</button></p>
                         <p class="composer-note" id="agentNote"></p>
                     </div>
                 </div>
@@ -2861,7 +2863,19 @@
        }
 
        // A starter card or quick action: fill the box and send.
+       // Follow-ups: a typed message continues the last run (its files + a short note ride along on the
+       // server); a guide, endpoint card or starter button is a new task. The run key stays in this page.
+       function setLastRun(run) {
+           state.lastRun = run;
+           document.getElementById('followNote').hidden = !run;
+       }
+       function newTask() {
+           setLastRun(null);
+           document.getElementById('messageInput').focus();
+       }
+
        function startTask(text) {
+           setLastRun(null);
            switchTab('chat', document.querySelector('.tab'));
            document.getElementById('messageInput').value = text;
            sendMessage();
@@ -3135,13 +3149,17 @@
            scroll();
 
            let runId, runKey;
+           const previous = state.lastRun;
+           if (previous) el.querySelector('.message-label').textContent = 'Build & run · continues the last run';
            try {
-               const r = await buildFetch('/runs', { method: 'POST', body: JSON.stringify({ task }) });
+               const r = await buildFetch('/runs', { method: 'POST', body: JSON.stringify(previous ? { task, previous } : { task }) });
                const data = await r.json().catch(() => ({}));
                if (!r.ok) throw new Error(data.message || data.detail || `The run could not start (${r.status}).`);
                runId = data.id; runKey = data.key;
            } catch (e) {
-               status.textContent = e.message; return;
+               status.textContent = e.message;
+               if (previous) { setLastRun(null); status.textContent += ' The last run could not be continued; send the message again to start a new task.'; }
+               return;
            }
            status.innerHTML = '<span class="loading-spinner"></span> Working in the sandbox…';
            stop.hidden = false;
@@ -3211,6 +3229,7 @@
            }
            writes.querySelectorAll('.write-card:not(.decided)').forEach(card => settleWriteCard(card, 'rejected'));
            await showRunFiles(el, runId, runKey);
+           if (final.status !== 'stopped') setLastRun({ id: runId, key: runKey });
            scroll();
        }
 

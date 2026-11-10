@@ -104,7 +104,7 @@ def test_health_needs_no_token_but_everything_else_does(server):
 
 def test_bad_requests_are_refused_before_any_run_starts(server, runner):
     assert _call(f"{server}/runs", "POST", {"task": ""})[0] == 400
-    assert _call(f"{server}/runs", "POST", {"task": "x" * 5000})[0] == 400
+    assert _call(f"{server}/runs", "POST", {"task": "x" * 9000})[0] == 400
     assert _call(f"{server}/runs", "POST", {"task": "x", "model": "a b; rm -rf /"})[0] == 400
     assert _call(f"{server}/runs/../../etc/passwd")[0] == 404
     assert runner.active() == 0
@@ -188,3 +188,33 @@ def test_files_come_back_over_http_only_after_the_run(server, runner):
     assert code == 200
     assert body["files"] == [{"path": "main.py", "content": "print(1)\n"}]
     assert _call(f"{server}/runs/{run.id}/files", token="wrong")[0] == 401
+
+
+def test_a_follow_up_starts_from_the_files_it_is_given(server, runner):
+    seed = [
+        {"path": "td.py", "content": "print(1)\n"},
+        {"path": "lib/client.py", "content": "X = 1\n"},
+    ]
+
+    code, started = _call(f"{server}/runs", "POST", {"task": "add a column", "files": seed})
+
+    assert code == 202
+    workspace = runner._runs[started["id"]].directory / ".decode" / "sandbox"
+    assert (workspace / "td.py").read_bytes() == b"print(1)\n"
+    assert (workspace / "lib" / "client.py").read_bytes() == b"X = 1\n"
+
+
+@pytest.mark.parametrize(
+    "files",
+    [
+        [{"path": "../escape.py", "content": "x"}],
+        [{"path": "/etc/cron.d/x", "content": "x"}],
+        [{"path": ".bashrc", "content": "x"}],
+        [{"path": "a.py"}],
+        [{"path": "a.py", "content": "x" * 1_000_001}],
+        "not a list",
+    ],
+)
+def test_seed_files_outside_the_rules_are_refused_before_any_run_starts(server, runner, files):
+    assert _call(f"{server}/runs", "POST", {"task": "x", "files": files})[0] == 400
+    assert runner.active() == 0

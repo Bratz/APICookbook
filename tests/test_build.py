@@ -273,3 +273,36 @@ def test_a_runs_files_come_back_pointed_at_the_real_bank(client, open_build, mon
         assert sorted(archive.namelist()) == ["bancs-run/README.txt", "bancs-run/list.py"]
         assert "entity: GPRDTTSTOU" in archive.read("bancs-run/README.txt").decode()
     assert client.get(f"/api/build/runs/{run_id}/files").status_code == 404  # no key, nothing
+
+
+def test_a_follow_up_carries_the_runs_files_and_a_short_note(client, open_build, monkeypatch):
+    operator = {"Authorization": "Bearer " + "x" * 40}  # skips the 1-run-per-hour test cap
+    first = client.post("/api/build/runs", json={"task": "list deposits"}, headers=operator).json()
+    old_private = build_proxy.public_base(build_routes._RUNS[first["id"]].token)
+    sent = {}
+
+    async def fake_runner(method, path, json=None):
+        if method == "POST":
+            sent.update(json)
+            return httpx.Response(202, json={"id": "f" * 32})
+        if path.endswith("/files"):
+            return httpx.Response(200, json={"status": "completed", "skipped": 0, "files": [
+                {"path": "td.py", "content": f'B = "{old_private}/Core"\n'}]})
+        return httpx.Response(200, json={"status": "completed", "answer": f"Wrote td.py against {old_private}/Core."})
+
+    monkeypatch.setattr(build_routes, "_call_runner", fake_runner)
+
+    second = client.post("/api/build/runs", headers=operator, json={
+        "task": "add the interest rate", "previous": {"id": first["id"], "key": first["key"]}})
+
+    assert second.status_code == 202
+    new_private = build_proxy.public_base(build_routes._RUNS["f" * 32].token)
+    assert sent["files"] == [{"path": "td.py", "content": f'B = "{new_private}/Core"\n'}]  # the new run's proxy
+    assert sent["task"].endswith("New task: add the interest rate")
+    assert "Previous task: list deposits" in sent["task"] and "td.py" in sent["task"]
+    assert old_private not in sent["task"]  # the old run's token never reaches the new run
+    assert build_routes._RUNS["f" * 32].task == "add the interest rate"
+
+    stranger = client.post("/api/build/runs", headers=operator, json={
+        "task": "t", "previous": {"id": first["id"], "key": "not-the-key"}})
+    assert stranger.status_code == 404  # only the browser that ran it can follow it up
