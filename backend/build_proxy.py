@@ -41,6 +41,14 @@ TOKEN_NEEDED = ("This call reaches the bank, so it needs your BaNCS access token
                 "Authentication & headers on the home page, or send it in the Accesstoken header.")
 RUN_TTL_S = 20 * 60  # a token dies with its run, or after this, whichever comes first
 MAX_CALLS_PER_RUN = 300
+QUESTION_TIMEOUT_S = 300.0  # a question the visitor doesn't answer in 5 minutes goes back unanswered
+MAX_QUESTIONS_PER_RUN = 3
+MAX_FAILED_WRITES_IN_A_ROW = 3  # then the run must ask or stop: it is guessing values against a shared bank
+MAX_WRITES_PER_RUN = 12
+STOPPED_WRITES = ("Not sent, and not shown to the visitor: {why}. Stop changing values and retrying. If a value only "
+                  "the visitor can know is missing (a product, a branch, a customer), ask them with ask_user: one "
+                  "short question with the options you found. Otherwise finish and say what you tried and what "
+                  "the bank answered.")
 MAX_BODY_BYTES = 256 * 1024
 _FORWARD_HEADERS = {"content-type", "accept", "entity", "userid", "languagecode", "channeltype", "accesstoken"}
 
@@ -61,6 +69,21 @@ class HeldWrite:
 
 
 @dataclass
+class HeldQuestion:
+    """A question the agent asks the visitor (decode's ask_user), held until they answer or time runs out."""
+    id: str
+    question: str
+    created: float = field(default_factory=time.time)
+    status: str = "pending"  # "pending" | "answered" | "skipped" | "timeout"
+    answer: str = ""
+    event: asyncio.Event = field(default_factory=asyncio.Event, repr=False)
+
+    def public(self) -> dict[str, Any]:
+        return {"id": self.id, "question": self.question, "status": self.status, "answer": self.answer,
+                "waiting_s": round(time.time() - self.created), "timeout_s": int(QUESTION_TIMEOUT_S)}
+
+
+@dataclass
 class ProxyRun:
     token: str
     created: float = field(default_factory=time.time)
@@ -70,6 +93,10 @@ class ProxyRun:
     bank_token: str = field(default="", repr=False)  # the visitor's; the sandbox never sees it
     # (method, URL, body) -> how the visitor and the bank answered it: a repeat is answered the same way, unasked
     answered: dict[tuple, dict[str, Any]] = field(default_factory=dict, repr=False)
+    questions: dict[str, HeldQuestion] = field(default_factory=dict)
+    visitor: bool = True  # False for operator runs (evals, smoke): nobody watches, so questions are answered at once
+    writes_sent: int = 0  # writes the visitor was asked about
+    failed_in_a_row: int = 0  # approved writes the bank refused, since the last success or answer
 
     @property
     def alive(self) -> bool:
@@ -107,6 +134,10 @@ def end_run(token: str) -> None:
             if write.decision is None:
                 write.decision = "rejected"
                 write.event.set()
+        for question in run.questions.values():
+            if question.status == "pending":
+                question.status = "timeout"
+                question.event.set()
 
 
 def decide(token: str, write_id: str, approve: bool) -> Optional[HeldWrite]:
@@ -117,6 +148,25 @@ def decide(token: str, write_id: str, approve: bool) -> Optional[HeldWrite]:
     write.decision = "approved" if approve else "rejected"
     write.event.set()
     return write
+
+
+def answer_question(token: str, question_id: str, answer: str) -> Optional[HeldQuestion]:
+    """The visitor's answer (empty = skipped); None when the question is not pending."""
+    run = RUNS.get(token)
+    question = run.questions.get(question_id) if run else None
+    if question is None or question.status != "pending":
+        return None
+    question.answer = answer.strip()[:2000]
+    question.status = "answered" if question.answer else "skipped"
+    if question.answer:
+        run.failed_in_a_row = 0  # new information: the run may try writes again
+    question.event.set()
+    return question
+
+
+def questions(token: str) -> list[dict[str, Any]]:
+    run = RUNS.get(token)
+    return [q.public() for q in run.questions.values()] if run else []
 
 
 def pending(token: str) -> list[dict[str, Any]]:
@@ -187,6 +237,33 @@ def kb_area(token: str, area: str) -> Any:
     return api_lookup.list_endpoints(_kb()[0], area)
 
 
+@proxy_app.post("/r/{token}/_ask")
+async def ask(token: str, request: Request) -> Any:
+    """decode's ask_user for this run: hold the question for the visitor; answer when they reply or time runs out."""
+    run = _run_or_404(token)
+    question = str((await request.json()).get("question") or "").strip()[:1000]
+    if not question:
+        return {"answer": "", "message": "Ask a question in words."}
+    if len(run.questions) >= MAX_QUESTIONS_PER_RUN:
+        return {"answer": "", "message": f"You have asked {MAX_QUESTIONS_PER_RUN} questions in this run, the limit. "
+                                         "Finish with what you have and say what is still open."}
+    if not run.visitor:
+        return {"answer": "", "message": "No visitor is watching this run. Decide yourself, state the assumption, "
+                                         "or finish and say what is still open."}
+    held = HeldQuestion(id=uuid.uuid4().hex[:12], question=question)
+    run.questions[held.id] = held
+    try:
+        await asyncio.wait_for(held.event.wait(), timeout=QUESTION_TIMEOUT_S)
+    except asyncio.TimeoutError:
+        if held.status == "pending":
+            held.status = "timeout"
+    messages = {"skipped": "The visitor skipped the question. Do not ask it again: decide yourself, state the "
+                           "assumption, or finish and say what is still open.",
+                "timeout": "The visitor did not answer in time. Do not ask again: finish with what you tried and "
+                           "the open question."}
+    return {"answer": held.answer, "message": messages.get(held.status, "")}
+
+
 @proxy_app.api_route("/r/{token}/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
 async def forward(token: str, path: str, request: Request) -> Response:
     run = _run_or_404(token)
@@ -213,7 +290,13 @@ async def forward(token: str, path: str, request: Request) -> Response:
                                           "the same request earlier in this run."}, status_code=403)
         record.update(status=earlier["status"], answer=earlier["answer"])
         return Response(content=earlier["content"], status_code=earlier["status"], media_type=earlier["media_type"])
+    if method in WRITE_METHODS and (run.failed_in_a_row >= MAX_FAILED_WRITES_IN_A_ROW or run.writes_sent >= MAX_WRITES_PER_RUN):
+        why = (f"the bank refused the last {run.failed_in_a_row} writes in a row" if run.failed_in_a_row >= MAX_FAILED_WRITES_IN_A_ROW
+               else f"this run has made {MAX_WRITES_PER_RUN} writes, the limit")
+        record["decision"] = "stopped"
+        return JSONResponse({"error": STOPPED_WRITES.format(why=why)}, status_code=409)
     if method in WRITE_METHODS:
+        run.writes_sent += 1
         write = HeldWrite(id=uuid.uuid4().hex[:12], method=method, path="/" + path,
                           body_preview=body[:4000].decode("utf-8", "replace"))
         run.writes[write.id] = write
@@ -253,6 +336,7 @@ async def forward(token: str, path: str, request: Request) -> Response:
         return JSONResponse({"error": f"the bank did not answer: {type(exc).__name__}"}, status_code=502)
     record.update(status=upstream.status_code, ms=int((time.time() - started) * 1000))
     if method in WRITE_METHODS:  # the visitor approved it: show them what the bank said, and keep it for a repeat
+        run.failed_in_a_row = 0 if upstream.is_success else run.failed_in_a_row + 1
         record["answer"] = upstream.text[:300]
         run.answered[key] = {"write_id": record["write_id"], "decision": "approved", "status": upstream.status_code,
                              "answer": record["answer"], "content": upstream.content,

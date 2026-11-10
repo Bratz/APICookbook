@@ -777,6 +777,9 @@
         .write-answer.ok { color: var(--color-success); }
         .write-answer.fail { color: var(--color-error); }
         .write-repeats:empty { display: none; }
+        .question-card { border-color: var(--color-accent); display: grid; gap: var(--space-xs); }
+        .question-card .question-text { font-size: var(--text-md); color: var(--color-ink); white-space: pre-wrap; }
+        .question-card textarea { width: 100%; resize: vertical; }
 
         .knowledge-search-bar {
             padding: var(--space-xs) var(--space-md);
@@ -3630,6 +3633,7 @@
            try { args = JSON.parse(step.args || '{}'); } catch (e) {}
            const t = step.tool;
            if (t === 'search_endpoints') return `Searched the API for <code>${escapeHtml(args.query)}</code>`;
+           if (t === 'ask_user') return 'Asked you a question';
            if (t === 'get_endpoint') return `Read <code>${escapeHtml(args.name)}</code>`;
            if (t === 'get_body_schema') return `Read the body schema of <code>${escapeHtml(args.name)}</code>`;
            if (t === 'write') return `Wrote <code>${escapeHtml(args.path || args.file_path)}</code>`;
@@ -3722,6 +3726,13 @@
                            li.className = 'write-step';
                            li.appendChild(renderHeldWrite(runId, runKey, data));
                            log.appendChild(li);
+                       } else if (event === 'question') {
+                           const li = document.createElement('li');  // in the log, where the agent asked
+                           li.className = 'write-step';
+                           li.appendChild(renderQuestion(runId, runKey, data));
+                           log.appendChild(li);
+                       } else if (event === 'question_answered') {
+                           settleQuestion(el.querySelector(`[data-question="${CSS.escape(data.id)}"]`), data);
                        } else if (event === 'write_decided') {
                            const card = el.querySelector(`[data-write="${CSS.escape(data.id)}"]`);
                            if (card) settleWriteCard(card, data.decision);
@@ -3746,6 +3757,7 @@
                window.Prism?.highlightAllUnder(body);
            }
            el.querySelectorAll('.write-card:not(.decided)').forEach(card => settleWriteCard(card, 'rejected'));
+           el.querySelectorAll('.question-card:not(.decided)').forEach(card => settleQuestion(card, { status: 'timeout' }));
            await showRunFiles(el, runId, runKey);
            if (final.status !== 'stopped') setLastRun({ id: runId, key: runKey });
            scroll();
@@ -3832,6 +3844,48 @@
            card.querySelector('[data-approve]').onclick = () => decide(true);
            card.querySelector('[data-reject]').onclick = () => decide(false);
            return card;
+       }
+
+       // The agent's question (decode's ask_user): the visitor types an answer or skips; the run waits up to 5 minutes.
+       function renderQuestion(runId, runKey, q) {
+           const card = document.createElement('form');
+           card.className = 'write-card question-card';
+           card.dataset.question = q.id;
+           card.innerHTML = `<h4>The agent has a question</h4>
+               <p class="question-text">${escapeHtml(q.question)}</p>
+               <label class="text-small" for="answer-${escapeHtml(q.id)}">Your answer</label>
+               <textarea id="answer-${escapeHtml(q.id)}" class="form-input" rows="2" maxlength="2000"></textarea>
+               <div class="choice-row"><button type="submit" class="btn btn-primary btn-sm">Send answer</button>
+               <button type="button" class="btn btn-secondary btn-sm" data-skip>Skip</button>
+               <span class="write-status" data-left></span></div>`;
+           const left = card.querySelector('[data-left]');
+           const deadline = Date.now() + ((q.timeout_s || 300) - (q.waiting_s || 0)) * 1000;
+           const tick = () => {
+               if (card.classList.contains('decided')) return;
+               const s = Math.max(0, Math.round((deadline - Date.now()) / 1000));
+               left.textContent = s ? `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')} left` : 'Time is up';
+               if (s) setTimeout(tick, 1000);
+           };
+           tick();
+           const send = async (answer) => {
+               card.querySelectorAll('button, textarea').forEach(b => b.disabled = true);
+               try {
+                   const r = await buildFetch(`/runs/${runId}/questions/${q.id}`, { method: 'POST', body: JSON.stringify({ answer }) }, runKey);
+                   settleQuestion(card, r.ok ? await r.json() : { status: 'timeout' });
+               } catch (e) { left.textContent = e.message; }
+           };
+           card.addEventListener('submit', (e) => { e.preventDefault(); send(card.querySelector('textarea').value.trim()); });
+           card.querySelector('[data-skip]').onclick = () => send('');
+           setTimeout(() => card.querySelector('textarea').focus(), 50);
+           return card;
+       }
+
+       function settleQuestion(card, q) {
+           if (!card || card.classList.contains('decided')) return;
+           card.classList.add('decided');
+           card.querySelectorAll('button, textarea, label').forEach(b => b.remove());
+           card.querySelector('[data-left]').textContent =
+               q.status === 'answered' ? `You answered: ${q.answer}` : q.status === 'skipped' ? 'Skipped.' : 'Not answered in time.';
        }
 
        // What the bank said to a write the visitor approved: the status and its short message.

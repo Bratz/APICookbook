@@ -66,11 +66,45 @@ def test_the_prompt_names_the_proxy_base_and_the_approval_rule(monkeypatch):
 
     assert f"{PROXY}/Core" in text  # the only address the code may call
     assert "WAITS" in text and "403" in text  # writes are held; a refusal is final
-    # F5 finding: an unattended run must find real records and act, never stop to ask.
-    assert "do not call ask_user" in text and "find a REAL one yourself" in text
+    # F5 finding: a run must find real records and act; it asks the visitor only what it cannot look up
+    # (operator runs, with nobody to answer, get an immediate "no visitor" from the proxy).
+    assert "find a REAL one yourself" in text and "Never ask for permission to write" in text
+    assert "ask_user" in text and "at most 3 questions" in text
     assert "MAKE the call" in text
     # F5 finding: the one remaining miss called a path the spec does not have.
     assert "must be the `url_template` of an operation get_endpoint returned" in text
     # Questions about the API get an answer from the spec; anything off-topic is declined.
     assert "A QUESTION about the API" in text and "make no bank calls" in text
     assert "decline in\n  one sentence" in text
+
+
+async def test_ask_visitor_returns_the_answer_or_why_there_is_none(monkeypatch):
+    replies = iter(
+        [
+            httpx.Response(200, json={"answer": "831", "message": ""}),
+            httpx.Response(
+                200, json={"answer": "", "message": "The visitor skipped the question."}
+            ),
+            httpx.Response(404, json={"detail": "no such run"}),
+        ]
+    )
+    asked: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        asked.append(request)
+        return next(replies)
+
+    real = httpx.AsyncClient
+    monkeypatch.setattr(
+        bancs.httpx, "AsyncClient", lambda **kw: real(transport=httpx.MockTransport(handler), **kw)
+    )
+    monkeypatch.setattr(settings, "bancs_proxy_url", PROXY)
+
+    assert await bancs.ask_visitor("Which product?") == "The visitor answered: 831"
+    assert await bancs.ask_visitor("Which branch?") == "The visitor skipped the question."
+    assert "could not be asked (404)" in await bancs.ask_visitor("Again?")
+    assert str(asked[0].url) == f"{PROXY}/_ask"
+    assert json.loads(asked[0].content) == {"question": "Which product?"}
+
+    monkeypatch.setattr(settings, "bancs_proxy_url", "")
+    assert "No visitor can answer" in await bancs.ask_visitor("Anyone?")

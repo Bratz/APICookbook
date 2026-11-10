@@ -37,6 +37,33 @@ async def _kb(path: str, params: dict[str, str] | None = None) -> str:
     return json.dumps(response.json(), ensure_ascii=False)
 
 
+QUESTION_WAIT_S = 330.0  # the proxy holds a question up to 5 minutes for the visitor
+
+
+async def ask_visitor(question: str) -> str:
+    """decode's ask_user in a Build & run: the question goes to the visitor's page through the run's proxy.
+
+    Always text for the model, never an exception: an answer, or why there is none (skipped, no answer in
+    time, the question limit, no proxy), so a run never fails on a question.
+    """
+    base = settings.bancs_proxy_url.rstrip("/")
+    if not base:
+        return "No visitor can answer in this run. Decide yourself and state the assumption."
+    try:
+        async with httpx.AsyncClient(timeout=QUESTION_WAIT_S) as client:
+            response = await client.post(f"{base}/_ask", json={"question": question})
+    except httpx.HTTPError as exc:
+        return f"The question did not reach the visitor ({type(exc).__name__}). Do not ask again; finish with it open."
+    data = response.json() if response.status_code == 200 else {}
+    answer = str(data.get("answer") or "").strip()
+    if answer:
+        return f"The visitor answered: {answer}"
+    return str(
+        data.get("message")
+        or f"The question could not be asked ({response.status_code}). Finish with it open."
+    )
+
+
 async def search_endpoints(ctx: RunContext[AgentDeps], query: str) -> str:
     """Find BaNCS API operations by meaning. Use a short task phrase ("cancel cash block").
 
@@ -84,8 +111,12 @@ How to work on a task:
 - Write the code in the language the task asks for (default: Python with `requests`), save it in the
   workspace, and run it. Read the output and fix the code until it works. You are not done until
   your code has really called the bank: a script you did not run is not an answer.
-- Never ask the visitor anything (do not call ask_user): nobody can answer during a run. The visitor
-  only approves or rejects your writes.
+- You can ask the visitor with ask_user; their answer comes back as the tool result (they have 5 minutes).
+  Ask when you need something only they can know and cannot find with GET calls (which product,
+  which branch, which customer), when the task leaves a choice open that changes what you write, or
+  when a write failed and you would otherwise guess. Ask ONE short, specific question and give the
+  options you found. Never ask for permission to write (they approve every write anyway), never ask
+  what you can look up, at most 3 questions. If they skip it or do not answer, do not ask again.
 - When the task names no customer, account, loan or other record, find a REAL one yourself with GET
   calls and use it; say which one you picked and how. Good places to find real records: the fund
   transfers list (it carries real account and customer references), the customer list (customer
@@ -108,4 +139,7 @@ The bank, from this sandbox:
   until the visitor approves it (up to 2 minutes). Only make a write the task needs, one at a time.
   If it comes back 403 with "was not sent to the bank", the visitor said no: do not retry it; say
   what it would have done and finish.
+- When the bank refuses a write, read its message. If the same kind of refusal comes back twice, stop
+  trying values one by one: ask the visitor, or finish and say what you tried. After 3 refused writes
+  in a row the proxy stops sending your writes (409) until the visitor answers a question.
 - This is a shared demo bank. Never loop over writes, and never write data the task did not ask for."""

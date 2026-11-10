@@ -416,3 +416,80 @@ async def test_the_stream_sends_an_approved_write_only_once_the_bank_answered(mo
     assert kinds == ["write", "write_decided", "bank_call", "done"]
     bank = chunks[kinds.index("bank_call")]
     assert '"status": 400' in bank and "BP_WITH_SAME_NAME" in bank
+
+
+async def _until_question(token: str) -> dict:
+    for _ in range(100):
+        open_ = [q for q in build_proxy.questions(token) if q["status"] == "pending"]
+        if open_:
+            return open_[0]
+        await asyncio.sleep(0.01)
+    raise AssertionError("no question was held")
+
+
+@pytest.mark.anyio
+async def test_the_agents_question_waits_for_the_visitors_answer(proxy, monkeypatch):
+    client, run = proxy
+    ask = asyncio.create_task(client.post(f"/r/{run.token}/_ask", json={"question": "Which product, 831 or 5199?"}))
+    held = await _until_question(run.token)
+    assert held["question"] == "Which product, 831 or 5199?" and held["timeout_s"] == 300
+
+    assert build_proxy.answer_question(run.token, held["id"], "  831  ").status == "answered"
+    assert (await ask).json() == {"answer": "831", "message": ""}
+    assert build_proxy.answer_question(run.token, held["id"], "again") is None  # answered once
+
+    monkeypatch.setattr(build_proxy, "QUESTION_TIMEOUT_S", 0.05)  # nobody answers this one
+    late = await client.post(f"/r/{run.token}/_ask", json={"question": "Which branch?"})
+    assert late.json()["answer"] == "" and "did not answer in time" in late.json()["message"]
+    monkeypatch.setattr(build_proxy, "MAX_QUESTIONS_PER_RUN", 2)
+    capped = await client.post(f"/r/{run.token}/_ask", json={"question": "One more?"})
+    assert "the limit" in capped.json()["message"] and len(build_proxy.questions(run.token)) == 2
+
+
+@pytest.mark.anyio
+async def test_writes_stop_after_three_refusals_until_the_visitor_answers(proxy, monkeypatch):
+    client, run = proxy
+    monkeypatch.setattr(build_proxy, "_bank_client",
+                        lambda: httpx.AsyncClient(transport=httpx.MockTransport(lambda r: httpx.Response(400, json={"description": "NO_DATA_FOUND"}))))
+
+    async def approved_write(product):
+        call = asyncio.create_task(client.post(f"/r/{run.token}/Core/accountManagement/account", json={"product": product}))
+        held = await _until_pending(run.token)
+        build_proxy.decide(run.token, held["id"], approve=True)
+        return await call
+
+    for product in (304, 5199, 290):
+        assert (await approved_write(product)).status_code == 400
+
+    stopped = await client.post(f"/r/{run.token}/Core/accountManagement/account", json={"product": 5237})
+    assert stopped.status_code == 409 and "ask_user" in stopped.json()["error"]
+    assert build_proxy.pending(run.token) == []  # the visitor was not asked about it
+    assert build_proxy.calls(run.token)[-1]["decision"] == "stopped"
+
+    # The visitor answers a question: the run may write again.
+    ask = asyncio.create_task(client.post(f"/r/{run.token}/_ask", json={"question": "Which product?"}))
+    build_proxy.answer_question(run.token, (await _until_question(run.token))["id"], "831")
+    await ask
+    assert (await approved_write(831)).status_code == 400  # held and sent again
+
+
+def test_only_the_runs_page_can_answer_its_question(client, open_build):
+    started = client.post("/api/build/runs", json={"task": "t"}).json()
+    run = build_routes._RUNS[started["id"]]
+    held = build_proxy.HeldQuestion(id="q1", question="Which product?")
+    build_proxy.RUNS[run.token].questions["q1"] = held
+    url = f"/api/build/runs/{started['id']}/questions/q1"
+
+    assert client.post(url, json={"answer": "831"}).status_code == 404  # no run key
+    answered = client.post(url, json={"answer": "831"}, headers={"X-Run-Key": started["key"]})
+    assert answered.status_code == 200 and answered.json()["status"] == "answered" and held.answer == "831"
+    assert client.post(url, json={"answer": "x"}, headers={"X-Run-Key": started["key"]}).status_code == 404
+
+
+@pytest.mark.anyio
+async def test_an_operator_run_gets_no_visitor_at_once(proxy):
+    client, run = proxy
+    run.visitor = False  # an eval or smoke run
+    reply = (await client.post(f"/r/{run.token}/_ask", json={"question": "Which product?"})).json()
+    assert reply["answer"] == "" and "No visitor is watching" in reply["message"]
+    assert build_proxy.questions(run.token) == []

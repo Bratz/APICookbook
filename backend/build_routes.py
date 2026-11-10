@@ -184,6 +184,10 @@ class Decision(BaseModel):
     approve: bool
 
 
+class Answer(BaseModel):
+    answer: str = Field(default="", max_length=2000)  # empty: the visitor skipped the question
+
+
 @router.get("/status")
 async def build_status() -> dict[str, Any]:
     try:
@@ -209,6 +213,7 @@ async def start(body: StartRequest, request: Request, authorization: str = Heade
             return JSONResponse(status_code=429, content={"error": blocked[0], "message": message})
     proxy = build_proxy.new_run()
     proxy.bank_token = token
+    proxy.visitor = not operator  # an eval or smoke run has nobody to answer the agent's questions
     task, files = body.task, []
     if body.previous:
         try:
@@ -250,6 +255,16 @@ async def decide(run_id: str, write_id: str, body: Decision, authorization: str 
     if write is None:
         raise HTTPException(status_code=404, detail="no such pending write (decided, timed out or unknown)")
     return write.public()
+
+
+@router.post("/runs/{run_id}/questions/{question_id}")
+async def answer(run_id: str, question_id: str, body: Answer, authorization: str = Header(""),
+                 x_run_key: str = Header("")) -> dict[str, Any]:
+    run = _run_for(run_id, authorization, x_run_key)
+    question = build_proxy.answer_question(run.token, question_id, body.answer)
+    if question is None:
+        raise HTTPException(status_code=404, detail="no such open question (answered, timed out or unknown)")
+    return question.public()
 
 
 @router.delete("/runs/{run_id}")
@@ -322,6 +337,7 @@ def _sse(event: str, data: Any) -> str:
 async def stream_run(run_id: str, token: str) -> AsyncIterator[str]:
     """One run, live: its steps from the runner and its bank traffic from the proxy, until it ends."""
     cursor, writes_seen, decided_seen, calls_sent = 0, set(), set(), 0
+    asked_seen, settled_seen = set(), set()
     started = last_sent = time.monotonic()
     while time.monotonic() - started < STREAM_MAX_S:
         response = await _call_runner("GET", f"/runs/{run_id}/events?after={cursor}")
@@ -335,6 +351,13 @@ async def stream_run(run_id: str, token: str) -> AsyncIterator[str]:
             if write["decision"] and write["id"] not in decided_seen:
                 decided_seen.add(write["id"])
                 out.append(_sse("write_decided", write))
+        for question in build_proxy.questions(token):
+            if question["id"] not in asked_seen:
+                asked_seen.add(question["id"])
+                out.append(_sse("question", question))
+            if question["status"] != "pending" and question["id"] not in settled_seen:
+                settled_seen.add(question["id"])
+                out.append(_sse("question_answered", question))
         calls = build_proxy.calls(token)
         # in order, once each has an outcome: the bank's status, or a write that was not sent
         while calls_sent < len(calls) and ("status" in calls[calls_sent]

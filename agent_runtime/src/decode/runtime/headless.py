@@ -56,6 +56,7 @@ from decode.runtime.summary import (
     write_summary,
 )
 from decode.tools.askuser import deny_user_question_resolver
+from decode.tools.bancs import ask_visitor
 from decode.tools.bash import close_executor, warm_executor
 
 if TYPE_CHECKING:
@@ -108,7 +109,10 @@ def _build_headless_deps(cwd: Path, model: str | None = None) -> AgentDeps:
         emit=_headless_emit,
         gate=PermissionGate(mode=PermissionMode.BYPASS),
         resolve_permission=_deny_permission_resolver,
-        resolve_user_question=deny_user_question_resolver,
+        # In a Build & run (a proxy is set) ask_user reaches the visitor's page; elsewhere nobody can answer.
+        resolve_user_question=ask_visitor
+        if settings.bancs_proxy_url
+        else deny_user_question_resolver,
         context_window_tokens=resolve_context_window(model),
     )
 
