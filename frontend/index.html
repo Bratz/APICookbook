@@ -2275,21 +2275,21 @@
                    }
                }
                
-               document.getElementById('responseTime').textContent = `${result.duration_ms || 0}ms`;
-               
-               const size = JSON.stringify(response?.body || response).length;
-               document.getElementById('responseSize').textContent = formatBytes(size);
-               
-               responseContent.innerHTML = createCodeBlockHTML(
-                   JSON.stringify(response?.body || response, null, 2),
-                   'json'
-               );
+               document.getElementById('responseTime').textContent = `${result.duration_ms ?? result.duration ?? 0}ms`;
+
+               // The bank's answer, not the Playground's wrapper; an empty body stays empty.
+               const body = response && 'body' in response ? response.body : response;
+               const text = typeof body === 'string' ? body : JSON.stringify(body, null, 2);
+               const language = typeof body !== 'string' ? 'json' : /html|xml/.test(response.content_type || '') ? 'markup' : 'text';
+               document.getElementById('responseSize').textContent = formatBytes(text.length);
+               responseContent.innerHTML = text ? createCodeBlockHTML(text, language)
+                   : '<p class="text-muted text-small">The bank sent an empty body.</p>';
            } else {
                const statusCode = document.getElementById('statusCode');
                statusCode.textContent = 'Error';
                statusCode.className = 'status-code client-error';
                
-               document.getElementById('responseTime').textContent = `${result.duration_ms || 0}ms`;
+               document.getElementById('responseTime').textContent = `${result.duration_ms ?? result.duration ?? 0}ms`;
                document.getElementById('responseSize').textContent = '0B';
                
                responseContent.innerHTML = `

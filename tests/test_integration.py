@@ -289,3 +289,16 @@ def test_chat_code_example_uses_core_base_path_and_schema_fields(client):
                                   "/api/developer/bert-status", "/api/bert-chat/intents"])
 def test_removed_routes_stay_gone(client, path):
     assert client.get(path).status_code in (404, 405)
+
+
+def test_playground_adds_the_core_base_path_and_refuses_unfilled_placeholders(client):
+    fake = httpx.Response(200, json={}, request=httpx.Request("GET", settings.api_base_url))
+    with patch.object(httpx.AsyncClient, "request", new=AsyncMock(return_value=fake)) as sent:
+        client.post("/api/playground/execute",
+                    json={"type": "api", "method": "GET", "url": "/accountManagement/account/balanceDetails/1"})
+        assert str(sent.call_args.kwargs["url"]).endswith("/Core/accountManagement/account/balanceDetails/1")
+        sent.reset_mock()
+        r = client.post("/api/playground/execute",
+                        json={"type": "api", "method": "GET", "url": "/Core/x/balanceDetails/{accountReference}"})
+        assert r.status_code == 400 and "{accountReference}" in r.json()["error"]
+        sent.assert_not_called()

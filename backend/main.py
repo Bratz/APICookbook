@@ -1806,6 +1806,14 @@ async def execute_playground_request(request: PlaygroundRequest, token: str = De
                         status_code=400,
                         detail=f"Only requests to {settings.api_base_url} are allowed"
                     )
+                # The Reference and the guides show paths without the spec's basePath; the bank 404s without it.
+                if not target.path.startswith("/Core/"):
+                    target = target.copy_with(path="/Core" + target.path)
+                    url = str(target)
+                placeholder = re.search(r"\{[^}/]+\}", httpx.URL(url).path.replace("%7B", "{").replace("%7D", "}"))
+                if placeholder:
+                    raise HTTPException(status_code=400,
+                                        detail=f"Fill in {placeholder.group(0)} in the URL with a real value first.")
 
                 logger.info(f"[{request_id}] Executing API call: {request.method} {url}")
                 
