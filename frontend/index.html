@@ -188,10 +188,73 @@
         .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--color-rule-2); }
         .status-dot.online { background: var(--color-success); }
 
+        /* ---------- Top nav ---------- */
+        a.logo { text-decoration: none; color: inherit; }
+        .top-nav { display: flex; align-items: center; gap: var(--space-lg); margin-right: auto; margin-left: var(--space-xl); min-width: 0; overflow-x: auto; scrollbar-width: none; }
+        .top-nav a { flex: none; font-size: var(--text-sm); font-weight: 700; color: var(--color-ink); text-decoration: none; padding-block: var(--space-2xs); }
+        .top-nav a:hover { color: var(--color-accent); }
+        .top-nav a[aria-current="page"] { box-shadow: inset 0 -2px 0 var(--color-accent); }
+        @media (max-width: 60rem) {
+            .header { height: auto; }
+            .header-content { flex-wrap: wrap; padding-block: var(--space-xs); row-gap: var(--space-2xs); }
+            .top-nav { order: 3; flex-basis: 100%; margin: 0; gap: var(--space-md); }
+            .status-container .status-indicator { display: none; }
+        }
+        @media (max-width: 80rem) { .status-container .status-indicator { display: none; } .top-nav { margin-left: var(--space-lg); } }
+
+        /* ---------- Home: a portal front page in bands ---------- */
+        body[data-page="home"] .main-content { padding: 0; gap: 0; }
+        .home { display: flex; flex-direction: column; }
+        .home-wrap { width: min(100% - 2 * var(--space-lg), 77.5rem); margin-inline: auto; }
+        .home-hero { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-xl); padding-block: var(--space-2xl) var(--space-xl); }
+        .home-hero-text { flex: 1 1 26rem; min-width: 0; display: grid; gap: var(--space-md); }
+        .home-title { font-size: clamp(2.4rem, 1.6rem + 2.6vw, 3.5rem); line-height: 1.08; }
+        .home-lede { font-size: var(--text-lg); line-height: 1.6; color: var(--color-ink-2); max-width: 34em; }
+        .home-ctas { display: flex; flex-wrap: wrap; gap: var(--space-sm); }
+        .btn-lg { height: 48px; padding-inline: 30px; }
+        a.btn { text-decoration: none; }
+        .home-call { flex: 1 1 26rem; min-width: 0; margin: 0; padding: var(--space-lg); border-radius: 16px; background: var(--color-graphite); color: var(--color-graphite-ink); }
+        .home-call figcaption { font-size: var(--text-xs); font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--color-graphite-muted); margin-bottom: var(--space-sm); }
+        .home-call pre { margin: 0; font-size: 13px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
+        .home-call-answer { margin-top: var(--space-md) !important; padding-top: var(--space-md); border-top: 1px solid var(--color-graphite-2); color: var(--color-success-on-dark); }
+        .home-quick { display: flex; flex-wrap: wrap; gap: var(--space-sm) var(--space-xl); padding-bottom: var(--space-md); margin-bottom: var(--space-xl); border-bottom: 3px solid var(--color-rule-2); }
+        .home-quick a, .home-quick .linkish { font-size: var(--text-md); font-weight: 700; color: var(--color-link); text-decoration: none; }
+        .home-band { padding-block: var(--space-2xl); }
+        .home-tint { background: var(--color-paper-2); }
+        .home-band h2 { font-size: clamp(1.9rem, 1.4rem + 1.4vw, 2.5rem); }
+        .home-band-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: var(--space-sm); margin-bottom: var(--space-lg); }
+        .home-band-head p, .home-split p { margin-top: var(--space-xs); color: var(--color-ink-2); font-size: var(--text-md); max-width: 40em; }
+        .home-band-head > a, .home-split a { font-weight: 700; color: var(--color-link); text-decoration: none; }
+        .home-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(16.25rem, 1fr)); gap: var(--space-md); }
+        .home-cards-2 { grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr)); margin-top: var(--space-lg); }
+        .home-card { display: flex; flex-direction: column; gap: var(--space-xs); padding: 20px; border: 0; border-radius: 10px; background: var(--color-paper); color: var(--color-ink); box-shadow: 4px 4px 30px rgb(0 0 0 / 0.06); text-align: left; font: inherit; text-decoration: none; cursor: pointer; }
+        .home-card:hover .home-card-link, .home-card:hover h3 { text-decoration: underline; }
+        .home-card h3 { font-family: var(--font-serif); font-size: var(--text-xl); }
+        .home-card p { color: var(--color-ink-2); line-height: 1.6; }
+        .home-card .btn { align-self: flex-start; margin-top: var(--space-xs); }
+        .two-tone { flex: none; color: var(--color-ink); margin-bottom: var(--space-2xs); }
+        .home-card-title { font-weight: 700; font-size: var(--text-md); }
+        .home-card-meta { font-size: var(--text-xs); font-weight: 700; color: var(--color-muted); }
+        .home-card-text { font-size: var(--text-md); line-height: 1.55; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+        .home-card-link { margin-top: auto; padding-top: var(--space-xs); font-weight: 700; color: var(--color-accent); }
+        .home-split { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-xl); }
+        .home-split > * { flex: 1 1 24rem; min-width: 0; }
+        .home-split a { display: inline-block; margin-top: var(--space-sm); }
+        .home-code { margin: 0; padding: var(--space-md) var(--space-lg); border-radius: var(--radius-card); background: var(--color-graphite); color: var(--color-graphite-ink); font-size: var(--text-sm); white-space: pre-wrap; overflow-wrap: anywhere; }
+        .home-footer { background: var(--color-graphite); color: var(--color-graphite-ink); padding-block: var(--space-2xl) var(--space-xl); }
+        .home-footer-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); gap: var(--space-xl); font-size: var(--text-sm); }
+        .home-footer p { color: var(--color-graphite-muted); margin-top: var(--space-2xs); }
+        .home-footer code { overflow-wrap: anywhere; }
+        .home-footer-name { font-family: var(--font-serif); font-size: var(--text-lg); color: var(--color-graphite-ink) !important; margin-top: 0 !important; }
+        .home-footer-label { font-weight: 700; color: var(--color-graphite-ink) !important; margin-top: 0 !important; }
+        .home-footer-links { display: grid; gap: var(--space-xs); align-content: start; }
+        .home-footer-links a { color: var(--color-graphite-ink); font-weight: 700; text-decoration: none; }
+        .build-intro { display: grid; gap: var(--space-sm); }
+
         /* ---------- Shell ---------- */
         .app-container {
             display: grid;
-            grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
+            grid-template-columns: minmax(0, 1fr);
             min-height: calc(100dvh - var(--bar-h));
         }
 
@@ -865,10 +928,17 @@
     <!-- Header -->
     <header class="header">
         <div class="header-content">
-            <div class="logo">
+            <a class="logo" href="#/">
                 <div class="logo-icon" aria-hidden="true">API</div>
                 <p class="logo-name">TCS BaNCS API Cookbook</p>
-            </div>
+            </a>
+            <nav class="top-nav" aria-label="Main">
+                <a href="#/reference" data-page="reference">Reference</a>
+                <a href="#/guides" data-page="guides">Guides</a>
+                <a href="#/playground" data-page="playground">Playground</a>
+                <a href="#/build" data-page="chat">Build &amp; run</a>
+                <a href="#/mcp" data-page="mcp">MCP</a>
+            </nav>
             <div class="status-container">
                 <div class="status-indicator">
                     <span class="status-dot" id="apiStatus"></span>
@@ -887,99 +957,128 @@
     
     <!-- Main Application -->
     <div class="app-container">
-        <!-- Sidebar -->
-        <aside class="sidebar" id="sidebar" aria-label="Developer links">
-            <!-- A portal's order: start, reference, build, integrate -->
-            <details class="sidebar-section" open>
-                <summary class="sidebar-title">Get started</summary>
-                <button type="button" class="sidebar-item" onclick="showOverview()">
-                    <i data-lucide="compass" style="width: 16px; height: 16px;" aria-hidden="true"></i>
-                    <span>Overview</span>
-                </button>
-                <button type="button" class="sidebar-item" onclick="showAuthentication()">
-                    <i data-lucide="key" style="width: 16px; height: 16px;" aria-hidden="true"></i>
-                    <span>Authentication &amp; headers</span>
-                </button>
-                <button type="button" class="sidebar-item" onclick="quickTestAccount()">
-                    <i data-lucide="play-circle" style="width: 16px; height: 16px;" aria-hidden="true"></i>
-                    <span>Your first call</span>
-                </button>
-            </details>
-
-            <details class="sidebar-section" open>
-                <summary class="sidebar-title">Integrate</summary>
-                <button type="button" class="sidebar-item" onclick="showMCPTools()">
-                    <i data-lucide="plug" style="width: 16px; height: 16px;" aria-hidden="true"></i>
-                    <span>MCP server</span>
-                </button>
-                <!-- Postman, Insomnia and Hoppscotch all import this file directly -->
-                <a class="sidebar-item" href="/api/openapi?version=3.0" download="bancs-openapi.json">
-                    <i data-lucide="download" style="width: 16px; height: 16px;" aria-hidden="true"></i>
-                    <span>OpenAPI spec (JSON)</span>
-                </a>
-            </details>
-        </aside>
-        
         <!-- Main Content -->
         <main class="main-content">
-            <!-- Tabs -->
-            <div class="tabs-container" role="tablist" aria-label="Sections">
-                <button type="button" class="tab active" role="tab" id="tab-chat" aria-controls="chatTab" aria-selected="true" onclick="switchTab('chat', this)">
-                    <i data-lucide="message-circle" style="width: 16px; height: 16px;" aria-hidden="true"></i>
-                    <span>Chat</span>
-                </button>
-                <button type="button" class="tab" role="tab" id="tab-reference" aria-controls="referenceTab" aria-selected="false" onclick="switchTab('reference', this)">
-                    <i data-lucide="library" style="width: 16px; height: 16px;" aria-hidden="true"></i>
-                    <span>Reference</span>
-                </button>
-                <button type="button" class="tab" role="tab" id="tab-guides" aria-controls="guidesTab" aria-selected="false" onclick="switchTab('guides', this)">
-                    <i data-lucide="map" style="width: 16px; height: 16px;" aria-hidden="true"></i>
-                    <span>Guides</span>
-                </button>
-                <button type="button" class="tab" role="tab" id="tab-playground" aria-controls="playgroundTab" aria-selected="false" onclick="switchTab('playground', this)">
-                    <i data-lucide="play" style="width: 16px; height: 16px;" aria-hidden="true"></i>
-                    <span>Playground</span>
-                </button>
-                <button type="button" class="tab" role="tab" id="tab-history" aria-controls="historyTab" aria-selected="false" onclick="switchTab('history', this)">
-                    <i data-lucide="clock" style="width: 16px; height: 16px;" aria-hidden="true"></i>
-                    <span>History</span>
-                </button>
+            <!-- Home: the portal's front page -->
+            <div id="homeTab" class="tab-content home" role="region" aria-label="Home">
+                <section class="home-hero home-wrap">
+                    <div class="home-hero-text">
+                        <h1 class="home-title">Build on TCS BaNCS</h1>
+                        <p class="home-lede"><span id="homeOpCount">950</span> operations from the BaNCS Swagger, with tested guides, a Playground and an MCP server. Every call goes to a shared demo bank, so you can try them right away.</p>
+                        <div class="home-ctas">
+                            <button type="button" class="btn btn-primary btn-lg" onclick="quickTestAccount()">Make your first call</button>
+                            <a class="btn btn-secondary btn-lg" href="#/reference">Browse the API</a>
+                        </div>
+                    </div>
+                    <figure class="home-call">
+                        <figcaption>Your first call</figcaption>
+                        <pre>curl https://demoapps.tcsbancs.com/Core/accountManagement/account/balanceDetails/101000000101814 \
+  -H "entity: GPRDTTSTOU" -H "userId: 1" -H "languageCode: 1" \
+  -H "Accept: application/json"</pre>
+                        <pre class="home-call-answer">200 OK · application/json
+{ "pageSize": 22, "totalNoOfRecords": 2,
+  "accountBalanceDetails": { "balance": { … } } }</pre>
+                    </figure>
+                </section>
+
+                <nav class="home-quick home-wrap" aria-label="Quick links">
+                    <a href="#/reference">API reference</a>
+                    <a href="#/guides">Guides</a>
+                    <button type="button" class="linkish" onclick="showAuthentication()">Authentication &amp; headers</button>
+                    <a href="#/mcp">MCP server</a>
+                    <a href="/api/openapi?version=3.0" download="bancs-openapi.json">OpenAPI file (JSON)</a>
+                </nav>
+
+                <section class="home-band home-tint" aria-labelledby="homeAreasHead">
+                    <div class="home-wrap">
+                        <div class="home-band-head">
+                            <div>
+                                <h2 id="homeAreasHead">APIs by business area</h2>
+                                <p>Each area opens with its operations; each operation with parameters, body schema and a curl command.</p>
+                            </div>
+                            <a href="#/reference" id="homeAllAreas">All areas</a>
+                        </div>
+                        <div class="home-cards" id="homeAreas"><p class="text-muted">Loading the areas…</p></div>
+                    </div>
+                </section>
+
+                <section class="home-band" aria-labelledby="homeGuidesHead">
+                    <div class="home-wrap">
+                        <div class="home-band-head">
+                            <div>
+                                <h2 id="homeGuidesHead">Guides</h2>
+                                <p>Multi-step flows on real operations, each tested against the demo bank.</p>
+                            </div>
+                            <a href="#/guides">All guides</a>
+                        </div>
+                        <div class="home-cards" id="homeGuides"></div>
+                    </div>
+                </section>
+
+                <section class="home-band home-tint" aria-labelledby="homeTryHead">
+                    <div class="home-wrap">
+                        <h2 id="homeTryHead">Try it</h2>
+                        <div class="home-cards home-cards-2">
+                            <div class="home-card">
+                                <span data-icon="search"></span>
+                                <h3>Playground</h3>
+                                <p>Send one request with the headers filled in. The body editor checks your JSON against the endpoint's schema, and the answer opens in a viewer you can fold and search.</p>
+                                <a class="btn btn-primary" href="#/playground">Open the Playground</a>
+                            </div>
+                            <div class="home-card">
+                                <span data-icon="code"></span>
+                                <h3>Build &amp; run</h3>
+                                <p>Describe a task. An agent writes the code, runs it in a sandbox against the demo bank and fixes it until it works. Every change to bank data waits for your approval.</p>
+                                <a class="btn btn-primary" href="#/build">Start a task</a>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="home-band" aria-labelledby="homeMcpHead">
+                    <div class="home-wrap home-split">
+                        <div>
+                            <h2 id="homeMcpHead">Connect an AI assistant</h2>
+                            <p>Claude Code, Claude Desktop, Cursor and other MCP clients reach every operation through four tools: list_apis, search_endpoints, get_api_schema and call_api.</p>
+                            <a href="#/mcp">How to connect</a>
+                        </div>
+                        <pre class="home-code">claude mcp add --transport http bancs https://apicookbook.vercel.app/api/mcp</pre>
+                    </div>
+                </section>
+
+                <footer class="home-footer">
+                    <div class="home-wrap home-footer-grid">
+                        <div>
+                            <p class="home-footer-name">TCS BaNCS API Cookbook</p>
+                            <p>The demo data is shared: a change you approve, every user sees.</p>
+                        </div>
+                        <div>
+                            <p class="home-footer-label">Base URL</p>
+                            <p><code>https://demoapps.tcsbancs.com/Core</code></p>
+                        </div>
+                        <div>
+                            <p class="home-footer-label">Headers</p>
+                            <p><code>entity: GPRDTTSTOU · userId: 1 · languageCode: 1 · Accept: application/json</code></p>
+                        </div>
+                        <div class="home-footer-links">
+                            <a href="#/reference">API reference</a>
+                            <a href="#/guides">Guides</a>
+                            <a href="#/mcp">MCP server</a>
+                        </div>
+                    </div>
+                </footer>
             </div>
-            
+
             <!-- Chat Tab -->
-            <div id="chatTab" class="tab-content" role="tabpanel" aria-labelledby="tab-chat">
+            <div id="chatTab" class="tab-content hidden" role="region" aria-label="Build and run">
                 <div class="chat-container">
                     <div class="chat-messages" id="chatMessages">
                         <div class="message assistant">
-                            <div class="message-content">
-                                <h1 class="welcome-title">Find TCS BaNCS APIs, or have the code for a task built and run for you.</h1>
-                                <p class="welcome-lede">950 operations from the BaNCS Swagger, with tested guides, a Playground and an MCP server, all against a shared demo bank.</p>
-                                <section class="band" aria-labelledby="startHead">
-                                <h2 id="startHead">Two ways to start</h2>
-                                <div class="starter-grid">
-                                    <div class="starter-card">
-                                        <h3>Find an endpoint</h3>
-                                        <p>Search the 950 endpoints, or browse them by business area. Each one opens with its parameters, body and a curl command.</p>
-                                        <button type="button" class="btn btn-secondary btn-sm" onclick="switchTab('reference')">Open the reference</button>
-                                    </div>
-                                    <div class="starter-card" data-needs="build" hidden>
-                                        <h3>Build &amp; run</h3>
-                                        <p>The agent writes the code, runs it against the demo bank and fixes it until it works. It asks you before any change to bank data.</p>
-                                        <button type="button" class="btn btn-secondary btn-sm" onclick="startTask('List the first 3 customers and show their IDs and names')">Try: list three customers</button>
-                                    </div>
-                                </div>
-                                </section>
-                                <section class="band band-plain" aria-labelledby="basicsHead">
-                                <h2 id="basicsHead">Before your first call</h2>
-                                <p>No sign-in: every request goes to the shared BaNCS demo host with three headers, already filled in the Playground. Send <code>Accept: application/json</code> too: without it the bank answers in XML. A BaNCS access token is optional; add yours under Authentication and every call carries it.</p>
-                                <dl class="basics">
-                                    <dt>Base URL</dt><dd>https://demoapps.tcsbancs.com/Core</dd>
-                                    <dt>entity</dt><dd>GPRDTTSTOU</dd>
-                                    <dt>userId</dt><dd>1</dd>
-                                    <dt>languageCode</dt><dd>1</dd>
-                                    <dt>Accept</dt><dd>application/json</dd>
-                                </dl>
-                                </section>
+                            <div class="message-content build-intro">
+                                <h1 class="tab-title">Build &amp; run</h1>
+                                <p data-needs="build" hidden>Describe a task. An agent writes the code, runs it in a sandbox against the demo bank and fixes it until it works. It asks you before any change to bank data.</p>
+                                <p data-needs="build" hidden><button type="button" class="btn btn-secondary btn-sm" onclick="startTask('List the first 3 customers and show their IDs and names')">Try: list three customers</button></p>
+                                <p data-needs="nobuild">Build &amp; run is off on this server right now. Ask about the API and the assistant answers from the documentation.</p>
                             </div>
                         </div>
                     </div>
@@ -1008,7 +1107,7 @@
             </div>
             
             <!-- Reference: search, then one card per business area; an area opens to its endpoints -->
-            <div id="referenceTab" class="tab-content hidden" role="tabpanel" aria-labelledby="tab-reference">
+            <div id="referenceTab" class="tab-content hidden" role="region" aria-label="Reference">
                 <div class="tab-head">
                     <h1 class="tab-title">API reference</h1>
                     <p class="text-muted" id="refSummary">The BaNCS endpoints by business area.</p>
@@ -1027,7 +1126,7 @@
             </div>
 
             <!-- Guides: multi-step flows, one card each -->
-            <div id="guidesTab" class="tab-content hidden" role="tabpanel" aria-labelledby="tab-guides">
+            <div id="guidesTab" class="tab-content hidden" role="region" aria-label="Guides">
                 <div class="tab-head">
                     <h1 class="tab-title">Guides</h1>
                     <p class="text-muted">Multi-step flows on real BaNCS operations, each tested against the demo bank. Open one for its steps.</p>
@@ -1036,7 +1135,7 @@
             </div>
 
             <!-- Enhanced Playground Tab -->
-            <div id="playgroundTab" class="tab-content hidden" role="tabpanel" aria-labelledby="tab-playground">
+            <div id="playgroundTab" class="tab-content hidden" role="region" aria-label="Playground">
                 <div class="playground-container" id="playgroundContainer">
                     <!-- Request Section -->
                     <div class="playground-section">
@@ -1230,7 +1329,7 @@
             </div>
             
             <!-- History Tab -->
-            <div id="historyTab" class="tab-content hidden" role="tabpanel" aria-labelledby="tab-history">
+            <div id="historyTab" class="tab-content hidden" role="region" aria-label="History">
                 <div class="card">
                     <div class="flex justify-between items-center mb-3">
                         <h1 class="tab-title">Request history</h1>
@@ -1613,6 +1712,8 @@
                 state.endpoints = endpoints;
                 displayEndpoints(endpoints);
                 displayGuides();
+                renderHome();
+                if (location.hash.startsWith('#/reference/')) route();
             } catch (error) {
                 console.error('Failed to load endpoints:', error);
                 document.getElementById('endpointList').innerHTML =
@@ -1674,11 +1775,12 @@
             lucide.createIcons();
         }
 
-        function showArea(area) {
-            switchTab('reference');
+        function showArea(area, { fromRouter = false } = {}) {
+            showPage('reference');
+            if (!fromRouter) setRoute('reference/' + slugify(area));
             document.getElementById('endpointSearch').value = '';
             document.getElementById('endpointList').innerHTML =
-                `<button type="button" class="linkish back-link" onclick="showAreaGrid()">← All areas</button>
+                `<button type="button" class="linkish back-link" onclick="showAreaGrid(); setRoute('reference')">← All areas</button>
                  <h3 class="area-title">${escapeHtml(area)}</h3>` + endpointRows(state.areas[area] || []);
         }
 
@@ -2031,19 +2133,50 @@
            target.focus();
        });
 
+       // ---------------------------------------------------------------- pages and their addresses
+       // Every page has an address (#/reference/accounts, #/guides, ...), so links can be shared and Back works.
+       // switchTab(name) shows a page and records its address; the router shows the page an address names.
+       const ROUTE_OF = { home: '', chat: 'build', reference: 'reference', guides: 'guides', playground: 'playground', mcp: 'mcp', history: 'history' };
+       const PAGE_OF = Object.fromEntries(Object.entries(ROUTE_OF).map(([page, route]) => [route, page]));
+       const PAGE_TITLE = { home: '', chat: 'Build & run', reference: 'API reference', guides: 'Guides', playground: 'Playground', mcp: 'MCP server', history: 'History' };
+       const slugify = (text) => String(text).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+
+       function setRoute(route) {
+           const hash = '#/' + route;
+           if (location.hash !== hash && !(route === '' && (location.hash === '' || location.hash === '#/'))) history.pushState(null, '', hash);
+       }
+
+       function route() {
+           const [page = '', sub] = location.hash.replace(/^#\/?/, '').split('/');
+           const name = PAGE_OF[page] || 'home';
+           if (name === 'reference' && sub && state.areas) {
+               const area = Object.keys(state.areas).find(a => slugify(a) === sub);
+               if (area) return showArea(area, { fromRouter: true });
+           }
+           showPage(name);
+           if (name === 'reference' && !sub && state.areas) showAreaGrid();
+       }
+       window.addEventListener('popstate', route);
+       window.addEventListener('hashchange', route);
+
        function switchTab(tabName, tabElement) {
-           // Mark the tab by name: callers hand in guesses like querySelector('.tab'), which drifted.
-           document.querySelectorAll('.tab').forEach(tab => {
-               const on = (tab.getAttribute('onclick') || '').includes(`'${tabName}'`);
-               tab.classList.toggle('active', on);
-               tab.setAttribute('aria-selected', on);
-               tab.tabIndex = on ? 0 : -1;
+           showPage(tabName);
+           setRoute(ROUTE_OF[tabName] ?? '');
+       }
+
+       function showPage(tabName) {
+           document.body.dataset.page = tabName;
+           document.querySelectorAll('.top-nav a').forEach(link => {
+               if (link.dataset.page === tabName) link.setAttribute('aria-current', 'page');
+               else link.removeAttribute('aria-current');
            });
-           
+           document.title = PAGE_TITLE[tabName] ? `${PAGE_TITLE[tabName]} · TCS BaNCS API Cookbook` : 'TCS BaNCS API Cookbook';
+
            document.querySelectorAll('.tab-content').forEach(content => {
                content.classList.add('hidden');
            });
            document.getElementById(`${tabName}Tab`).classList.remove('hidden');
+           
            
            if (tabName === 'mcp' && !state.mcpTools.length) {
                loadMCPTools();
@@ -2894,6 +3027,7 @@
            } catch (e) {}
            state.buildAvailable = state.buildMode = available;
            document.querySelectorAll('[data-needs="build"]').forEach(el => { el.hidden = !available; });
+           document.querySelectorAll('[data-needs="nobuild"]').forEach(el => { el.hidden = available; });
            document.getElementById('agentNote').textContent = available
                ? 'Build & run writes the code, runs it in a sandbox and calls the shared demo bank. Every change to bank data waits for your Approve, and approved changes are visible to everyone using the demo.'
                : 'Build & run is off on this server right now; the assistant answers from the API documentation.';
@@ -3115,9 +3249,56 @@
            el.querySelector('[data-act="build"]')?.addEventListener('click', () => startTask(g.task));
        }
 
+       // Two-tone icons drawn for this portal: thin lines over offset light-green shapes, 56 px.
+       const TWO_TONE = {
+           people:   ['M23 40a13 13 0 1 0 26 0a13 13 0 1 0-26 0M17 15a8 8 0 1 0 16 0a8 8 0 1 0-16 0', 'M15 18a7 7 0 1 0 14 0a7 7 0 1 0-14 0M7 44c0-8 6.5-14 15-14s15 6 15 14M33 17a6 6 0 1 0 12 0a6 6 0 1 0-12 0M39 29c6 1 10 6 10 12'],
+           account:  ['M29 40a13 13 0 1 0 26 0a13 13 0 1 0-26 0', 'M5 14h40v26H5zM5 21h40M11 33h12M42 34v12M39 36.5c0-1.4 1.3-2.5 3-2.5s3 1 3 2.2-1.3 2-3 2.3-3 1-3 2.3 1.3 2.2 3 2.2 3-1 3-2.5'],
+           deposit:  ['M27 40a13 13 0 1 0 26 0a13 13 0 1 0-26 0', 'M6 12h34v32H6zM6 20h34M14 7v9M32 7v9M12 27h6M22 27h6M12 35h6M40 46V34M35 39l5-5 5 5'],
+           crypto:   ['M26 18a12 12 0 1 0 24 0a12 12 0 1 0-24 0', 'M8 20l10-6 10 6v12l-10 6-10-6zM8 20l10 6 10-6M18 26v12M30 34l8-5 8 5v10l-8 5-8-5zM30 34l8 5 8-5M38 39v10M28 32l4 2'],
+           shield:   ['M20 20a14 14 0 1 0 28 0a14 14 0 1 0-28 0', 'M26 7l16 6v12c0 11-7 18-16 22c-9-4-16-11-16-22V13zM19 27l5 5 10-10'],
+           asset:    ['M26 18a12 12 0 1 0 24 0a12 12 0 1 0-24 0', 'M8 47h38M12 47V24l15-11 15 11v23M21 47V33h12v14M18 27h4M32 27h4'],
+           transfer: ['M4 19a10 10 0 1 0 20 0a10 10 0 1 0-20 0M32 37a10 10 0 1 0 20 0a10 10 0 1 0-20 0', 'M10 22h32M36 16l6 6-6 6M46 36H14M20 30l-6 6 6 6'],
+           document: ['M26 40a13 13 0 1 0 26 0a13 13 0 1 0-26 0', 'M12 6h20l8 8v34H12zM32 6v8h8M18 24h16M18 30h16M18 36h10'],
+           calendar: ['M27 18a12 12 0 1 0 24 0a12 12 0 1 0-24 0', 'M6 14h36v32H6zM6 22h36M14 9v9M34 9v9M12 30h6M22 30h6M32 30h6M12 38h6M22 38h6'],
+           search:   ['M11 20a13 13 0 1 0 26 0a13 13 0 1 0-26 0', 'M10 22a14 14 0 1 0 28 0a14 14 0 1 0-28 0M34 32l12 12'],
+           code:     ['M25 38a13 13 0 1 0 26 0a13 13 0 1 0-26 0', 'M6 10h44v34H6zM6 18h44M18 26l-6 5 6 5M30 26l6 5-6 5M26 38l-2-14'],
+           list:     ['M27 16a12 12 0 1 0 24 0a12 12 0 1 0-24 0', 'M8 10h32v36H8zM14 18h4M22 18h12M14 26h4M22 26h12M14 34h4M22 34h12'],
+       };
+       const TWO_TONE_FOR = [[/crypto/i, 'crypto'], [/deposit/i, 'deposit'], [/loan|^LOC$/i, 'calendar'], [/customer|360|onboard|contact/i, 'people'],
+           [/payment|transfer/i, 'transfer'], [/collateral|security|hold|block/i, 'shield'], [/asset|bank structure/i, 'asset'],
+           [/account/i, 'account'], [/report|statement|reference data/i, 'document']];
+       function twoTone(nameOrKey) {
+           const key = TWO_TONE[nameOrKey] ? nameOrKey : (TWO_TONE_FOR.find(([re]) => re.test(nameOrKey)) || [, 'list'])[1];
+           const [green, ink] = TWO_TONE[key];
+           return `<svg class="two-tone" width="56" height="56" viewBox="0 0 56 56" aria-hidden="true"><path d="${green}" fill="#B7EA95"></path><path d="${ink}" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"></path></svg>`;
+       }
+
+       // The home page's cards: the six largest business areas and three featured guides.
+       function renderHome() {
+           document.getElementById('homeOpCount').textContent = state.endpoints.length;
+           const names = Object.keys(state.areas || {});
+           document.getElementById('homeAllAreas').textContent = `All ${names.length} areas`;
+           document.getElementById('homeAreas').innerHTML = names
+               .sort((a, b) => state.areas[b].length - state.areas[a].length).slice(0, 6)
+               .map(a => `<a class="home-card" href="#/reference/${slugify(a)}">${twoTone(a)}
+                   <span class="home-card-title">${escapeHtml(a)}</span>
+                   <span class="home-card-meta">${state.areas[a].length} endpoints</span>
+                   <span class="home-card-text">${escapeHtml(state.areas[a].slice(0, 3).map(e => e.description || e.name).join(' · '))}</span>
+                   <span class="home-card-link">See the endpoints</span></a>`).join('');
+           document.getElementById('homeGuides').innerHTML = [1, 2, 7].filter(i => GUIDES[i]).map(i => {
+               const g = GUIDES[i];
+               const writes = g.steps.filter(([m]) => m !== 'GET').length;
+               return `<button type="button" class="home-card" onclick="showGuide(${i})">${twoTone(g.title)}
+                   <span class="home-card-title">${escapeHtml(g.title)}</span>
+                   <span class="home-card-meta">${g.steps.length} steps · ${writes ? `${writes} change${writes === 1 ? '' : 's'} to bank data` : 'read only'}</span>
+                   <span class="home-card-text">${escapeHtml(g.steps.map(([, , why]) => why).join(' '))}</span>
+                   <span class="home-card-link">See the steps</span></button>`;
+           }).join('');
+       }
+       document.querySelectorAll('[data-icon]').forEach(el => { el.outerHTML = twoTone(el.dataset.icon); });
+
        function showOverview() {
-           switchTab('chat');
-           document.getElementById('chatMessages').scrollTo({ top: 0, behavior: 'smooth' });
+           switchTab('home');
        }
 
        // The visitor's BaNCS access token. It stays in this tab (sessionStorage) and rides as Accesstoken on
@@ -3443,6 +3624,7 @@
        } else {
            init();
        }
-   </script>
+          route();
+</script>
 </body>
 </html>
