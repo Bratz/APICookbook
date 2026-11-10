@@ -45,8 +45,12 @@ def test_mcp_tools(client):
     data = client.get("/api/mcp/tools").json()
     assert data["enabled"] == settings.mcp_enabled
     if settings.mcp_enabled:
-        assert data["total"] > 0
-        assert any(t["name"].endswith("get_account_balance") for t in data["tools"])
+        names = {t["name"] for t in data["tools"]}
+        assert {"call_api", "get_api_schema", "search_endpoints", "list_apis"} <= names
+        # Each listed tool is one the server knows: calling it never says "Unknown tool".
+        for name in names:
+            r = client.post("/api/playground/execute", json={"type": "mcp", "tool_name": name, "tool_params": {}})
+            assert "Unknown tool" not in r.text, name
 
 
 # ===================== Knowledge base =====================

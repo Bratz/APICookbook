@@ -1623,87 +1623,41 @@ print(result)"""
     
     return code
 
+async def _mcp_tools() -> list[dict]:
+    """The tools the MCP server really serves (/api/mcp and the Playground call the same server).
+    Every BaNCS endpoint goes through call_api; there is no tool per endpoint."""
+    weaver = getattr(app.state, "apiweaver", None)
+    if not settings.mcp_enabled or not getattr(weaver, "mcp", None):
+        return []
+    from fastmcp import Client
+    async with Client(weaver.mcp) as mcp_client:
+        listed = await mcp_client.list_tools()
+    return [{"name": t.name, "description": (t.description or "").strip().split("\n")[0],
+             "input_schema": getattr(t, "input_schema", None) or t.inputSchema} for t in listed]
+
+
 async def get_mcp_tools_response(app_state) -> Optional[Dict[str, Any]]:
-    """Generate response about MCP tools"""
+    """Chat answer to a question about MCP: the real tools and how to call an endpoint."""
+    if not settings.mcp_enabled:
+        return {"response": "The MCP server is turned off on this deployment.",
+                "confidence": 1.0, "mcp_available": False, "api_references": []}
     try:
-        # Check if MCP is enabled
-        if not settings.mcp_enabled:
-            return {
-                "response": "MCP (Model Context Protocol) tools are currently disabled. Enable MCP in the configuration to use these tools.",
-                "confidence": 1.0,
-                "mcp_available": False,
-                "api_references": []
-            }
-        
-        # Get MCP tools from knowledge base
-        tools = []
-        tool_descriptions = []
-        
-        if hasattr(app_state, 'kb') and hasattr(app_state.kb, 'mcp_tools'):
-            for tool in app_state.kb.mcp_tools:
-                tool_name = getattr(tool, 'name', 'unknown')
-                tool_desc = getattr(tool, 'description', 'No description')
-                tools.append(tool_name)
-                tool_descriptions.append(f"- **{tool_name}**: {tool_desc}")
-        
-        # Also check APIWeaver
-        if hasattr(app_state, 'apiweaver') and app_state.apiweaver:
-            if hasattr(app_state.apiweaver, 'apis'):
-                for api_name, api_config in app_state.apiweaver.apis.items():
-                    if hasattr(api_config, 'endpoints'):
-                        for endpoint in api_config.endpoints:
-                            tool_name = f"{api_name}_{getattr(endpoint, 'name', 'unknown')}"
-                            if tool_name not in tools:
-                                tools.append(tool_name)
-                                tool_descriptions.append(f"- **{tool_name}**: {getattr(endpoint, 'description', 'API endpoint')}")
-        
-        if tools:
-            response = f"**Available MCP Tools ({len(tools)} total):**\n\n"
-            response += "\n".join(tool_descriptions[:10])  # Show first 10
-            
-            if len(tools) > 10:
-                response += f"\n\n...and {len(tools) - 10} more tools."
-            
-            response += "\n\n**How to use MCP tools:**\n"
-            response += "These tools allow AI assistants to directly interact with the BaNCS API endpoints. "
-            response += "Each tool corresponds to an API endpoint and can be called with the appropriate parameters.\n\n"
-            response += "**Common tools include:**\n"
-            response += "- Account management (balance, details, transactions)\n"
-            response += "- Customer management (create, update, search)\n"
-            response += "- Loan operations (details, repayment schedules)\n"
-            response += "- Transaction processing (bookings, transfers)"
-            
-            return {
-                "response": response,
-                "confidence": 1.0,
-                "mcp_available": True,
-                "api_references": [],
-                "metadata": {
-                    "total_tools": len(tools),
-                    "tools_list": tools[:20]  # Include first 20 in metadata
-                }
-            }
-        else:
-            return {
-                "response": "MCP tools are enabled but no tools are currently loaded. This might be because:\n" +
-                           "- API specifications haven't been loaded yet\n" +
-                           "- The MCP server is still initializing\n" +
-                           "- There's an issue with the API configuration\n\n" +
-                           "Try restarting the server or check the logs for more information.",
-                "confidence": 0.8,
-                "mcp_available": True,
-                "api_references": []
-            }
-            
+        tools = await _mcp_tools()
     except Exception as e:
-        logger.error(f"Error getting MCP tools: {e}")
-        return {
-            "response": "I encountered an error while fetching MCP tools. Please check the server logs.",
-            "confidence": 0.5,
-            "mcp_available": False,
-            "api_references": [],
-            "metadata": {"error": str(e)}
-        }
+        logger.error(f"MCP tools error: {e}")
+        tools = []
+    if not tools:
+        return {"response": "The MCP server has not loaded its tools. Try again in a minute.",
+                "confidence": 0.5, "mcp_available": False, "api_references": []}
+    lines = "\n".join(f"- **{t['name']}**: {t['description']}" for t in tools)
+    response = (f"**The MCP server has {len(tools)} tools:**\n\n{lines}\n\n"
+                "Each BaNCS endpoint is called through `call_api`, for example "
+                '`{"api_name": "TCS_BaNCS", "endpoint_name": "get_account_balance", '
+                '"parameters": {"accountReference": "101000000101814"}}`. '
+                "Use `search_endpoints` or `get_api_schema` to find an endpoint's name and parameters. "
+                "Connect an MCP client to https://apicookbook.vercel.app/api/mcp.")
+    return {"response": response, "confidence": 1.0, "mcp_available": True, "api_references": [],
+            "metadata": {"total_tools": len(tools), "tools_list": [t["name"] for t in tools]}}
 
 @app.get("/api/endpoints")
 async def list_endpoints(category: Optional[str] = None):
@@ -1797,55 +1751,16 @@ async def get_openapi_spec(version: str = "3.0"):
 # ============= MCP ENDPOINTS =============
 @app.get("/api/mcp/tools")
 async def list_mcp_tools():
-    """List available MCP tools with enhanced information"""
+    """The tools the MCP server serves, with their input schemas."""
     if not settings.mcp_enabled:
-        return {
-            "error": "MCP is disabled",
-            "tools": [],
-            "total": 0,
-            "enabled": False
-        }
-    
+        return {"error": "MCP is disabled", "tools": [], "total": 0, "enabled": False}
     try:
-        tools = []
-        
-        if hasattr(app.state, 'apiweaver') and app.state.apiweaver:
-            if hasattr(app.state.apiweaver, 'apis'):
-                for api_name, api_config in app.state.apiweaver.apis.items():
-                    if hasattr(api_config, 'endpoints'):
-                        for endpoint in api_config.endpoints:
-                            tools.append({
-                                "name": f"{api_name}_{endpoint.name}",
-                                "description": endpoint.description if hasattr(endpoint, 'description') else "",
-                                "method": endpoint.method if hasattr(endpoint, 'method') else "POST",
-                                "path": endpoint.path if hasattr(endpoint, 'path') else "/",
-                                "api": api_name
-                            })
-            elif hasattr(app.state.kb, 'mcp_tools'):
-                # Fallback to knowledge base MCP tools
-                for tool in app.state.kb.mcp_tools:
-                    tools.append({
-                        "name": tool.name if hasattr(tool, 'name') else str(tool),
-                        "description": tool.description if hasattr(tool, 'description') else "",
-                        "method": "POST",
-                        "path": "/mcp/tool"
-                    })
-        
-        return {
-            "tools": tools,
-            "total": len(tools),
-            "enabled": True,
-            "fallback": isinstance(app.state.apiweaver, SimpleAPIWeaver)
-        }
-        
+        tools = await _mcp_tools()
     except Exception as e:
         logger.error(f"MCP tools error: {e}")
-        return {
-            "tools": [],
-            "total": 0,
-            "error": str(e),
-            "enabled": settings.mcp_enabled
-        }
+        return {"tools": [], "total": 0, "error": str(e), "enabled": True}
+    return {"tools": tools, "total": len(tools), "enabled": True,
+            "fallback": isinstance(app.state.apiweaver, SimpleAPIWeaver)}
 
 # ============= ENHANCED PLAYGROUND ENDPOINTS =============
 @app.post("/api/playground/execute")
