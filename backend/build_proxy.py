@@ -41,6 +41,9 @@ TOKEN_NEEDED = ("This call reaches the bank, so it needs your BaNCS access token
                 "Authentication & headers on the home page, or send it in the Accesstoken header.")
 RUN_TTL_S = 20 * 60  # a token dies with its run, or after this, whichever comes first
 MAX_CALLS_PER_RUN = 300
+# 403, not 429: a 429 reads as "slow down and retry", and agents then sleep and retry against a limit that never resets.
+CALL_LIMIT = (f"Not sent: this run has used its {MAX_CALLS_PER_RUN} bank calls. Do not retry or sleep, this limit does "
+              "not reset. Report what you found so far, or ask the visitor with ask_user how to narrow the task.")
 QUESTION_TIMEOUT_S = 300.0  # a question the visitor doesn't answer in 5 minutes goes back unanswered
 MAX_QUESTIONS_PER_RUN = 3
 MAX_FAILED_WRITES_IN_A_ROW = 3  # then the run must ask or stop: it is guessing values against a shared bank
@@ -268,7 +271,9 @@ async def ask(token: str, request: Request) -> Any:
 async def forward(token: str, path: str, request: Request) -> Response:
     run = _run_or_404(token)
     if len(run.calls) >= MAX_CALLS_PER_RUN:
-        return JSONResponse({"error": f"this run has made {MAX_CALLS_PER_RUN} calls, its limit"}, status_code=429)
+        if len(run.calls) == MAX_CALLS_PER_RUN:  # the first refused call goes in the log, so the visitor sees why
+            run.calls.append({"method": request.method.upper(), "path": "/" + path, "at": time.time(), "decision": "limit"})
+        return JSONResponse({"error": CALL_LIMIT, "code": "RUN_CALL_LIMIT"}, status_code=403)
     body = await request.body()
     if len(body) > MAX_BODY_BYTES:
         return JSONResponse({"error": "request body too large"}, status_code=413)

@@ -114,7 +114,8 @@ How to work on a task:
 - You can ask the visitor with ask_user; their answer comes back as the tool result (they have 5 minutes).
   Ask when you need something only they can know and cannot find with GET calls (which product,
   which branch, which customer), when the task leaves a choice open that changes what you write, or
-  when a write failed and you would otherwise guess. Ask ONE short, specific question and give the
+  when a write failed and you would otherwise guess, or when the task needs more bank calls than
+  this run has (give the numbers and offer a sample or a narrower scope). Ask ONE short, specific question and give the
   options you found. Never ask for permission to write (they approve every write anyway), never ask
   what you can look up, at most 3 questions. If they skip it or do not answer, do not ask again.
 - When the task names no customer, account, loan or other record, find a REAL one yourself with GET
@@ -142,4 +143,11 @@ The bank, from this sandbox:
 - When the bank refuses a write, read its message. If the same kind of refusal comes back twice, stop
   trying values one by one: ask the visitor, or finish and say what you tried. After 3 refused writes
   in a row the proxy stops sending your writes (409) until the visitor answers a question.
+- This run can make at most 300 bank calls in all. Pick the plan with the fewest calls: look for an
+  operation that filters or searches before looping over records, and try a loop on a small sample
+  first. Before running code that loops over records, estimate its calls; if it needs more than
+  about 250, do not run it: scan a sample and say so, or ask the visitor how to narrow it.
+- When a call fails, print the response body before you change anything. Never add sleeps or
+  retries to get past a limit. A 403 with "RUN_CALL_LIMIT" is final for this run: do not retry;
+  report what you found so far.
 - This is a shared demo bank. Never loop over writes, and never write data the task did not ask for."""

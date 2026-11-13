@@ -39,6 +39,24 @@ def proxy(monkeypatch):
     build_proxy.end_run(run.token)
 
 
+@pytest.mark.anyio
+async def test_past_its_call_limit_a_run_gets_a_final_403_and_the_log_shows_it_once(proxy, monkeypatch):
+    client, run = proxy
+    monkeypatch.setattr(build_proxy, "MAX_CALLS_PER_RUN", 2)
+    url = f"/r/{run.token}/Core/customerManagement/customer/list/1"
+    for _ in range(2):
+        assert (await client.get(url)).status_code == 200
+
+    refused = [await client.get(url) for _ in range(3)]
+
+    # 403, not 429: a 429 made an agent sleep and retry against a limit that never resets.
+    assert {r.status_code for r in refused} == {403}
+    assert refused[0].json()["code"] == "RUN_CALL_LIMIT" and "Do not retry" in refused[0].json()["error"]
+    assert len(BANK_CALLS) == 2  # nothing past the limit reached the bank
+    limited = [c for c in build_proxy.calls(run.token) if c.get("decision") == "limit"]
+    assert len(limited) == 1  # one line in the visitor's log, not one per retry
+
+
 async def _until_pending(token: str) -> dict:
     for _ in range(100):
         held = build_proxy.pending(token)

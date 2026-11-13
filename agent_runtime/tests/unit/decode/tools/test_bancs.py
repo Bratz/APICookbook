@@ -71,6 +71,10 @@ def test_the_prompt_names_the_proxy_base_and_the_approval_rule(monkeypatch):
     assert "find a REAL one yourself" in text and "Never ask for permission to write" in text
     assert "ask_user" in text and "at most 3 questions" in text
     assert "MAKE the call" in text
+    # A run scanned 2,384 customers past its 300 calls, then slept and retried for 6 minutes.
+    assert "at most 300 bank calls" in text and "estimate its calls" in text
+    assert "Never add sleeps or" in text and "RUN_CALL_LIMIT" in text
+    assert "more bank calls than" in text  # an over-budget task is a reason to ask
     # F5 finding: the one remaining miss called a path the spec does not have.
     assert "must be the `url_template` of an operation get_endpoint returned" in text
     # Questions about the API get an answer from the spec; anything off-topic is declined.
