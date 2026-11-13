@@ -76,13 +76,15 @@ class HeldQuestion:
     """A question the agent asks the visitor (decode's ask_user), held until they answer or time runs out."""
     id: str
     question: str
+    options: list[str] = field(default_factory=list)  # at most two one-click choices; the visitor may still type
     created: float = field(default_factory=time.time)
     status: str = "pending"  # "pending" | "answered" | "skipped" | "timeout"
     answer: str = ""
     event: asyncio.Event = field(default_factory=asyncio.Event, repr=False)
 
     def public(self) -> dict[str, Any]:
-        return {"id": self.id, "question": self.question, "status": self.status, "answer": self.answer,
+        return {"id": self.id, "question": self.question, "options": self.options, "status": self.status,
+                "answer": self.answer,
                 "waiting_s": round(time.time() - self.created), "timeout_s": int(QUESTION_TIMEOUT_S)}
 
 
@@ -244,7 +246,10 @@ def kb_area(token: str, area: str) -> Any:
 async def ask(token: str, request: Request) -> Any:
     """decode's ask_user for this run: hold the question for the visitor; answer when they reply or time runs out."""
     run = _run_or_404(token)
-    question = str((await request.json()).get("question") or "").strip()[:1000]
+    sent = await request.json()
+    question = str(sent.get("question") or "").strip()[:1000]
+    raw = sent.get("options") if isinstance(sent.get("options"), list) else []
+    options = [o for o in (str(x).strip()[:80] for x in raw) if o][:2]
     if not question:
         return {"answer": "", "message": "Ask a question in words."}
     if len(run.questions) >= MAX_QUESTIONS_PER_RUN:
@@ -253,7 +258,7 @@ async def ask(token: str, request: Request) -> Any:
     if not run.visitor:
         return {"answer": "", "message": "No visitor is watching this run. Decide yourself, state the assumption, "
                                          "or finish and say what is still open."}
-    held = HeldQuestion(id=uuid.uuid4().hex[:12], question=question)
+    held = HeldQuestion(id=uuid.uuid4().hex[:12], question=question, options=options)
     run.questions[held.id] = held
     try:
         await asyncio.wait_for(held.event.wait(), timeout=QUESTION_TIMEOUT_S)

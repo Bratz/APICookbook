@@ -53,6 +53,28 @@ async def test_ask_user_emits_ask_user_requested_with_the_question():
     assert asks[0].question == "what is your favourite colour?"
 
 
+async def test_ask_user_passes_at_most_two_options_and_only_when_there_are_any():
+    seen: list[tuple[str, object]] = []
+
+    async def with_options(question: str, options: list[str] | None = None) -> str:
+        seen.append((question, options))
+        return options[0] if options else "typed"
+
+    async def plain(question: str) -> str:  # upstream's one-argument resolver still works
+        return "typed"
+
+    ctx = _ctx(resolve_user_question=with_options)
+    picked = await askuser_module.ask_user(
+        ctx, question="How should I scan?", options=["Scan 250", " ", "One branch", "Everything"]
+    )
+
+    assert picked == "Scan 250"
+    assert seen == [("How should I scan?", ["Scan 250", "One branch"])]  # blanks dropped, two kept
+    assert (
+        await askuser_module.ask_user(_ctx(resolve_user_question=plain), question="Why?") == "typed"
+    )
+
+
 async def test_ask_user_returns_the_resolved_free_text_answer():
     async def resolver(question: str) -> str:
         return "the user typed this"

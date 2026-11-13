@@ -66,7 +66,8 @@ EventSink = Callable[[events.Event], None]
 # Resolve a gated tool call into the human's allow/deny verdict (async: blocks on the TUI).
 PermissionResolver = Callable[[PermissionRequest], Awaitable[PermissionDecision]]
 # Resolve an ``ask_user`` question into the human's typed answer, on the same decision channel.
-UserQuestionResolver = Callable[[str], Awaitable[str]]
+# (str) -> str; a resolver that shows choices also takes ``options=[...]`` (at most two, APICookbook fork).
+UserQuestionResolver = Callable[..., Awaitable[str]]
 
 
 @dataclass(slots=True)

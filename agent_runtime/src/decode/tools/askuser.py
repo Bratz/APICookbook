@@ -36,7 +36,7 @@ class NoInteractiveUserError(RuntimeError):
     """
 
 
-async def deny_user_question_resolver(question: str) -> str:
+async def deny_user_question_resolver(question: str, options: list[str] | None = None) -> str:
     """The safe headless default: there is no interactive user, so refuse to answer.
 
     Used when there is no terminal to ask (an unattended / piped run). Raising (rather than
@@ -47,8 +47,13 @@ async def deny_user_question_resolver(question: str) -> str:
     raise NoInteractiveUserError(_NO_INTERACTIVE_USER_MESSAGE)
 
 
-async def ask_user(ctx: RunContext[AgentDeps], question: str) -> str:
+async def ask_user(
+    ctx: RunContext[AgentDeps], question: str, options: list[str] | None = None
+) -> str:
     """Ask the human ``question`` and return their typed answer (ADR-0002 §2,7).
+
+    ``options``: at most two short choices (a few words each) the human can pick with one click, for
+    example two plans. They can still type their own answer. Leave it out for an open question.
 
     Emits an :class:`~decode.entities.events.AskUserRequested` event so the TUI renders the
     question, then awaits the human's free-text answer on ``ctx.deps.resolve_user_question`` —
@@ -65,7 +70,13 @@ async def ask_user(ctx: RunContext[AgentDeps], question: str) -> str:
     ctx.deps.emit(events.AskUserRequested(tool_call_id=ctx.tool_call_id, question=question))
     logger.debug("ask_user awaiting an answer (question=%r)", question)
     try:
-        answer = await ctx.deps.resolve_user_question(question)
+        # APICookbook fork: options go only to a resolver that shows them (the visitor's page), so
+        # every other resolver keeps upstream's one-argument shape.
+        choices = [o.strip()[:80] for o in options or [] if o.strip()][:2]
+        if choices:
+            answer = await ctx.deps.resolve_user_question(question, options=choices)
+        else:
+            answer = await ctx.deps.resolve_user_question(question)
     except NoInteractiveUserError as exc:
         logger.debug("ask_user has no interactive user (question=%r)", question)
         raise ModelRetry(str(exc)) from exc

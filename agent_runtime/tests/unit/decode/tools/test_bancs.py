@@ -75,6 +75,9 @@ def test_the_prompt_names_the_proxy_base_and_the_approval_rule(monkeypatch):
     assert "at most 300 bank calls" in text and "estimate its calls" in text
     assert "Never add sleeps or" in text and "RUN_CALL_LIMIT" in text
     assert "more bank calls than" in text  # an over-budget task is a reason to ask
+    assert (
+        "at most TWO" in text and "`options`" in text
+    )  # a plan choice is two clicks, not an essay
     # F5 finding: the one remaining miss called a path the spec does not have.
     assert "must be the `url_template` of an operation get_endpoint returned" in text
     # Questions about the API get an answer from the spec; anything off-topic is declined.
@@ -108,7 +111,12 @@ async def test_ask_visitor_returns_the_answer_or_why_there_is_none(monkeypatch):
     assert await bancs.ask_visitor("Which branch?") == "The visitor skipped the question."
     assert "could not be asked (404)" in await bancs.ask_visitor("Again?")
     assert str(asked[0].url) == f"{PROXY}/_ask"
-    assert json.loads(asked[0].content) == {"question": "Which product?"}
+    assert json.loads(asked[0].content) == {"question": "Which product?", "options": []}
+    replies = iter([httpx.Response(200, json={"answer": "Scan 250", "message": ""})])
+    assert await bancs.ask_visitor("How?", options=["Scan 250", "One branch", "All"]) == (
+        "The visitor answered: Scan 250"
+    )
+    assert json.loads(asked[-1].content)["options"] == ["Scan 250", "One branch"]
 
     monkeypatch.setattr(settings, "bancs_proxy_url", "")
     assert "No visitor can answer" in await bancs.ask_visitor("Anyone?")
