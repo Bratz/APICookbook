@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import logging
 
+from pydantic import BaseModel
 from pydantic_ai import ModelRetry, RunContext
 
 from decode.agent.deps import AgentDeps
@@ -28,6 +29,23 @@ _NO_INTERACTIVE_USER_MESSAGE = (
 )
 
 
+class PlanOption(BaseModel):
+    """One choice the human can pick with a click (APICookbook fork)."""
+
+    label: str  # a few words, the action: "Scan a sample of 250"
+    detail: str = ""  # its one-line trade-off: "About 250 calls; a partial answer, now"
+
+
+def plan_choices(options: list[PlanOption] | None) -> list[dict[str, str]]:
+    """Two options or none: one option is not a choice. Labels up to 80 characters, details 120."""
+    picked = [
+        {"label": o.label.strip()[:80], "detail": o.detail.strip()[:120]}
+        for o in options or []
+        if o.label.strip()
+    ][:2]
+    return picked if len(picked) == 2 else []
+
+
 class NoInteractiveUserError(RuntimeError):
     """Raised by the headless resolver: there is no interactive user to answer ``ask_user``.
 
@@ -36,7 +54,9 @@ class NoInteractiveUserError(RuntimeError):
     """
 
 
-async def deny_user_question_resolver(question: str, options: list[str] | None = None) -> str:
+async def deny_user_question_resolver(
+    question: str, options: list[dict[str, str]] | None = None
+) -> str:
     """The safe headless default: there is no interactive user, so refuse to answer.
 
     Used when there is no terminal to ask (an unattended / piped run). Raising (rather than
@@ -48,12 +68,14 @@ async def deny_user_question_resolver(question: str, options: list[str] | None =
 
 
 async def ask_user(
-    ctx: RunContext[AgentDeps], question: str, options: list[str] | None = None
+    ctx: RunContext[AgentDeps], question: str, options: list[PlanOption] | None = None
 ) -> str:
     """Ask the human ``question`` and return their typed answer (ADR-0002 §2,7).
 
-    ``options``: at most two short choices (a few words each) the human can pick with one click, for
-    example two plans. They can still type their own answer. Leave it out for an open question.
+    ``options``: exactly two choices the human can pick with one click, for example two plans, the
+    recommended one first. ``label`` is a few words; ``detail`` is its one-line trade-off. One option
+    is not a choice and is ignored. The human can still type their own answer. Leave it out for an
+    open question.
 
     Emits an :class:`~decode.entities.events.AskUserRequested` event so the TUI renders the
     question, then awaits the human's free-text answer on ``ctx.deps.resolve_user_question`` —
@@ -72,7 +94,7 @@ async def ask_user(
     try:
         # APICookbook fork: options go only to a resolver that shows them (the visitor's page), so
         # every other resolver keeps upstream's one-argument shape.
-        choices = [o.strip()[:80] for o in options or [] if o.strip()][:2]
+        choices = plan_choices(options)
         if choices:
             answer = await ctx.deps.resolve_user_question(question, options=choices)
         else:

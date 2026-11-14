@@ -40,7 +40,7 @@ async def _kb(path: str, params: dict[str, str] | None = None) -> str:
 QUESTION_WAIT_S = 330.0  # the proxy holds a question up to 5 minutes for the visitor
 
 
-async def ask_visitor(question: str, options: list[str] | None = None) -> str:
+async def ask_visitor(question: str, options: list[dict[str, str]] | None = None) -> str:
     """decode's ask_user in a Build & run: the question goes to the visitor's page through the run's proxy.
 
     Always text for the model, never an exception: an answer, or why there is none (skipped, no answer in
@@ -117,9 +117,10 @@ How to work on a task:
   Ask when you need something only they can know and cannot find with GET calls (which product,
   which branch, which customer), when the task leaves a choice open that changes what you write, or
   when a write failed and you would otherwise guess, or when the task needs more bank calls than
-  this run has (give the numbers). When the answer is a choice between plans, pass at most TWO
-  short `options` (a few words each, the one you recommend first, for example "Scan a sample of
-  250" and "Only branch 1001"); the visitor clicks one or types their own. Ask ONE short, specific question and give the
+  this run has (give the numbers). When the answer is a choice between plans, pass exactly TWO
+  `options`, the one you recommend first. Each has a `label` (a few words: "Scan a sample of 250")
+  and a `detail`, its one-line trade-off ("About 250 calls; a partial answer, now"). Another:
+  "Only branch 1001" ("Fewer calls; only that branch's customers"). The visitor clicks one or types their own. Ask ONE short, specific question and give the
   options you found. Never ask for permission to write (they approve every write anyway), never ask
   what you can look up, at most 3 questions. If they skip it or do not answer, do not ask again.
 - When the task names no customer, account, loan or other record, find a REAL one yourself with GET

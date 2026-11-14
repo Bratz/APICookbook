@@ -780,6 +780,8 @@
         .question-card { border-color: var(--color-accent); display: grid; gap: var(--space-xs); }
         .question-card .question-text { font-size: var(--text-md); color: var(--color-ink); white-space: pre-wrap; }
         .question-card textarea { width: 100%; resize: vertical; }
+        .question-options { display: grid; gap: var(--space-2xs); }
+        .question-option { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-xs); }
 
         .knowledge-search-bar {
             padding: var(--space-xs) var(--space-md);
@@ -3852,13 +3854,15 @@
            card.className = 'write-card question-card';
            card.dataset.question = q.id;
            // At most two one-click plans, the agent's pick first; the visitor can still type their own.
-           const options = (q.options || []).slice(0, 2);
-           const choices = options.map((o, i) =>
-               `<button type="button" class="btn ${i ? 'btn-secondary' : 'btn-primary'} btn-sm" data-option="${i}">${escapeHtml(o)}</button>`).join('');
+           // Two plans or none, the agent's pick first; each with its one-line trade-off under the button.
+           const options = (q.options || []).map(o => typeof o === 'string' ? { label: o, detail: '' } : o).slice(0, 2);
+           const choices = options.length < 2 ? '' : options.map((o, i) =>
+               `<div class="question-option"><button type="button" class="btn ${i ? 'btn-secondary' : 'btn-primary'} btn-sm" data-option="${i}">${escapeHtml(o.label)}${i ? '' : ' (Recommended)'}</button>`
+               + (o.detail ? `<span class="text-small text-muted">${escapeHtml(o.detail)}</span>` : '') + '</div>').join('');
            card.innerHTML = `<h4>The agent has a question</h4>
                <p class="question-text">${escapeHtml(q.question)}</p>
-               ${options.length ? `<div class="choice-row question-options">${choices}</div>` : ''}
-               <label class="text-small" for="answer-${escapeHtml(q.id)}">${options.length ? 'Or type your own answer' : 'Your answer'}</label>
+               ${choices ? `<div class="question-options">${choices}</div>` : ''}
+               <label class="text-small" for="answer-${escapeHtml(q.id)}">${choices ? 'Or type your own answer' : 'Your answer'}</label>
                <textarea id="answer-${escapeHtml(q.id)}" class="form-input" rows="2" maxlength="2000"></textarea>
                <div class="choice-row"><button type="submit" class="btn btn-primary btn-sm">Send answer</button>
                <button type="button" class="btn btn-secondary btn-sm" data-skip>Skip</button>
@@ -3881,8 +3885,8 @@
            };
            card.addEventListener('submit', (e) => { e.preventDefault(); send(card.querySelector('textarea').value.trim()); });
            card.querySelector('[data-skip]').onclick = () => send('');
-           card.querySelectorAll('[data-option]').forEach(b => b.onclick = () => send(options[+b.dataset.option]));
-           if (!options.length) setTimeout(() => card.querySelector('textarea').focus(), 50);
+           card.querySelectorAll('[data-option]').forEach(b => b.onclick = () => send(options[+b.dataset.option].label));
+           if (!choices) setTimeout(() => card.querySelector('textarea').focus(), 50);
            return card;
        }
 

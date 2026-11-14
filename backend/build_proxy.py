@@ -76,7 +76,8 @@ class HeldQuestion:
     """A question the agent asks the visitor (decode's ask_user), held until they answer or time runs out."""
     id: str
     question: str
-    options: list[str] = field(default_factory=list)  # at most two one-click choices; the visitor may still type
+    # two one-click choices {label, detail} or none (one option is not a choice); the visitor may still type
+    options: list[dict[str, str]] = field(default_factory=list)
     created: float = field(default_factory=time.time)
     status: str = "pending"  # "pending" | "answered" | "skipped" | "timeout"
     answer: str = ""
@@ -242,14 +243,23 @@ def kb_area(token: str, area: str) -> Any:
     return api_lookup.list_endpoints(_kb()[0], area)
 
 
+def _plan_options(raw: Any) -> list[dict[str, str]]:
+    """Exactly two {label, detail} choices, or none. A bare string is a label without a detail."""
+    picked = []
+    for item in raw if isinstance(raw, list) else []:
+        label, detail = (item.get("label"), item.get("detail")) if isinstance(item, dict) else (item, "")
+        if str(label or "").strip():
+            picked.append({"label": str(label).strip()[:80], "detail": str(detail or "").strip()[:120]})
+    return picked[:2] if len(picked) >= 2 else []
+
+
 @proxy_app.post("/r/{token}/_ask")
 async def ask(token: str, request: Request) -> Any:
     """decode's ask_user for this run: hold the question for the visitor; answer when they reply or time runs out."""
     run = _run_or_404(token)
     sent = await request.json()
     question = str(sent.get("question") or "").strip()[:1000]
-    raw = sent.get("options") if isinstance(sent.get("options"), list) else []
-    options = [o for o in (str(x).strip()[:80] for x in raw) if o][:2]
+    options = _plan_options(sent.get("options"))
     if not question:
         return {"answer": "", "message": "Ask a question in words."}
     if len(run.questions) >= MAX_QUESTIONS_PER_RUN:

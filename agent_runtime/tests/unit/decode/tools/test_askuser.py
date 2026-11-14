@@ -53,23 +53,41 @@ async def test_ask_user_emits_ask_user_requested_with_the_question():
     assert asks[0].question == "what is your favourite colour?"
 
 
-async def test_ask_user_passes_at_most_two_options_and_only_when_there_are_any():
+async def test_ask_user_passes_two_labelled_options_or_none():
     seen: list[tuple[str, object]] = []
 
-    async def with_options(question: str, options: list[str] | None = None) -> str:
+    async def with_options(question: str, options: list[dict] | None = None) -> str:
         seen.append((question, options))
-        return options[0] if options else "typed"
+        return options[0]["label"] if options else "typed"
 
     async def plain(question: str) -> str:  # upstream's one-argument resolver still works
         return "typed"
 
+    opt = askuser_module.PlanOption
     ctx = _ctx(resolve_user_question=with_options)
     picked = await askuser_module.ask_user(
-        ctx, question="How should I scan?", options=["Scan 250", " ", "One branch", "Everything"]
+        ctx,
+        question="How should I scan?",
+        options=[
+            opt(label="Scan 250", detail="About 250 calls"),
+            opt(label=" "),
+            opt(label="One branch"),
+        ],
     )
 
     assert picked == "Scan 250"
-    assert seen == [("How should I scan?", ["Scan 250", "One branch"])]  # blanks dropped, two kept
+    assert seen == [  # blanks dropped, two kept, each with its trade-off
+        (
+            "How should I scan?",
+            [
+                {"label": "Scan 250", "detail": "About 250 calls"},
+                {"label": "One branch", "detail": ""},
+            ],
+        )
+    ]
+    # One option is not a choice: the question goes out without options.
+    await askuser_module.ask_user(ctx, question="Go?", options=[opt(label="Scan 250")])
+    assert seen[-1] == ("Go?", None)
     assert (
         await askuser_module.ask_user(_ctx(resolve_user_question=plain), question="Why?") == "typed"
     )

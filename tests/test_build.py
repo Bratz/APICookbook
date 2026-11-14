@@ -465,22 +465,27 @@ async def test_the_agents_question_waits_for_the_visitors_answer(proxy, monkeypa
 
 
 @pytest.mark.anyio
-async def test_a_question_carries_at_most_two_short_options(proxy):
+async def test_a_question_carries_two_labelled_options_or_none(proxy):
     client, run = proxy
     ask = asyncio.create_task(client.post(f"/r/{run.token}/_ask", json={
         "question": "This needs 2,400 calls; the run has 300. How should I scan?",
-        "options": ["Scan a sample of 250", "", "x" * 200, "A third one"]}))
+        "options": [{"label": "Scan a sample of 250", "detail": "About 250 calls; " + "y" * 200},
+                    {"label": ""}, {"label": "x" * 200}, "A third one"]}))
     held = await _until_question(run.token)
 
-    assert held["options"] == ["Scan a sample of 250", "x" * 80]  # blanks dropped, two kept, each short
-    build_proxy.answer_question(run.token, held["id"], held["options"][0])  # the page sends the option's text
+    # blanks dropped, two kept, label 80 and detail 120 characters at most
+    assert held["options"] == [{"label": "Scan a sample of 250", "detail": ("About 250 calls; " + "y" * 200)[:120]},
+                               {"label": "x" * 80, "detail": ""}]
+    build_proxy.answer_question(run.token, held["id"], "Scan a sample of 250")  # the page sends the label
     assert (await ask).json()["answer"] == "Scan a sample of 250"
 
-    bad = asyncio.create_task(client.post(f"/r/{run.token}/_ask", json={"question": "Open?", "options": "not a list"}))
-    held = await _until_question(run.token)  # the first was answered, so this is the second
-    assert held["question"] == "Open?" and held["options"] == []
-    build_proxy.answer_question(run.token, held["id"], "")
-    await bad
+    # One option is not a choice, and a non-list is ignored: both go out as plain questions.
+    for i, sent in enumerate(([{"label": "Only one"}], "not a list")):
+        q = asyncio.create_task(client.post(f"/r/{run.token}/_ask", json={"question": f"Open {i}?", "options": sent}))
+        held = await _until_question(run.token)
+        assert held["question"] == f"Open {i}?" and held["options"] == []
+        build_proxy.answer_question(run.token, held["id"], "")
+        await q
 
 
 @pytest.mark.anyio
