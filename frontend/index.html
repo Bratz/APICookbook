@@ -628,6 +628,7 @@
         }
         .message-content > * + * { margin-top: var(--space-xs); }
         .message-content p { max-width: 70ch; }
+        .message.user .message-content p { white-space: pre-wrap; }
         .message-content ul, .message-content ol { margin: var(--space-xs) 0 0; padding-left: var(--space-lg); }
         .message-content li + li { margin-top: var(--space-2xs); }
         .message-content strong { font-weight: 600; color: var(--color-ink); }
@@ -2169,7 +2170,13 @@
            const contentDiv = document.createElement('div');
            contentDiv.className = 'message-content';
            
-           if (content) {
+           if (content && type === 'user') {
+               // The visitor's own words, exactly as typed: as markdown, "<account_id>" read as an
+               // HTML tag and the sanitizer removed it.
+               const p = document.createElement('p');
+               p.textContent = content;
+               contentDiv.appendChild(p);
+           } else if (content) {
                const textarea = document.createElement('textarea');
                textarea.innerHTML = content;
                let unescapedContent = textarea.value;
