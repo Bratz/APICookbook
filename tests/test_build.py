@@ -40,6 +40,16 @@ def proxy(monkeypatch):
 
 
 @pytest.mark.anyio
+async def test_a_knowledge_lookup_that_misses_its_route_never_reaches_the_bank(proxy):
+    client, run = proxy
+    # get_endpoint given a path: the encoded slashes break the {name} match, so it fell through to the bank.
+    missed = await client.get(f"/r/{run.token}/_kb/endpoint/payments%2Ftransfers%2Flist")
+
+    assert missed.status_code == 404 and "operation name" in missed.json()["error"]
+    assert BANK_CALLS == [] and build_proxy.calls(run.token) == []  # not sent, not counted, not in the log
+
+
+@pytest.mark.anyio
 async def test_past_its_call_limit_a_run_gets_a_final_403_and_the_log_shows_it_once(proxy, monkeypatch):
     client, run = proxy
     monkeypatch.setattr(build_proxy, "MAX_CALLS_PER_RUN", 2)

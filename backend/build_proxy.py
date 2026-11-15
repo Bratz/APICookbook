@@ -285,6 +285,12 @@ async def ask(token: str, request: Request) -> Any:
 @proxy_app.api_route("/r/{token}/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
 async def forward(token: str, path: str, request: Request) -> Response:
     run = _run_or_404(token)
+    if path.lstrip("/").startswith("_"):
+        # The proxy's own routes (_kb, _ask) start with "_"; one that missed them, such as
+        # get_endpoint given a path with slashes, must not reach the bank or count as a bank call.
+        return JSONResponse({"error": "Not a bank call, and not a known knowledge route. Use an operation name "
+                                      "that search_endpoints returned (for example CBPETGetAccountBalanceUsingGET), "
+                                      "not a path."}, status_code=404)
     if len(run.calls) >= MAX_CALLS_PER_RUN:
         if len(run.calls) == MAX_CALLS_PER_RUN:  # the first refused call goes in the log, so the visitor sees why
             run.calls.append({"method": request.method.upper(), "path": "/" + path, "at": time.time(), "decision": "limit"})
