@@ -299,7 +299,10 @@ def test_a_runs_files_come_back_pointed_at_the_real_bank(client, open_build, mon
     assert zipped.headers["content-type"] == "application/zip"
     with zipfile.ZipFile(io.BytesIO(zipped.content)) as archive:
         assert sorted(archive.namelist()) == ["bancs-run/README.txt", "bancs-run/list.py"]
-        assert "entity: GPRDTTSTOU" in archive.read("bancs-run/README.txt").decode()
+        readme = archive.read("bancs-run/README.txt").decode()
+        assert "entity: GPRDTTSTOU" in readme
+        # It names the token variable and must not also say there is no token.
+        assert "BANCS_ACCESS_TOKEN" in readme and "No sign-in or token" not in readme
     assert client.get(f"/api/build/runs/{run_id}/files").status_code == 404  # no key, nothing
 
 

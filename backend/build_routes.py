@@ -282,9 +282,11 @@ It calls the TCS BaNCS demo bank directly:
   Headers    entity: {entity}   userId: {user}   languageCode: {lang}
              Accept: application/json (without it the bank answers in XML)
              Accesstoken: your BaNCS access token; the code reads it from the
-             BANCS_ACCESS_TOKEN environment variable, so set that before you run it
+             BANCS_ACCESS_TOKEN environment variable
              Content-Type: application/json on a request with a body
-No sign-in or token. The demo data is shared: a write you send changes what every user sees.
+The demo bank does not check the token today, so the code also runs with the variable unset;
+a bank that validates tokens needs it. There is no other sign-in.
+The demo data is shared: a write you send changes what every user sees.
 """
 
 
