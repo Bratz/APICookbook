@@ -3374,13 +3374,16 @@
        }
 
        // ---------------------------------------------------------------- guides: real multi-step flows
-       // Each step is [method, path, what it does]; a step's output feeds the next. Writes are maker-checker where the bank is.
+       // Each step is [method, path, what it does, 'read' when a POST changes nothing]; a step's output feeds the next.
+       // Writes are maker-checker where the bank is. `task` is what the Build & run button sends; `run` says what
+       // that task does when it is less than (or more careful than) the steps, so the page never promises more.
        const GUIDES = [
            { title: 'Onboard a customer and open an account', steps: [
                ['POST', '/customerManagement/customer', 'Create the customer; keep the customer ID it returns.'],
                ['POST', '/accountManagement/account', 'Open an account for that customer ID.'],
                ['GET', '/accountManagement/account/details/{accountReference}', 'Read the new account back.']],
-             task: 'Create an individual customer named Ada Test, open a savings account for that customer, then fetch the new account details' },
+             task: 'Create an individual customer with a unique name: "Ada Test" followed by the current date and time, so the bank does not refuse it as a duplicate. Open a savings account for that customer, then fetch the new account details. If it is not clear which savings product to use, ask me.',
+             run: 'Run the whole flow: Build & run creates a customer under a unique name and opens an account. Each run adds a customer to the shared demo bank, and a customer cannot be deleted. Every change to bank data waits for your approval.' },
            { title: 'Customer 360', steps: [
                ['GET', '/customerManagement/customer/detail', 'The customer record (JSON; /details fails when a customer has no postal address).'],
                ['GET', '/accountManagement/account/CASABalanceList', 'Every current and savings account, with its balance.'],
@@ -3391,9 +3394,10 @@
                ['GET', '/accountManagement/account/blockList/{accountReference}', 'See the block on the account.'],
                ['PUT', '/accountManagement/account/cashblocks/{cashBlockId}/update', 'Change the amount or expiry.'],
                ['DELETE', '/accountManagement/account/cashBlock/{cashBlockId}/cancel', 'Release it.']],
-             task: 'On a real account with a positive balance, create a cash block of 10, list the account blocks to show it, then cancel the block' },
+             task: 'On a real account with a positive balance, create a cash block of 10, list the account blocks to show it, then cancel the block',
+             run: 'Build & run creates the block, lists it and cancels it. It skips the update step. Each change to bank data waits for your approval.' },
            { title: 'Maker-checker fund transfer', steps: [
-               ['POST', '/payments/fundTransfer/validate', 'Check the transfer before creating it.'],
+               ['POST', '/payments/fundTransfer/validate', 'Check the transfer before creating it. This POST changes nothing, but Build & run still asks you to approve it.', 'read'],
                ['POST', '/payments/fundTransfer/create', 'Create it; it waits for authorisation.'],
                ['POST', '/payments/transfers/authorize/{transactionId}/{transactionType}', 'A second user authorises it (or rejects it).'],
                ['GET', '/payments/transfers/view', 'Read the final record.']],
@@ -3402,17 +3406,19 @@
                ['GET', '/customerManagement/customer/detail', 'What the bank holds now: the phone is contact.nationalNumber (communicationDetails leaves it empty).'],
                ['PUT', '/customerManagement/customer/contact', 'Amend the phone number, with the same contact type and country code. There is no delete.'],
                ['PUT', '/customerManagement/customer/address', 'Change the postal address.']],
-             task: 'Customer 146190 has a local mobile on file (contact type 31, number 1234567890, country code 0, under contact in GET /customerManagement/customer/detail). Change it to 4155550123, show the contact, then change it back to 1234567890 and show that it matches the original' },
+             task: 'Customer 146190 has a local mobile on file (contact type 31, number 1234567890, country code 0, under contact in GET /customerManagement/customer/detail). Change it to 4155550123, show the contact, then change it back to 1234567890 and show that it matches the original',
+             run: 'Build & run changes the phone number and then changes it back. It does not change the address. Each change to bank data waits for your approval.' },
            { title: 'Account statement as CSV', steps: [
                ['GET', '/accountManagement/account/CASATransactions/{accountReference}', 'The account’s transactions.'],
-               ['POST', '/accountManagement/account/accountBalanceStatement', 'Opening and closing balances for the period.']],
+               ['POST', '/accountManagement/account/accountBalanceStatement', 'Opening and closing balances for the period. This POST changes nothing, but Build & run still asks you to approve it.', 'read']],
              task: 'For a real account, fetch its transactions and balance statement and write them to statement.csv' },
            { title: 'Part-withdraw a term deposit', steps: [
                ['GET', '/accountManagement/fecthDepositList', 'Find the customer’s deposits (dealPosNum is the accountId below).'],
                ['GET', '/deposits/partWithdrawal/trialPartWithdrawal', 'Preview what a withdrawal would do.'],
                ['POST', '/deposits/partWithdrawal', 'Make the withdrawal; it waits for authorisation.'],
                ['POST', '/deposits/partWithdrawal/auth', 'Authorise it.']],
-             task: 'For customer 146048, find their term deposit 101000000105385 and show a trial part withdrawal of 100 for it, without making the withdrawal' },
+             task: 'For customer 146048, find their term deposit 101000000105385 and show a trial part withdrawal of 100 for it, without making the withdrawal',
+             run: 'Build & run does the trial only. It does not make or authorise the withdrawal, so it changes no bank data.' },
            { title: 'Term deposit review', steps: [
                ['GET', '/accountManagement/fecthDepositList', 'The customer’s term deposits.'],
                ['GET', '/deposits/deposit/statement/{depositAccountReference}', 'What happened on one deposit.'],
@@ -3424,22 +3430,27 @@
                ['GET', '/loans/repaymentSchedule/{loanReference}', 'The current schedule.'],
                ['GET', '/loans/repayments/simulateLoanReSchedule', 'Simulate the new schedule.'],
                ['POST', '/loans/repayments/loanReSchedule', 'Apply it.']],
-             task: 'For loan 101000000110716, show its repayment schedule and a simulated reschedule from 12 to 24 months, without applying it' },
+             task: 'For loan 101000000110716, show its repayment schedule and a simulated reschedule from 12 to 24 months, without applying it',
+             run: 'Build & run shows the schedule and the simulation. It does not apply the reschedule, so it changes no bank data.' },
            { title: 'Secure a loan with collateral', steps: [
                ['POST', '/collateral/vehicleAndHeavyMachinery', 'Register a vehicle as collateral; keep its reference.'],
                ['POST', '/collateral/collateralLink', 'Link it to the loan.'],
                ['GET', '/collateral/list', 'See it on the list.'],
                ['POST', '/collateral/collateralDischarge', 'Discharge it when the loan is repaid.']],
-             task: 'List the collateral held for a real customer and show the details of one of them' },
+             task: 'List the collateral held for a real customer and show the details of one of them',
+             run: 'Build & run only lists the collateral of a customer and shows one item. It does not register, link or discharge collateral, so it changes no bank data.' },
        ];
+
+       // The steps of a guide that change bank data: not a GET, and not a POST marked 'read'.
+       const guideChanges = (g) => g.steps.filter(([m, , , reads]) => m !== 'GET' && !reads).length;
 
        function displayGuides() {
            document.getElementById('guideList').innerHTML = GUIDES.map((g, i) => {
-               const writes = g.steps.filter(([m]) => m !== 'GET').length;
+               const writes = guideChanges(g);
                return `<button type="button" class="domain-card" onclick="showGuide(${i})">
                    <i data-lucide="${iconFor(g.title)}" class="domain-icon" aria-hidden="true"></i>
                    <span class="domain-name">${escapeHtml(g.title)}</span>
-                   <span class="domain-count">${g.steps.length} steps${writes ? ` · ${writes} change${writes === 1 ? '' : 's'} to bank data` : ' · read only'}</span>
+                   <span class="domain-count">${g.steps.length} steps${writes ? ` · ${writes} change${writes === 1 ? 's' : ''} bank data` : ' · read only'}</span>
                    <span class="domain-sample">${escapeHtml(g.steps.map(([, , why]) => why).join(' '))}</span>
                    <span class="card-link">Open the guide →</span>
                </button>`;
@@ -3464,12 +3475,12 @@
            showPage('guides');
            if (!fromRouter) setRoute('guides/' + slugify(g.title));
            document.title = `${g.title} · TCS BaNCS API Cookbook`;
-           const writes = g.steps.filter(([m]) => m !== 'GET').length;
+           const writes = guideChanges(g);
            const view = document.getElementById('guideView');
            view.innerHTML = `
                <a class="guide-back" href="#/guides">← All guides</a>
                <h1 class="tab-title">${escapeHtml(g.title)}</h1>
-               <p class="guide-meta">${g.steps.length} steps · ${writes ? `${writes} change${writes === 1 ? '' : 's'} to bank data` : 'read only'}</p>
+               <p class="guide-meta">${g.steps.length} steps · ${writes ? `${writes} change${writes === 1 ? 's' : ''} bank data` : 'read only'}</p>
                <ol class="guide-page-steps">${g.steps.map(([m, path, why], n) => `<li>
                    <span class="guide-num" aria-hidden="true">${n + 1}</span>
                    <div class="guide-step-body">
@@ -3481,7 +3492,7 @@
                        </div>
                    </div></li>`).join('')}</ol>
                ${state.buildAvailable ? `<div class="guide-build">
-                   <p>Run the whole flow: Build &amp; run writes the code for these steps and runs it. Every change to bank data waits for your approval.</p>
+                   <p>${escapeHtml(g.run || 'Run the whole flow: Build & run writes the code for these steps and runs it. Every change to bank data waits for your approval.')}</p>
                    <button type="button" class="btn btn-primary" data-act="build">Build &amp; run this guide</button></div>` : ''}`;
            document.getElementById('guidesHead').hidden = true;
            document.getElementById('guideList').hidden = true;
@@ -3541,10 +3552,10 @@
                    <span class="home-card-link">See the endpoints</span></a>`).join('');
            document.getElementById('homeGuides').innerHTML = [1, 2, 7].filter(i => GUIDES[i]).map(i => {
                const g = GUIDES[i];
-               const writes = g.steps.filter(([m]) => m !== 'GET').length;
+               const writes = guideChanges(g);
                return `<button type="button" class="home-card" onclick="showGuide(${i})">${twoTone(g.title)}
                    <span class="home-card-title">${escapeHtml(g.title)}</span>
-                   <span class="home-card-meta">${g.steps.length} steps · ${writes ? `${writes} change${writes === 1 ? '' : 's'} to bank data` : 'read only'}</span>
+                   <span class="home-card-meta">${g.steps.length} steps · ${writes ? `${writes} change${writes === 1 ? 's' : ''} bank data` : 'read only'}</span>
                    <span class="home-card-text">${escapeHtml(g.steps.map(([, , why]) => why).join(' '))}</span>
                    <span class="home-card-link">See the steps</span></button>`;
            }).join('');
