@@ -69,7 +69,7 @@ def test_the_prompt_names_the_proxy_base_and_the_approval_rule(monkeypatch):
     # F5 finding: a run must find real records and act; it asks the visitor only what it cannot look up
     # (operator runs, with nobody to answer, get an immediate "no visitor" from the proxy).
     assert "find a REAL one yourself" in text and "Never ask for permission to write" in text
-    assert "ask_user" in text and "at most 3 questions" in text
+    assert "ask_user" in text and "at most 3 ask_user calls in a run" in text
     assert "MAKE the call" in text
     # A run scanned 2,384 customers past its 300 calls, then slept and retried for 6 minutes.
     assert "at most 300 bank calls" in text and "estimate its calls" in text
@@ -81,7 +81,10 @@ def test_the_prompt_names_the_proxy_base_and_the_approval_rule(monkeypatch):
     assert "exactly TWO" in text and "`detail`" in text  # two plans, each with its trade-off
     # The agent sizes the solution: a script unless the task needs a database, an API or a page.
     assert "Build only the layers the task asks for" in text
-    assert "ask the visitor once with two options" in text
+    # A larger build starts with an interview and a spec the visitor approves.
+    assert "interview first, then a spec, then build" in text and "`more_questions`" in text
+    assert "SPEC.md" in text and '"Build this" and "Stop here"' in text
+    assert "A small task gets no interview" in text
     # F5 finding: the one remaining miss called a path the spec does not have.
     assert "must be the `url_template` of an operation get_endpoint returned" in text
     # Questions about the API get an answer from the spec; anything off-topic is declined.
@@ -115,7 +118,7 @@ async def test_ask_visitor_returns_the_answer_or_why_there_is_none(monkeypatch):
     assert await bancs.ask_visitor("Which branch?") == "The visitor skipped the question."
     assert "could not be asked (404)" in await bancs.ask_visitor("Again?")
     assert str(asked[0].url) == f"{PROXY}/_ask"
-    assert json.loads(asked[0].content) == {"question": "Which product?", "options": []}
+    assert json.loads(asked[0].content) == {"question": "Which product?", "options": [], "more": []}
     replies = iter([httpx.Response(200, json={"answer": "Scan 250", "message": ""})])
     two = [
         {"label": "Scan 250", "detail": "About 250 calls"},
@@ -123,6 +126,14 @@ async def test_ask_visitor_returns_the_answer_or_why_there_is_none(monkeypatch):
     ]
     assert await bancs.ask_visitor("How?", options=two) == "The visitor answered: Scan 250"
     assert json.loads(asked[-1].content)["options"] == two
+    replies = iter([httpx.Response(200, json={"answer": "1. What? -> A page", "message": ""})])
+    more = [
+        {"question": "Where?", "options": []},
+        {"question": "Who?", "options": []},
+        {"question": "x"},
+    ]
+    assert "1. What? -> A page" in await bancs.ask_visitor("What?", more=more)
+    assert json.loads(asked[-1].content)["more"] == more[:2]  # three questions on a card at most
 
     monkeypatch.setattr(settings, "bancs_proxy_url", "")
     assert "No visitor can answer" in await bancs.ask_visitor("Anyone?")

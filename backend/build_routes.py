@@ -186,6 +186,7 @@ class Decision(BaseModel):
 
 class Answer(BaseModel):
     answer: str = Field(default="", max_length=2000)  # empty: the visitor skipped the question
+    answers: Optional[list[str]] = Field(default=None, max_length=3)  # an interview card: one per question
 
 
 @router.get("/status")
@@ -261,7 +262,7 @@ async def decide(run_id: str, write_id: str, body: Decision, authorization: str 
 async def answer(run_id: str, question_id: str, body: Answer, authorization: str = Header(""),
                  x_run_key: str = Header("")) -> dict[str, Any]:
     run = _run_for(run_id, authorization, x_run_key)
-    question = build_proxy.answer_question(run.token, question_id, body.answer)
+    question = build_proxy.answer_question(run.token, question_id, body.answer, body.answers)
     if question is None:
         raise HTTPException(status_code=404, detail="no such open question (answered, timed out or unknown)")
     return question.public()

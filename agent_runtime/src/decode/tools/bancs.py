@@ -40,7 +40,11 @@ async def _kb(path: str, params: dict[str, str] | None = None) -> str:
 QUESTION_WAIT_S = 330.0  # the proxy holds a question up to 5 minutes for the visitor
 
 
-async def ask_visitor(question: str, options: list[dict[str, str]] | None = None) -> str:
+async def ask_visitor(
+    question: str,
+    options: list[dict[str, str]] | None = None,
+    more: list[dict[str, object]] | None = None,
+) -> str:
     """decode's ask_user in a Build & run: the question goes to the visitor's page through the run's proxy.
 
     Always text for the model, never an exception: an answer, or why there is none (skipped, no answer in
@@ -52,7 +56,12 @@ async def ask_visitor(question: str, options: list[dict[str, str]] | None = None
     try:
         async with httpx.AsyncClient(timeout=QUESTION_WAIT_S) as client:
             response = await client.post(
-                f"{base}/_ask", json={"question": question, "options": list(options or [])[:2]}
+                f"{base}/_ask",
+                json={
+                    "question": question,
+                    "options": list(options or [])[:2],
+                    "more": list(more or [])[:2],
+                },
             )
     except httpx.HTTPError as exc:
         return f"The question did not reach the visitor ({type(exc).__name__}). Do not ask again; finish with it open."
@@ -115,9 +124,19 @@ How to work on a task:
   your code has really called the bank: a script you did not run is not an answer.
 - Build only the layers the task asks for. A task that only reads or changes bank data is a script.
   Add a database only if the task must keep data between runs, an API only if something else will
-  call it, and a page only if the visitor asks to see something. If the task is open ("build me an
-  app") and the layers are not clear, ask the visitor once with two options, for example "Script
-  only" and "API with a page".
+  call it, and a page only if the visitor asks to see something.
+- A larger or open build (an app, a service, a library of several files, or "build me ..." with
+  the layers not clear): interview first, then a spec, then build. A small task gets no interview.
+  1. Interview: ONE ask_user call with at most 3 questions, the first in `question` and `options`,
+     the others in `more_questions`, each with two options. Ask only what the visitor must decide:
+     the layers ("Script only" or "API with a page"), where data is kept, which data to use.
+  2. Spec: write SPEC.md (what you will build, what you will not, the files, how you will test
+     it). Then ask_user with the spec in at most 12 short lines as the question and the options
+     "Build this" and "Stop here"; the visitor can type changes instead. Apply typed changes to
+     SPEC.md and build; do not ask again.
+  3. Build to the spec, run the tests, and report against the spec: what is done and tested, and
+     what is not.
+  If nobody answers, build the smallest version that fits the task and say what you assumed.
 - You can ask the visitor with ask_user; their answer comes back as the tool result (they have 5 minutes).
   Ask when you need something only they can know and cannot find with GET calls (which product,
   which branch, which customer), when the task leaves a choice open that changes what you write, or
@@ -127,7 +146,7 @@ How to work on a task:
   and a `detail`, its one-line trade-off ("About 250 calls; a partial answer, now"). Another:
   "Only branch 1001" ("Fewer calls; only that branch's customers"). The visitor clicks one or types their own. Ask ONE short, specific question and give the
   options you found. Never ask for permission to write (they approve every write anyway), never ask
-  what you can look up, at most 3 questions. If they skip it or do not answer, do not ask again.
+  what you can look up, at most 3 ask_user calls in a run. If they skip it or do not answer, do not ask again.
 - When the task names no customer, account, loan or other record, find a REAL one yourself with GET
   calls and use it; say which one you picked and how. Good places to find real records: the fund
   transfers list (it carries real account and customer references), the customer list (customer

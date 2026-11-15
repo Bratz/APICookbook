@@ -528,6 +528,35 @@ async def test_writes_stop_after_three_refusals_until_the_visitor_answers(proxy,
     assert (await approved_write(831)).status_code == 400  # held and sent again
 
 
+@pytest.mark.anyio
+async def test_an_interview_asks_up_to_three_questions_on_one_card(proxy):
+    client, run = proxy
+    two = [{"label": "Script only", "detail": "One file"}, {"label": "API with a page", "detail": "Flask"}]
+    ask = asyncio.create_task(client.post(f"/r/{run.token}/_ask", json={
+        "question": "What should I build?", "options": two,
+        "more": [{"question": "Where should data be kept?", "options": [{"label": "SQLite"}, {"label": "Nowhere"}]},
+                 {"question": "Which customer?"}, {"question": "A fourth question"}, "not a question"]}))
+    held = await _until_question(run.token)
+
+    # one card, one of the run's 3 asks: the first question plus at most two more
+    assert [m["question"] for m in held["more"]] == ["Where should data be kept?", "Which customer?"]
+    assert held["more"][0]["options"][0] == {"label": "SQLite", "detail": ""} and held["more"][1]["options"] == []
+    assert len(build_proxy.questions(run.token)) == 1
+
+    build_proxy.answer_question(run.token, held["id"], "", ["API with a page", "", " 3 "])
+    answer = (await ask).json()["answer"]
+    # the agent reads each answer next to its question; an unanswered one is its own to decide
+    assert answer.splitlines() == ["1. What should I build? -> API with a page",
+                                   "2. Where should data be kept? -> (no answer: decide yourself)",
+                                   "3. Which customer? -> 3"]
+
+    skipped = asyncio.create_task(client.post(f"/r/{run.token}/_ask", json={
+        "question": "Build this?", "more": [{"question": "Sure?"}]}))
+    held = await _until_question(run.token)
+    assert build_proxy.answer_question(run.token, held["id"], "", ["", ""]).status == "skipped"  # nothing answered
+    assert (await skipped).json()["answer"] == ""
+
+
 def test_only_the_runs_page_can_answer_its_question(client, open_build):
     started = client.post("/api/build/runs", json={"task": "t"}).json()
     run = build_routes._RUNS[started["id"]]
@@ -539,6 +568,15 @@ def test_only_the_runs_page_can_answer_its_question(client, open_build):
     answered = client.post(url, json={"answer": "831"}, headers={"X-Run-Key": started["key"]})
     assert answered.status_code == 200 and answered.json()["status"] == "answered" and held.answer == "831"
     assert client.post(url, json={"answer": "x"}, headers={"X-Run-Key": started["key"]}).status_code == 404
+
+    # an interview card sends one answer per question
+    card = build_proxy.HeldQuestion(id="q2", question="What?", more=[{"question": "Where?", "options": []}])
+    build_proxy.RUNS[run.token].questions["q2"] = card
+    sent = client.post(url.replace("q1", "q2"), json={"answers": ["A page", "SQLite"]},
+                       headers={"X-Run-Key": started["key"]})
+    assert sent.status_code == 200 and card.answer == "1. What? -> A page\n2. Where? -> SQLite"
+    too_many = client.post(url.replace("q1", "q2"), json={"answers": ["a"] * 4}, headers={"X-Run-Key": started["key"]})
+    assert too_many.status_code == 422
 
 
 @pytest.mark.anyio

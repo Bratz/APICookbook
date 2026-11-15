@@ -46,6 +46,7 @@ CALL_LIMIT = (f"Not sent: this run has used its {MAX_CALLS_PER_RUN} bank calls. 
               "not reset. Report what you found so far, or ask the visitor with ask_user how to narrow the task.")
 QUESTION_TIMEOUT_S = 300.0  # a question the visitor doesn't answer in 5 minutes goes back unanswered
 MAX_QUESTIONS_PER_RUN = 3
+MAX_QUESTIONS_PER_CARD = 3  # an interview asks its questions on one card: one wait, not three
 MAX_FAILED_WRITES_IN_A_ROW = 3  # then the run must ask or stop: it is guessing values against a shared bank
 MAX_WRITES_PER_RUN = 12
 STOPPED_WRITES = ("Not sent, and not shown to the visitor: {why}. Stop changing values and retrying. If a value only "
@@ -78,13 +79,16 @@ class HeldQuestion:
     question: str
     # two one-click choices {label, detail} or none (one option is not a choice); the visitor may still type
     options: list[dict[str, str]] = field(default_factory=list)
+    # an interview: up to two more questions on the same card, each {question, options}, answered together
+    more: list[dict[str, Any]] = field(default_factory=list)
     created: float = field(default_factory=time.time)
     status: str = "pending"  # "pending" | "answered" | "skipped" | "timeout"
     answer: str = ""
     event: asyncio.Event = field(default_factory=asyncio.Event, repr=False)
 
     def public(self) -> dict[str, Any]:
-        return {"id": self.id, "question": self.question, "options": self.options, "status": self.status,
+        return {"id": self.id, "question": self.question, "options": self.options, "more": self.more,
+                "status": self.status,
                 "answer": self.answer,
                 "waiting_s": round(time.time() - self.created), "timeout_s": int(QUESTION_TIMEOUT_S)}
 
@@ -156,12 +160,23 @@ def decide(token: str, write_id: str, approve: bool) -> Optional[HeldWrite]:
     return write
 
 
-def answer_question(token: str, question_id: str, answer: str) -> Optional[HeldQuestion]:
-    """The visitor's answer (empty = skipped); None when the question is not pending."""
+def answer_question(token: str, question_id: str, answer: str,
+                    answers: Optional[list[str]] = None) -> Optional[HeldQuestion]:
+    """The visitor's answer (empty = skipped); None when the question is not pending.
+
+    ``answers``: one per question of an interview card, in order. They reach the agent as one text,
+    a line per question, so it reads each answer next to what it asked.
+    """
     run = RUNS.get(token)
     question = run.questions.get(question_id) if run else None
     if question is None or question.status != "pending":
         return None
+    if question.more and answers is not None:
+        asked = [question.question] + [m["question"] for m in question.more]
+        given = [str(a).strip()[:500] for a in answers][:len(asked)] + [""] * len(asked)
+        lines = [f"{i}. {q} -> {a or '(no answer: decide yourself)'}"
+                 for i, (q, a) in enumerate(zip(asked, given), 1)]
+        answer = "\n".join(lines) if any(given) else ""
     question.answer = answer.strip()[:2000]
     question.status = "answered" if question.answer else "skipped"
     if question.answer:
@@ -258,8 +273,11 @@ async def ask(token: str, request: Request) -> Any:
     """decode's ask_user for this run: hold the question for the visitor; answer when they reply or time runs out."""
     run = _run_or_404(token)
     sent = await request.json()
-    question = str(sent.get("question") or "").strip()[:1000]
+    question = str(sent.get("question") or "").strip()[:2000]  # room for a short spec to approve
     options = _plan_options(sent.get("options"))
+    more = [{"question": str(m.get("question") or "").strip()[:300], "options": _plan_options(m.get("options"))}
+            for m in (sent.get("more") if isinstance(sent.get("more"), list) else []) if isinstance(m, dict)]
+    more = [m for m in more if m["question"]][:MAX_QUESTIONS_PER_CARD - 1]
     if not question:
         return {"answer": "", "message": "Ask a question in words."}
     if len(run.questions) >= MAX_QUESTIONS_PER_RUN:
@@ -268,7 +286,7 @@ async def ask(token: str, request: Request) -> Any:
     if not run.visitor:
         return {"answer": "", "message": "No visitor is watching this run. Decide yourself, state the assumption, "
                                          "or finish and say what is still open."}
-    held = HeldQuestion(id=uuid.uuid4().hex[:12], question=question, options=options)
+    held = HeldQuestion(id=uuid.uuid4().hex[:12], question=question, options=options, more=more)
     run.questions[held.id] = held
     try:
         await asyncio.wait_for(held.event.wait(), timeout=QUESTION_TIMEOUT_S)

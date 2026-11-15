@@ -46,6 +46,22 @@ def plan_choices(options: list[PlanOption] | None) -> list[dict[str, str]]:
     return picked if len(picked) == 2 else []
 
 
+class MoreQuestion(BaseModel):
+    """A further question on the same card as the first: an interview asks them together."""
+
+    question: str
+    options: list[PlanOption] | None = None
+
+
+def more_choices(more: list[MoreQuestion] | None) -> list[dict[str, object]]:
+    """At most two further questions (three on a card), each with two options or none."""
+    return [
+        {"question": m.question.strip()[:300], "options": plan_choices(m.options)}
+        for m in more or []
+        if m.question.strip()
+    ][:2]
+
+
 class NoInteractiveUserError(RuntimeError):
     """Raised by the headless resolver: there is no interactive user to answer ``ask_user``.
 
@@ -55,7 +71,9 @@ class NoInteractiveUserError(RuntimeError):
 
 
 async def deny_user_question_resolver(
-    question: str, options: list[dict[str, str]] | None = None
+    question: str,
+    options: list[dict[str, str]] | None = None,
+    more: list[dict[str, object]] | None = None,
 ) -> str:
     """The safe headless default: there is no interactive user, so refuse to answer.
 
@@ -68,7 +86,10 @@ async def deny_user_question_resolver(
 
 
 async def ask_user(
-    ctx: RunContext[AgentDeps], question: str, options: list[PlanOption] | None = None
+    ctx: RunContext[AgentDeps],
+    question: str,
+    options: list[PlanOption] | None = None,
+    more_questions: list[MoreQuestion] | None = None,
 ) -> str:
     """Ask the human ``question`` and return their typed answer (ADR-0002 §2,7).
 
@@ -76,6 +97,10 @@ async def ask_user(
     recommended one first. ``label`` is a few words; ``detail`` is its one-line trade-off. One option
     is not a choice and is ignored. The human can still type their own answer. Leave it out for an
     open question.
+
+    ``more_questions``: at most two further questions shown on the same card and answered together
+    (an interview before a larger build), each with its own two ``options`` or none. The answers
+    come back as one text, a line per question.
 
     Emits an :class:`~decode.entities.events.AskUserRequested` event so the TUI renders the
     question, then awaits the human's free-text answer on ``ctx.deps.resolve_user_question`` —
@@ -95,7 +120,10 @@ async def ask_user(
         # APICookbook fork: options go only to a resolver that shows them (the visitor's page), so
         # every other resolver keeps upstream's one-argument shape.
         choices = plan_choices(options)
-        if choices:
+        more = more_choices(more_questions)
+        if more:
+            answer = await ctx.deps.resolve_user_question(question, options=choices, more=more)
+        elif choices:
             answer = await ctx.deps.resolve_user_question(question, options=choices)
         else:
             answer = await ctx.deps.resolve_user_question(question)

@@ -93,6 +93,38 @@ async def test_ask_user_passes_two_labelled_options_or_none():
     )
 
 
+async def test_ask_user_sends_an_interview_as_one_question_plus_at_most_two_more():
+    seen: list[dict] = []
+
+    async def resolver(
+        question: str, options: list[dict] | None = None, more: list | None = None
+    ) -> str:
+        seen.append({"question": question, "options": options, "more": more})
+        return "1. What? -> A page"
+
+    opt, extra = askuser_module.PlanOption, askuser_module.MoreQuestion
+    answer = await askuser_module.ask_user(
+        _ctx(resolve_user_question=resolver),
+        question="What should I build?",
+        more_questions=[
+            extra(
+                question="Where is data kept?", options=[opt(label="SQLite"), opt(label="Nowhere")]
+            ),
+            extra(question=" "),
+            extra(question="Which customer?"),
+            extra(question="A fourth"),
+        ],
+    )
+
+    assert answer == "1. What? -> A page"
+    assert seen[0]["options"] == []  # the first question may be open
+    assert [m["question"] for m in seen[0]["more"]] == ["Where is data kept?", "Which customer?"]
+    assert seen[0]["more"][0]["options"] == [
+        {"label": "SQLite", "detail": ""},
+        {"label": "Nowhere", "detail": ""},
+    ]
+
+
 async def test_ask_user_returns_the_resolved_free_text_answer():
     async def resolver(question: str) -> str:
         return "the user typed this"

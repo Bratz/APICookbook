@@ -783,6 +783,10 @@
         .question-card textarea { width: 100%; resize: vertical; }
         .question-options { display: grid; gap: var(--space-2xs); }
         .question-option { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-xs); }
+        .question-form { display: grid; gap: var(--space-sm); }
+        .question-ask { border: 0; padding: 0; margin: 0; min-width: 0; display: grid; gap: var(--space-2xs); }
+        .question-ask legend { padding: 0; }
+        .question-card.decided [data-left] { white-space: pre-wrap; }
 
         .knowledge-search-bar {
             padding: var(--space-xs) var(--space-md);
@@ -3856,24 +3860,45 @@
        }
 
        // The agent's question (decode's ask_user): the visitor types an answer or skips; the run waits up to 5 minutes.
+       // Two plans or none, the agent's pick first; each with its one-line trade-off beside the button.
+       function questionOptions(raw) {
+           const options = (raw || []).map(o => typeof o === 'string' ? { label: o, detail: '' } : o).slice(0, 2);
+           return options.length < 2 ? [] : options;
+       }
+
+       function optionButtons(options, primaryFirst) {
+           return options.map((o, i) =>
+               `<div class="question-option"><button type="button" class="btn ${primaryFirst && !i ? 'btn-primary' : 'btn-secondary'} btn-sm" data-option="${i}">${escapeHtml(o.label)}${i ? '' : ' (Recommended)'}</button>`
+               + (o.detail ? `<span class="text-small text-muted">${escapeHtml(o.detail)}</span>` : '') + '</div>').join('');
+       }
+
        function renderQuestion(runId, runKey, q) {
            const card = document.createElement('form');
            card.className = 'write-card question-card';
            card.dataset.question = q.id;
-           // At most two one-click plans, the agent's pick first; the visitor can still type their own.
-           // Two plans or none, the agent's pick first; each with its one-line trade-off under the button.
-           const options = (q.options || []).map(o => typeof o === 'string' ? { label: o, detail: '' } : o).slice(0, 2);
-           const choices = options.length < 2 ? '' : options.map((o, i) =>
-               `<div class="question-option"><button type="button" class="btn ${i ? 'btn-secondary' : 'btn-primary'} btn-sm" data-option="${i}">${escapeHtml(o.label)}${i ? '' : ' (Recommended)'}</button>`
-               + (o.detail ? `<span class="text-small text-muted">${escapeHtml(o.detail)}</span>` : '') + '</div>').join('');
-           card.innerHTML = `<h4>The agent has a question</h4>
-               <p class="question-text">${escapeHtml(q.question)}</p>
-               ${choices ? `<div class="question-options">${choices}</div>` : ''}
-               <label class="text-small" for="answer-${escapeHtml(q.id)}">${choices ? 'Or type your own answer' : 'Your answer'}</label>
-               <textarea id="answer-${escapeHtml(q.id)}" class="form-input" rows="2" maxlength="2000"></textarea>
-               <div class="choice-row"><button type="submit" class="btn btn-primary btn-sm">Send answer</button>
+           // An interview: up to three questions on one card, answered together with one Send.
+           const asks = [{ question: q.question, options: q.options }, ...(q.more || [])].slice(0, 3)
+               .map(a => ({ question: a.question, options: questionOptions(a.options) }));
+           const interview = asks.length > 1;
+           const options = asks[0].options;
+           const controls = `<div class="choice-row"><button type="submit" class="btn btn-primary btn-sm">${interview ? 'Send answers' : 'Send answer'}</button>
                <button type="button" class="btn btn-secondary btn-sm" data-skip>Skip</button>
                <span class="write-status" data-left></span></div>`;
+           if (interview) {
+               card.innerHTML = `<h4>The agent has ${asks.length} questions before it builds</h4>
+                   <div class="question-form">${asks.map((a, n) => `<fieldset class="question-ask" data-ask="${n}">
+                       <legend class="question-text">${n + 1}. ${escapeHtml(a.question)}</legend>
+                       ${a.options.length ? `<div class="question-options">${optionButtons(a.options, false)}</div>` : ''}
+                       <input type="text" class="form-input" maxlength="500" aria-label="Your answer to question ${n + 1}"
+                              placeholder="${a.options.length ? 'Or type your own answer' : 'Your answer'}">
+                   </fieldset>`).join('')}</div>${controls}`;
+           } else {
+               card.innerHTML = `<h4>The agent has a question</h4>
+                   <p class="question-text">${escapeHtml(q.question)}</p>
+                   ${options.length ? `<div class="question-options">${optionButtons(options, true)}</div>` : ''}
+                   <label class="text-small" for="answer-${escapeHtml(q.id)}">${options.length ? 'Or type your own answer' : 'Your answer'}</label>
+                   <textarea id="answer-${escapeHtml(q.id)}" class="form-input" rows="2" maxlength="2000"></textarea>${controls}`;
+           }
            const left = card.querySelector('[data-left]');
            const deadline = Date.now() + ((q.timeout_s || 300) - (q.waiting_s || 0)) * 1000;
            const tick = () => {
@@ -3883,24 +3908,46 @@
                if (s) setTimeout(tick, 1000);
            };
            tick();
-           const send = async (answer) => {
-               card.querySelectorAll('button, textarea').forEach(b => b.disabled = true);
+           const send = async (body) => {
+               card.querySelectorAll('button, textarea, input').forEach(b => b.disabled = true);
                try {
-                   const r = await buildFetch(`/runs/${runId}/questions/${q.id}`, { method: 'POST', body: JSON.stringify({ answer }) }, runKey);
+                   const r = await buildFetch(`/runs/${runId}/questions/${q.id}`, { method: 'POST', body: JSON.stringify(body) }, runKey);
                    settleQuestion(card, r.ok ? await r.json() : { status: 'timeout' });
                } catch (e) { left.textContent = e.message; }
            };
-           card.addEventListener('submit', (e) => { e.preventDefault(); send(card.querySelector('textarea').value.trim()); });
-           card.querySelector('[data-skip]').onclick = () => send('');
-           card.querySelectorAll('[data-option]').forEach(b => b.onclick = () => send(options[+b.dataset.option].label));
-           if (!choices) setTimeout(() => card.querySelector('textarea').focus(), 50);
+           if (interview) {
+               // An option is picked, not sent: the visitor answers every question, then sends once.
+               card.querySelectorAll('.question-ask').forEach(ask => {
+                   const input = ask.querySelector('input');
+                   const buttons = [...ask.querySelectorAll('[data-option]')];
+                   const pick = (chosen) => buttons.forEach(b => {
+                       b.setAttribute('aria-pressed', String(b === chosen));
+                       b.classList.toggle('btn-primary', b === chosen);
+                       b.classList.toggle('btn-secondary', b !== chosen);
+                   });
+                   buttons.forEach(b => b.onclick = () => { pick(b); input.value = ''; });
+                   input.oninput = () => pick(null);
+               });
+               const answers = () => [...card.querySelectorAll('.question-ask')].map((ask, n) => {
+                   const typed = ask.querySelector('input').value.trim();
+                   const picked = ask.querySelector('[data-option][aria-pressed="true"]');
+                   return typed || (picked ? asks[n].options[+picked.dataset.option].label : '');
+               });
+               card.addEventListener('submit', (e) => { e.preventDefault(); send({ answers: answers() }); });
+               card.querySelector('[data-skip]').onclick = () => send({ answers: asks.map(() => '') });
+           } else {
+               card.addEventListener('submit', (e) => { e.preventDefault(); send({ answer: card.querySelector('textarea').value.trim() }); });
+               card.querySelector('[data-skip]').onclick = () => send({ answer: '' });
+               card.querySelectorAll('[data-option]').forEach(b => b.onclick = () => send({ answer: options[+b.dataset.option].label }));
+               if (!options.length) setTimeout(() => card.querySelector('textarea').focus(), 50);
+           }
            return card;
        }
 
        function settleQuestion(card, q) {
            if (!card || card.classList.contains('decided')) return;
            card.classList.add('decided');
-           card.querySelectorAll('button, textarea, label, .question-options').forEach(b => b.remove());
+           card.querySelectorAll('button, textarea, label, .question-options, .question-form').forEach(b => b.remove());
            card.querySelector('[data-left]').textContent =
                q.status === 'answered' ? `You answered: ${q.answer}` : q.status === 'skipped' ? 'Skipped.' : 'Not answered in time.';
        }
