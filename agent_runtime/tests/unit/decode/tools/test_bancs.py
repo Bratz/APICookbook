@@ -81,6 +81,8 @@ def test_the_prompt_names_the_proxy_base_and_the_approval_rule(monkeypatch):
     assert "exactly TWO" in text and "`detail`" in text  # two plans, each with its trade-off
     # The agent sizes the solution: a script unless the task needs a database, an API or a page.
     assert "Build only the layers the task asks for" in text
+    # A run left a Flask server running: it had started one and the image had no pkill.
+    assert "framework's test client" in text and "stop it" in text
     # A larger build starts with an interview and a spec the visitor approves.
     assert "interview first, then a spec, then build" in text and "`more_questions`" in text
     assert "SPEC.md" in text and '"Build this" and "Stop here"' in text

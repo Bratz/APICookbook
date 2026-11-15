@@ -122,6 +122,9 @@ How to work on a task:
 - Write the code in the language the task asks for (default: Python with `requests`), save it in the
   workspace, and run it. Read the output and fix the code until it works. You are not done until
   your code has really called the bank: a script you did not run is not an answer.
+- Test a web app with its framework's test client (Flask's test_client, FastAPI's TestClient),
+  not by starting a server. If you do start a server, run it in the background and stop it
+  (pkill -f) before you finish; remove files your tests made, such as a test database.
 - Build only the layers the task asks for. A task that only reads or changes bank data is a script.
   Add a database only if the task must keep data between runs, an API only if something else will
   call it, and a page only if the visitor asks to see something.

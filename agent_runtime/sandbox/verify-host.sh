@@ -53,6 +53,13 @@ if docker run --rm --runtime runsc --cap-drop ALL --read-only --user "$RUN_UID" 
 else
   echo "FAIL  a baked-in Python package does not import"; failures=$((failures + 1))
 fi
+# A run that starts a server must be able to stop it (procps: pkill, ps).
+if docker run --rm --runtime runsc --cap-drop ALL --read-only --user "$RUN_UID" -v "$ws:/workspace" -w /workspace \
+     decode-session:latest bash -c 'sleep 30 & pkill -f "sleep 30" && ps >/dev/null' >/dev/null 2>&1; then
+  echo "PASS  worker can stop a process it started (pkill)"
+else
+  echo "FAIL  worker has no working pkill"; failures=$((failures + 1))
+fi
 rm -rf "$ws"
 echo "== runner health: $(curl -s --max-time 5 "http://$HOST_IP:7700/health" || echo unreachable)"
 
