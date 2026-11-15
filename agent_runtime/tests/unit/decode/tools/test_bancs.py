@@ -87,6 +87,12 @@ def test_the_prompt_names_the_proxy_base_and_the_approval_rule(monkeypatch):
     assert "interview first, then a spec, then build" in text and "`more_questions`" in text
     assert "SPEC.md" in text and '"Build this" and "Stop here"' in text
     assert "A small task gets no interview" in text
+    # The spec is checkable: numbered requirements with a check each, a test per requirement, and a
+    # closing table. A run built without confirming the spec, so the confirmation is now a MUST.
+    assert "requirements R1, R2" in text and '"Check:" line' in text and '"Out of scope:"' in text
+    assert "one test for each requirement" in text and "test_r1_" in text
+    assert "You MUST get the visitor's answer to this question" in text
+    assert "update SPEC.md" in text  # a follow-up keeps the spec current
     # How the agent writes to the visitor, and that SPEC.md is written as a reference.
     assert "How to write to the visitor" in text and "no em dashes" in text
     assert "Never invent a fact" in text and "SPEC.md is a reference, not a conversation" in text
