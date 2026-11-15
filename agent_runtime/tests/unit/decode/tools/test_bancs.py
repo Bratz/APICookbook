@@ -79,6 +79,9 @@ def test_the_prompt_names_the_proxy_base_and_the_approval_rule(monkeypatch):
     assert "nothing can be installed" in text
     assert "flask, fastapi, uvicorn, pytest and pandas" in text
     assert "exactly TWO" in text and "`detail`" in text  # two plans, each with its trade-off
+    # The agent sizes the solution: a script unless the task needs a database, an API or a page.
+    assert "Build only the layers the task asks for" in text
+    assert "ask the visitor once with two options" in text
     # F5 finding: the one remaining miss called a path the spec does not have.
     assert "must be the `url_template` of an operation get_endpoint returned" in text
     # Questions about the API get an answer from the spec; anything off-topic is declined.

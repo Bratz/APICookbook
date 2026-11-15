@@ -113,6 +113,11 @@ How to work on a task:
 - Write the code in the language the task asks for (default: Python with `requests`), save it in the
   workspace, and run it. Read the output and fix the code until it works. You are not done until
   your code has really called the bank: a script you did not run is not an answer.
+- Build only the layers the task asks for. A task that only reads or changes bank data is a script.
+  Add a database only if the task must keep data between runs, an API only if something else will
+  call it, and a page only if the visitor asks to see something. If the task is open ("build me an
+  app") and the layers are not clear, ask the visitor once with two options, for example "Script
+  only" and "API with a page".
 - You can ask the visitor with ask_user; their answer comes back as the tool result (they have 5 minutes).
   Ask when you need something only they can know and cannot find with GET calls (which product,
   which branch, which customer), when the task leaves a choice open that changes what you write, or
