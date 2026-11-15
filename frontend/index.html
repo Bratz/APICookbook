@@ -3779,6 +3779,36 @@
        // The files the agent wrote, as Claude Code hands back a workspace: browse, copy, or take them all.
        // They point at the bank itself (the server swaps the sandbox's proxy address), so they run as they are.
        const LANGS = { py: 'python', js: 'javascript', json: 'json', sh: 'bash', java: 'java' };
+
+       // A zip of text files, stored without compression (they are small): local headers, the central
+       // directory, the end record. ponytail: no compression and no dates; a zip library if files grow large.
+       function zipOf(entries) {
+           const crcTable = Array.from({ length: 256 }, (_, n) => {
+               for (let k = 0; k < 8; k++) n = n & 1 ? 0xEDB88320 ^ (n >>> 1) : n >>> 1;
+               return n >>> 0;
+           });
+           const crc32 = bytes => { let c = ~0; for (const b of bytes) c = crcTable[(c ^ b) & 0xFF] ^ (c >>> 8); return ~c >>> 0; };
+           const enc = new TextEncoder(), parts = [], central = [];
+           const header = (fields) => {  // [size in bytes, value] pairs, little-endian
+               const view = new DataView(new ArrayBuffer(fields.reduce((n, [size]) => n + size, 0)));
+               let at = 0;
+               for (const [size, value] of fields) { size === 2 ? view.setUint16(at, value, true) : view.setUint32(at, value, true); at += size; }
+               return new Uint8Array(view.buffer);
+           };
+           let offset = 0;
+           for (const e of entries) {
+               const name = enc.encode(e.path), data = enc.encode(e.content), crc = crc32(data);
+               // version 2.0, flag 0x0800 = UTF-8 names, method 0 = stored, DOS date 1 January 2026
+               const common = [[2, 20], [2, 0x0800], [2, 0], [2, 0], [2, (46 << 9) | (1 << 5) | 1], [4, crc], [4, data.length], [4, data.length], [2, name.length], [2, 0]];
+               const local = header([[4, 0x04034b50], ...common]);
+               central.push(header([[4, 0x02014b50], [2, 20], ...common, [2, 0], [2, 0], [2, 0], [4, 0], [4, offset]]), name);
+               parts.push(local, name, data);
+               offset += local.length + name.length + data.length;
+           }
+           const centralSize = central.reduce((n, p) => n + p.length, 0);
+           const end = header([[4, 0x06054b50], [2, 0], [2, 0], [2, entries.length], [2, entries.length], [4, centralSize], [4, offset], [2, 0]]);
+           return new Blob([...parts, ...central, end]);
+       }
        async function showRunFiles(el, runId, runKey) {
            let listing;
            try {
@@ -3812,10 +3842,12 @@
                try { await navigator.clipboard.writeText(files[current].content); e.target.textContent = 'Copied'; } catch (err) {}
                setTimeout(() => { e.target.textContent = 'Copy'; }, 1500);
            };
-           box.querySelector('[data-zip]').onclick = async () => {
-               const r = await buildFetch(`/runs/${runId}/files.zip`, {}, runKey).catch(() => null);
-               if (!r || !r.ok) { showNotification('The files are not available any more.', 'error'); return; }
-               const url = URL.createObjectURL(await r.blob());
+           box.querySelector('[data-zip]').onclick = () => {
+               // Built here from the files the page already holds: a request for a .zip gets a 403 from
+               // some company web gateways, and this also works after the server has dropped the run.
+               const entries = files.map(f => ({ path: 'bancs-run/' + f.path, content: f.content }));
+               if (listing.readme) entries.push({ path: 'bancs-run/README.txt', content: listing.readme });
+               const url = URL.createObjectURL(new Blob([zipOf(entries)], { type: 'application/zip' }));
                const a = Object.assign(document.createElement('a'), { href: url, download: `bancs-run-${runId.slice(0, 8)}.zip` });
                document.body.appendChild(a); a.click(); a.remove();
                URL.revokeObjectURL(url);

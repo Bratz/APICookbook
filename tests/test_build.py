@@ -294,6 +294,8 @@ def test_a_runs_files_come_back_pointed_at_the_real_bank(client, open_build, mon
     assert [f["path"] for f in listing["files"]] == ["list.py"]  # nothing that climbs out of the folder
     assert listing["files"][0]["content"].startswith('BASE = "https://demoapps.tcsbancs.com/Core"')
     assert "/r/" not in listing["files"][0]["content"]  # the run's private proxy token is gone
+    # The page builds the zip itself (a .zip request gets a 403 on some networks): it needs the README.
+    assert "BANCS_ACCESS_TOKEN" in listing["readme"] and "entity: GPRDTTSTOU" in listing["readme"]
 
     zipped = client.get(f"/api/build/runs/{run_id}/files.zip", headers={"X-Run-Key": key})
     assert zipped.headers["content-type"] == "application/zip"

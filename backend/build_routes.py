@@ -306,6 +306,9 @@ async def _run_files(run_id: str, authorization: str, x_run_key: str) -> dict[st
         for f in listing.get("files", [])
         if not f["path"].startswith("/") and ".." not in f["path"].split("/")
     ]
+    # The page builds the zip itself (a .zip request is blocked on some networks), so it needs the README.
+    listing["readme"] = _README.format(base=api_lookup.BASE_URL, entity=settings.bancs_entity,
+                                       user=settings.bancs_user_id, lang=settings.bancs_language_code)
     return listing
 
 
@@ -321,9 +324,7 @@ async def files_zip(run_id: str, authorization: str = Header(""), x_run_key: str
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
         for f in listing["files"]:
             archive.writestr(f"bancs-run/{f['path']}", f["content"])
-        archive.writestr("bancs-run/README.txt", _README.format(
-            base=api_lookup.BASE_URL, entity=settings.bancs_entity, user=settings.bancs_user_id,
-            lang=settings.bancs_language_code))
+        archive.writestr("bancs-run/README.txt", listing["readme"])
     return Response(buffer.getvalue(), media_type="application/zip",
                     headers={"Content-Disposition": f'attachment; filename="bancs-run-{run_id[:8]}.zip"'})
 
