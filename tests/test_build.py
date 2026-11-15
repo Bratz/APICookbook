@@ -588,3 +588,95 @@ async def test_an_operator_run_gets_no_visitor_at_once(proxy):
     reply = (await client.post(f"/r/{run.token}/_ask", json={"question": "Which product?"})).json()
     assert reply["answer"] == "" and "No visitor is watching" in reply["message"]
     assert build_proxy.questions(run.token) == []
+
+
+# ---------------------------------------------------------------- preview: the built app, for this run's page only
+PREVIEW_FILES = [
+    {"path": "app.py", "content": 'BASE = "https://demoapps.tcsbancs.com/Core"'},
+    {"path": "preview.json", "content": '{"command": "python app.py", "port": 5000}'},
+]
+
+
+def _preview_runner(seen, files=PREVIEW_FILES, start=None):
+    async def fake_runner(method, path, json=None, timeout=15.0):
+        if path.endswith("/files"):
+            return httpx.Response(200, json={"status": "completed", "skipped": 0, "files": files})
+        if method == "POST" and path == "/previews":
+            seen["start"] = json
+            return start or httpx.Response(201, json={"id": "p" * 32, "expires_in": 600})
+        if path.endswith("/http"):
+            seen["call"] = json
+            return httpx.Response(200, json={"status": 200, "content_type": "application/json", "body_b64": "e30="})
+        seen["stopped"] = path
+        return httpx.Response(200, json={})
+    return fake_runner
+
+
+def test_a_preview_opens_only_with_the_runs_key_and_gets_a_read_only_proxy(client, open_build, monkeypatch):
+    started = client.post("/api/build/runs", json={"task": "build an app"}).json()
+    run_id, key = started["id"], {"X-Run-Key": started["key"]}
+    seen = {}
+    monkeypatch.setattr(build_routes, "_call_runner", _preview_runner(seen))
+    url = f"/api/build/runs/{run_id}/preview"
+
+    assert client.post(url).status_code == 404  # no key: there is no such run, and so no preview
+    made = client.post(url, headers=key)
+    assert made.status_code == 200 and made.json() == {"expires_in": 600}
+
+    token = build_routes._RUNS[run_id].preview["token"]
+    proxy = build_proxy.RUNS[token]
+    assert proxy.read_only and not proxy.visitor  # it may read the bank; nobody approves a write
+    assert seen["start"]["command"] == "python app.py" and seen["start"]["port"] == 5000
+    # the app's files point at the preview's own proxy session, not at the bank and not at the run's token
+    assert build_proxy.public_base(token) + "/Core" in seen["start"]["files"][0]["content"]
+
+    relayed = client.post(url + "/http", json={"method": "GET", "path": "/api/accounts"}, headers=key)
+    assert relayed.json() == {"status": 200, "content_type": "application/json", "body_b64": "e30="}
+    assert seen["call"]["path"] == "/api/accounts"
+    assert client.post(url + "/http", json={"method": "GET", "path": "/"}).status_code == 404  # no key
+
+    assert client.delete(url, headers=key).json() == {"stopped": True}
+    assert seen["stopped"] == "/previews/" + "p" * 32 and not proxy.alive
+    assert client.post(url + "/http", json={"method": "GET", "path": "/"}, headers=key).status_code == 404
+
+
+def test_a_preview_needs_preview_json_and_says_why_an_app_did_not_start(client, open_build, monkeypatch):
+    started = client.post("/api/build/runs", json={"task": "build an app"}).json()
+    run_id, key = started["id"], {"X-Run-Key": started["key"]}
+    url = f"/api/build/runs/{run_id}/preview"
+
+    monkeypatch.setattr(build_routes, "_call_runner", _preview_runner({}, files=PREVIEW_FILES[:1]))
+    assert client.post(url, headers=key).status_code == 422  # a script: nothing to preview
+
+    class Failed:
+        status_code = 422
+
+        def json(self):
+            # the app printed its bank address: the preview's private proxy token must not reach the visitor
+            token = [t for t, r in build_proxy.RUNS.items() if r.read_only][-1]  # this preview's session
+            return {"log": f"connect to {build_proxy.public_base(token)}/Core failed: No module named flask_x"}
+
+    monkeypatch.setattr(build_routes, "_call_runner", _preview_runner({}, start=Failed()))
+    failed = client.post(url, headers=key)
+    assert failed.status_code == 422 and "No module named flask_x" in failed.json()["log"]
+    assert "/r/" not in failed.json()["log"] and "demoapps.tcsbancs.com" in failed.json()["log"]
+    assert build_routes._RUNS[run_id].preview is None
+    assert not any(r.read_only and r.alive for r in build_proxy.RUNS.values())  # its proxy session ended
+
+    busy = httpx.Response(429, json={"error": "all preview slots are busy"})
+    monkeypatch.setattr(build_routes, "_call_runner", _preview_runner({}, start=busy))
+    assert client.post(url, headers=key).json()["error"] == "busy"
+
+
+@pytest.mark.anyio
+async def test_a_preview_proxy_reads_the_bank_but_refuses_every_write(proxy):
+    client, run = proxy
+    run.read_only = True
+    path = f"/r/{run.token}/Core/customerManagement/customer/contact"
+
+    assert (await client.get(path)).status_code == 200
+    refused = await client.put(path, json={"phoneNumber": "1"})
+
+    assert refused.status_code == 403 and "read-only" in refused.json()["error"]
+    assert build_proxy.pending(run.token) == []  # no approval card: there is nobody to show it to
+    assert len(BANK_CALLS) == 1  # the GET only

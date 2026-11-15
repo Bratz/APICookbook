@@ -765,6 +765,10 @@
         .file-tab:hover { color: var(--color-ink); }
         .file-tab.active { color: var(--color-ink); box-shadow: inset 0 -2px 0 var(--color-accent); }
         .run-file { position: relative; }
+        .run-preview { border-top: var(--rule-hair) solid var(--color-rule); }
+        .run-preview > p { margin: 0; padding: var(--space-xs) var(--space-sm); }
+        .run-preview-frame { display: block; width: 100%; height: 30rem; border: 0; background: #fff; }
+        .run-preview-log { margin: 0; max-height: 12lh; overflow: auto; border-radius: 0; }
         .run-file pre { margin: 0; max-height: 28lh; overflow: auto; border-radius: 0; }
         .run-file [data-copy] { position: absolute; top: var(--space-xs); right: var(--space-xs); z-index: 1; color: var(--color-graphite-ink); }
         .run-file [data-copy]:hover:not(:disabled) { background: var(--color-graphite-2); color: var(--color-graphite-ink); }
@@ -3835,6 +3839,7 @@
                + (listing.skipped ? ` · ${listing.skipped} not shown (binary, hidden or too large)` : '')
                + ' · they call the bank directly · available while this page is open';
            box.innerHTML = `<div class="run-files-head"><strong>Files</strong><span class="text-small text-muted">${note}</span>
+               ${files.some(f => f.path === 'preview.json') ? '<button type="button" class="btn btn-primary btn-sm" data-preview>Open preview</button>' : ''}
                <button type="button" class="btn btn-secondary btn-sm" data-zip>Download all (.zip)</button></div>
                <div class="run-files-tabs" role="tablist">${files.map((f, i) =>
                    `<button type="button" role="tab" class="file-tab" data-i="${i}">${escapeHtml(f.path)}</button>`).join('')}</div>
@@ -3863,8 +3868,90 @@
                document.body.appendChild(a); a.click(); a.remove();
                URL.revokeObjectURL(url);
            };
+           box.querySelector('[data-preview]')?.addEventListener('click', (e) => openPreview(box, runId, runKey, e.target));
            el.querySelector('.message-content').appendChild(box);
            show(0);
+       }
+
+       // ---- Preview: the built app runs in a sandbox worker for 10 minutes. Nothing about it is public: each
+       // request goes through cookbook-api with this run's key. The page is shown in a sandboxed frame (its own
+       // origin, so it cannot read this site's storage or token), with no network of its own: its fetch calls
+       // are handed to this page, which relays them.
+       const PREVIEW_HEAD = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src data:">
+<scr` + `ipt>(() => {
+  const waiting = new Map(); let n = 0;
+  const b64 = (bytes) => { let s = ''; bytes.forEach(b => s += String.fromCharCode(b)); return btoa(s); };
+  addEventListener('message', (e) => { const done = e.data && waiting.get(e.data.previewReply); if (done) { waiting.delete(e.data.previewReply); done(e.data); } });
+  window.fetch = async (input, init = {}) => {
+    const url = new URL(typeof input === 'string' ? input : input.url, 'http://preview.invalid');
+    if (url.origin !== 'http://preview.invalid') throw new TypeError('A preview can only call its own app.');
+    const headers = new Headers(init.headers || {});
+    let body = init.body == null ? '' : init.body;
+    if (body instanceof URLSearchParams) { if (!headers.has('Content-Type')) headers.set('Content-Type', 'application/x-www-form-urlencoded'); body = body.toString(); }
+    const reply = await new Promise((resolve) => { const id = ++n; waiting.set(id, resolve);
+      parent.postMessage({ previewCall: id, method: (init.method || 'GET').toUpperCase(), path: url.pathname + url.search,
+        contentType: headers.get('Content-Type') || '', bodyB64: b64(new TextEncoder().encode(String(body))) }, '*'); });
+    const bytes = Uint8Array.from(atob(reply.bodyB64 || ''), c => c.charCodeAt(0));
+    const empty = [101, 204, 205, 304].includes(reply.status);
+    return new Response(empty ? null : bytes, { status: reply.status, headers: { 'Content-Type': reply.contentType || 'text/plain' } });
+  };
+})();</scr` + `ipt>`;
+
+       async function openPreview(box, runId, runKey, button) {
+           let pane = box.querySelector('.run-preview');
+           if (!pane) { pane = document.createElement('div'); pane.className = 'run-preview'; box.appendChild(pane); }
+           button.disabled = true;
+           pane.innerHTML = '<p class="text-small text-muted">Starting the app in the sandbox…</p>';
+           let started = null, info = {};
+           try {
+               started = await buildFetch(`/runs/${runId}/preview`, { method: 'POST' }, runKey);
+               info = await started.json();
+           } catch (e) {}
+           button.disabled = false;
+           if (!started || !started.ok) {
+               const why = info.message || (typeof info.detail === 'string' && info.detail) || 'The preview could not start.';
+               pane.innerHTML = `<p class="write-answer fail">${escapeHtml(why)}</p>${info.log ? `<pre class="run-preview-log">${escapeHtml(info.log)}</pre>` : ''}`;
+               return;
+           }
+           const ended = { status: 410, content_type: 'text/plain', body_b64: btoa('The preview has ended.') };
+           const call = async (method, path, contentType = '', bodyB64 = '') => {
+               try {
+                   const r = await buildFetch(`/runs/${runId}/preview/http`, { method: 'POST',
+                       body: JSON.stringify({ method, path, content_type: contentType, body_b64: bodyB64 }) }, runKey);
+                   return r.ok ? await r.json() : ended;
+               } catch (e) { return ended; }
+           };
+           const first = await call('GET', '/');
+           const html = new TextDecoder().decode(Uint8Array.from(atob(first.body_b64 || ''), c => c.charCodeAt(0)));
+           pane.innerHTML = `<div class="run-files-head"><strong>Preview</strong>
+               <span class="text-small text-muted">the app is running in the sandbox · only this page can reach it · the bank is read-only · <span data-left></span></span>
+               <button type="button" class="btn btn-secondary btn-sm" data-stop>Close preview</button></div>
+               <iframe class="run-preview-frame" sandbox="allow-scripts" title="Preview of the built page"></iframe>`;
+           const frame = pane.querySelector('iframe');
+           const onMessage = async (e) => {
+               const d = e.data;
+               if (e.source !== frame.contentWindow || !d || !d.previewCall) return;
+               const answer = await call(String(d.method), String(d.path), String(d.contentType || ''), String(d.bodyB64 || ''));
+               frame.contentWindow?.postMessage({ previewReply: d.previewCall, status: answer.status,
+                   contentType: answer.content_type, bodyB64: answer.body_b64 }, '*');
+           };
+           window.addEventListener('message', onMessage);
+           const deadline = Date.now() + (info.expires_in || 600) * 1000;
+           const left = pane.querySelector('[data-left]');
+           const close = (note) => {
+               window.removeEventListener('message', onMessage);
+               clearInterval(timer);
+               pane.innerHTML = note ? `<p class="text-small text-muted">${escapeHtml(note)}</p>` : '';
+               buildFetch(`/runs/${runId}/preview`, { method: 'DELETE' }, runKey).catch(() => {});
+           };
+           const timer = setInterval(() => {
+               const sec = Math.max(0, Math.round((deadline - Date.now()) / 1000));
+               left.textContent = `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')} left`;
+               if (!sec) close('The preview has ended. Open it again to restart the app.');
+           }, 1000);
+           pane.querySelector('[data-stop]').onclick = () => close('');
+           // The relay and the lock-down go in before the app's own markup, inside its <head> when it has one.
+           frame.srcdoc = /<head[^>]*>/i.test(html) ? html.replace(/<head[^>]*>/i, (head) => head + PREVIEW_HEAD) : PREVIEW_HEAD + html;
        }
 
        function renderHeldWrite(runId, runKey, write) {

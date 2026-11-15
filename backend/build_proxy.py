@@ -105,6 +105,7 @@ class ProxyRun:
     answered: dict[tuple, dict[str, Any]] = field(default_factory=dict, repr=False)
     questions: dict[str, HeldQuestion] = field(default_factory=dict)
     visitor: bool = True  # False for operator runs (evals, smoke): nobody watches, so questions are answered at once
+    read_only: bool = False  # a preview of a built app: it may read the bank, and every write is refused
     writes_sent: int = 0  # writes the visitor was asked about
     failed_in_a_row: int = 0  # approved writes the bank refused, since the last success or answer
 
@@ -325,6 +326,11 @@ async def forward(token: str, path: str, request: Request) -> Response:
     record: dict[str, Any] = {"method": method, "path": "/" + path, "at": time.time()}
     run.calls.append(record)
     key = (method, str(target), body)
+    if method in WRITE_METHODS and run.read_only:
+        # A preview has no approval cards, so a write from it is never sent.
+        record["decision"] = "preview"
+        return JSONResponse({"error": f"A preview is read-only: this {method} was not sent to the bank."},
+                            status_code=403)
     if method in WRITE_METHODS and key in run.answered:
         # The same write again (a script re-run): the visitor already answered it, so don't ask twice.
         earlier = run.answered[key]

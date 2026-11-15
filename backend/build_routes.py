@@ -19,6 +19,10 @@ Who may do what (F4, decided 2026-11-09: every visitor, with caps):
     DELETE /api/build/runs/{id}                   stop it
     GET    /api/build/runs/{id}/files             the files the agent wrote, pointed at the real bank
     GET    /api/build/runs/{id}/files.zip         the same, as a zip with a README
+    POST   /api/build/runs/{id}/preview           start the run's built web app in a sandbox worker (10 minutes)
+    POST   /api/build/runs/{id}/preview/http      one request to that app: {"method", "path", ...} in, the app's
+                                                  status, content type and body (base64) out, as JSON
+    DELETE /api/build/runs/{id}/preview           stop it
 """
 
 from __future__ import annotations
@@ -61,6 +65,7 @@ class BuildRun:
     settled: bool = False
     operator: bool = False  # started with RUNNER_TOKEN (evals, smoke): kept out of the visitors' caps
     task: str = ""  # what the visitor typed: a follow-up's note quotes it
+    preview: Optional[dict[str, str]] = None  # the open preview of this run: {"id", "token"}
 
 
 # runner run id -> run. ponytail: in memory, so a cookbook-api restart forgets runs in flight (their
@@ -103,10 +108,10 @@ def _run_for(run_id: str, authorization: str, run_key: str) -> BuildRun:
     return run
 
 
-async def _call_runner(method: str, path: str, json: Any = None) -> httpx.Response:
+async def _call_runner(method: str, path: str, json: Any = None, timeout: float = 15.0) -> httpx.Response:
     url, token = _runner()
     try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
+        async with httpx.AsyncClient(timeout=timeout) as client:
             return await client.request(method, f"{url}{path}", json=json,
                                         headers={"Authorization": f"Bearer {token}"})
     except httpx.HTTPError as exc:
@@ -327,6 +332,93 @@ async def files_zip(run_id: str, authorization: str = Header(""), x_run_key: str
         archive.writestr("bancs-run/README.txt", listing["readme"])
     return Response(buffer.getvalue(), media_type="application/zip",
                     headers={"Content-Disposition": f'attachment; filename="bancs-run-{run_id[:8]}.zip"'})
+
+
+# ---------------------------------------------------------------- preview: the built app, live, for this run's page only
+# The app runs in a sandbox worker with the same isolation as a run. Nothing is published: every request
+# to it comes through here with the run's key, goes to the runner, and is made inside the container.
+# The answer goes back as JSON (never as a page from this origin), and the page shows it in a sandboxed frame.
+PREVIEW_START_TIMEOUT_S = 40.0  # the runner waits up to 20 s for the app to answer on its port
+PREVIEW_CALL_TIMEOUT_S = 35.0
+
+
+class PreviewCall(BaseModel):
+    method: str = Field(default="GET", max_length=10)
+    path: str = Field(max_length=2000)
+    content_type: str = Field(default="", max_length=100)
+    body_b64: str = Field(default="", max_length=1_400_000)
+
+
+async def _stop_preview(run: BuildRun) -> None:
+    if run.preview:
+        preview, run.preview = run.preview, None
+        build_proxy.end_run(preview["token"])
+        try:
+            await _call_runner("DELETE", f"/previews/{preview['id']}")
+        except HTTPException:
+            pass  # the runner stops it at its time limit anyway
+
+
+@router.post("/runs/{run_id}/preview")
+async def preview_start(run_id: str, authorization: str = Header(""), x_run_key: str = Header(""),
+                        accesstoken: str = Header("")) -> Any:
+    run = _run_for(run_id, authorization, x_run_key)
+    listing = await _run_files(run_id, authorization, x_run_key)
+    if listing.get("status") == "running":
+        raise HTTPException(status_code=409, detail="the run has not finished")
+    wanted = next((f["content"] for f in listing["files"] if f["path"] == "preview.json"), "")
+    try:
+        described = json.loads(wanted)
+        command, port = str(described["command"]).strip(), int(described["port"])
+    except (ValueError, KeyError, TypeError):
+        raise HTTPException(status_code=422, detail="this run has no preview.json with a command and a port")
+    token = build_proxy.visitor_token(accesstoken)
+    if not _is_operator(authorization):
+        build_proxy.require_token(token)
+    await _stop_preview(run)  # one preview for a run
+    proxy = build_proxy.new_run()
+    proxy.bank_token, proxy.visitor, proxy.read_only = token, False, True
+    bank_root, base = api_lookup.BASE_URL.removesuffix("/Core"), build_proxy.public_base(proxy.token)
+    files = [{"path": f["path"], "content": f["content"].replace(bank_root, base)} for f in listing["files"]]
+    response = await _call_runner("POST", "/previews", {"files": files, "command": command, "port": port},
+                                  timeout=PREVIEW_START_TIMEOUT_S)
+    if response.status_code != 201:
+        build_proxy.end_run(proxy.token)
+        if response.status_code == 429:
+            return JSONResponse(status_code=429, content={
+                "error": "busy", "message": "Both preview slots are in use. Try again in a few minutes."})
+        if response.status_code == 422:
+            log = str(response.json().get("log", "")).replace(base, bank_root)[-1500:]
+            return JSONResponse(status_code=422, content={
+                "error": "did_not_start", "message": "The app did not start in the sandbox.", "log": log})
+        return JSONResponse(status_code=502, content={
+            "error": "runner_refused", "message": "The sandbox could not start the preview."})
+    made = response.json()
+    run.preview = {"id": made["id"], "token": proxy.token}
+    return {"expires_in": made["expires_in"]}
+
+
+@router.post("/runs/{run_id}/preview/http")
+async def preview_http(run_id: str, call: PreviewCall, authorization: str = Header(""),
+                       x_run_key: str = Header("")) -> Any:
+    run = _run_for(run_id, authorization, x_run_key)
+    if not run.preview:
+        raise HTTPException(status_code=404, detail="no preview is open for this run")
+    response = await _call_runner("POST", f"/previews/{run.preview['id']}/http", call.model_dump(),
+                                  timeout=PREVIEW_CALL_TIMEOUT_S)
+    if response.status_code == 404:  # its 10 minutes are over
+        await _stop_preview(run)
+        raise HTTPException(status_code=404, detail="the preview has ended")
+    if response.status_code != 200:
+        raise HTTPException(status_code=502, detail="the sandbox refused the preview request")
+    return response.json()
+
+
+@router.delete("/runs/{run_id}/preview")
+async def preview_stop(run_id: str, authorization: str = Header(""), x_run_key: str = Header("")) -> dict[str, Any]:
+    run = _run_for(run_id, authorization, x_run_key)
+    await _stop_preview(run)
+    return {"stopped": True}
 
 
 STREAM_POLL_S = 1.0

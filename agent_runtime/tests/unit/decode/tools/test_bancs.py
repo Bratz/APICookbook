@@ -83,6 +83,9 @@ def test_the_prompt_names_the_proxy_base_and_the_approval_rule(monkeypatch):
     assert "Build only the layers the task asks for" in text
     # A run left a Flask server running: it had started one and the image had no pkill.
     assert "framework's test client" in text and "stop it" in text
+    # A web app says how to start it, so the visitor can open it in a preview.
+    assert "preview.json" in text and '{"command": "python app.py", "port": 5000}' in text
+    assert "The bank is read-only in a preview" in text
     # A larger build starts with an interview and a spec the visitor approves.
     assert "interview first, then a spec, then build" in text and "`more_questions`" in text
     assert "SPEC.md" in text and '"Build this" and "Stop here"' in text

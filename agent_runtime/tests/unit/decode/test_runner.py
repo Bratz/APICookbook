@@ -218,3 +218,136 @@ def test_a_follow_up_starts_from_the_files_it_is_given(server, runner):
 def test_seed_files_outside_the_rules_are_refused_before_any_run_starts(server, runner, files):
     assert _call(f"{server}/runs", "POST", {"task": "x", "files": files})[0] == 400
     assert runner.active() == 0
+
+
+# ------------------------------------------------------------------ previews: a built app, tried in its sandbox
+NL, TAB = chr(10).encode(), chr(9).encode()
+APP = [
+    {"path": "app.py", "content": "print(1)"},
+    {"path": "templates/index.html", "content": "<p>hi</p>"},
+]
+
+
+class FakeDocker:
+    """Stands in for the docker CLI: a container id for ``run``, an HTTP answer for a relayed request."""
+
+    def __init__(self):
+        self.calls, self.ready, self.body = [], True, b'{"ok": true}'
+
+    def __call__(self, *args, stdin=None, timeout=60):
+        import subprocess
+
+        self.calls.append((args, stdin))
+        out, code = b"", 0
+        if args[0] == "run":
+            out = b"c0ffee" + NL
+        elif "curl" in args and "-w" in args:
+            out = self.body + NL + b"200" + TAB + b"application/json"
+        elif "curl" in args:
+            code = 0 if self.ready else 7
+        elif "tail" in args:
+            out = b"ModuleNotFoundError: No module named 'flask_x'"
+        return subprocess.CompletedProcess(args, code, out, b"")
+
+
+@pytest.fixture
+def docker(monkeypatch):
+    fake = FakeDocker()
+    monkeypatch.setattr(runner_mod, "_docker", fake)
+    monkeypatch.setattr(runner_mod, "_preview_run_args", lambda workspace: ["run", "-d", "image"])
+    monkeypatch.setattr(runner_mod, "_PREVIEW_START_WAIT_S", 0.6)
+    return fake
+
+
+def test_a_preview_starts_the_app_in_a_worker_and_relays_requests_inside_it(runner, docker):
+    preview = runner.start_preview(APP, "python app.py", 5000)
+
+    workspace = preview.directory / runner_mod.settings.sandbox_workspace_dir
+    assert (workspace / "templates/index.html").read_text() == "<p>hi</p>"
+    started = next(args for args, _ in docker.calls if args[:2] == ("exec", "-d"))
+    assert started[2] == "c0ffee" and "exec python app.py" in started[-1]
+
+    answer = runner.preview_http(preview.id, "GET", "/api/x?y=1", "", b"")
+    assert answer["status"] == 200 and answer["content_type"] == "application/json"
+    assert json.loads(__import__("base64").b64decode(answer["body_b64"])) == {"ok": True}
+    relayed, _ = docker.calls[-1]
+    # made INSIDE the container, on its loopback: no published port, and the path is one argv element
+    assert (
+        relayed[:3] == ("exec", "-i", "c0ffee") and relayed[-1] == "http://127.0.0.1:5000/api/x?y=1"
+    )
+
+    runner.preview_http(preview.id, "POST", "/api/budgets", "application/json", b'{"a": 1}')
+    posted, stdin = docker.calls[-1]
+    assert (
+        stdin == b'{"a": 1}'
+        and "--data-binary" in posted
+        and "Content-Type: application/json" in posted
+    )
+
+
+def test_a_preview_whose_app_never_answers_reports_its_log_and_leaves_nothing(runner, docker):
+    docker.ready = False
+
+    result = runner.start_preview(APP, "python app.py", 5000)
+
+    assert "No module named 'flask_x'" in result  # the reason, for the visitor
+    assert any(args[:2] == ("rm", "-f") for args, _ in docker.calls)
+    assert runner._previews == {} and not list(runner.runs_dir.iterdir())
+
+
+def test_previews_have_their_own_slot_cap_and_an_end(runner, docker, monkeypatch):
+    first = runner.start_preview(APP, "python app.py", 5000)
+    second = runner.start_preview(APP, "python app.py", 5001)
+    assert runner.start_preview(APP, "python app.py", 5002) is None  # MAX_PREVIEWS
+
+    assert runner.stop_preview(first.id) and not first.directory.exists()
+    assert runner.preview_http(first.id, "GET", "/", "", b"") is None  # stopped
+    assert not runner.stop_preview(first.id)
+
+    second.expires = time.time() - 1  # its 10 minutes are over
+    assert runner.preview_http(second.id, "GET", "/", "", b"") is None
+    assert runner.start_preview(APP, "python app.py", 5003) is not None  # the expired one made room
+
+
+def test_previews_over_http_need_the_token_and_a_well_formed_request(server, runner, docker):
+    assert _call(f"{server}/previews", "POST", {"files": APP}, token=None)[0] == 401
+    good = {"files": APP, "command": "python app.py", "port": 5000}
+    for bad in (
+        {**good, "files": []},
+        {**good, "command": "python app.py" + chr(10) + "curl evil"},
+        {**good, "port": 80},
+        {**good, "files": [{"path": "../x", "content": ""}]},
+    ):
+        assert _call(f"{server}/previews", "POST", bad)[0] == 400
+    assert runner._previews == {}
+
+    code, made = _call(f"{server}/previews", "POST", good)
+    assert code == 201 and made["expires_in"] == 600
+    relay = f"{server}/previews/{made['id']}/http"
+
+    assert _call(relay, "POST", {"method": "GET", "path": "/api/x"})[1]["status"] == 200
+    assert _call(relay, "POST", {"method": "GET", "path": "/a b"})[0] == 400  # not a clean path
+    assert _call(relay, "POST", {"method": "TRACE", "path": "/"})[0] == 400
+    assert (
+        _call(f"{server}/previews/{'0' * 32}/http", "POST", {"method": "GET", "path": "/"})[0]
+        == 404
+    )
+    assert _call(f"{server}/previews/{made['id']}", "DELETE")[0] == 200
+    assert _call(relay, "POST", {"method": "GET", "path": "/"})[0] == 404
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="the docker backend is POSIX-only")
+def test_a_preview_worker_gets_the_same_isolation_as_a_runs_worker(tmp_path, monkeypatch):
+    monkeypatch.setattr(runner_mod.settings, "sandbox_docker_runtime", "runsc")
+    monkeypatch.setattr(runner_mod.settings, "sandbox_docker_network", "bancs-only")
+    monkeypatch.setattr(runner_mod.settings, "sandbox_docker_hardened", True)
+
+    args = runner_mod._preview_run_args(tmp_path)
+
+    assert args[args.index("--runtime") : args.index("--runtime") + 2] == ["--runtime", "runsc"]
+    assert args[args.index("--network") : args.index("--network") + 2] == [
+        "--network",
+        "bancs-only",
+    ]
+    assert "--read-only" in args and "--cap-drop" in args
+    assert not any(a in ("-p", "--publish", "-P") for a in args)  # nothing is published

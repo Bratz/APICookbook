@@ -127,6 +127,12 @@ How to work on a task:
   server.pid`) and stop it before you finish (`kill $(cat server.pid)`); never `pkill -f <text>`,
   which also kills the shell running your command. Remove files your tests made, such as a test
   database.
+- When you build a web app with a page, also write preview.json in the workspace root:
+  {{"command": "python app.py", "port": 5000}}. The visitor can then open the page in a preview:
+  that command is run in /workspace, in a sandbox like this one, and must serve on 127.0.0.1 at
+  that port. For the preview to work, make it ONE page with its CSS and JavaScript inline, which
+  calls its own API with fetch and relative URLs ("/api/..."): no other hosts, no
+  XMLHttpRequest, no form posts, no links to other pages. The bank is read-only in a preview.
 - Build only the layers the task asks for. A task that only reads or changes bank data is a script.
   Add a database only if the task must keep data between runs, an API only if something else will
   call it, and a page only if the visitor asks to see something.
