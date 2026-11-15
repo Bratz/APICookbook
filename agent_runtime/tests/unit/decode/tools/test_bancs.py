@@ -87,6 +87,9 @@ def test_the_prompt_names_the_proxy_base_and_the_approval_rule(monkeypatch):
     assert "interview first, then a spec, then build" in text and "`more_questions`" in text
     assert "SPEC.md" in text and '"Build this" and "Stop here"' in text
     assert "A small task gets no interview" in text
+    # How the agent writes to the visitor, and that SPEC.md is written as a reference.
+    assert "How to write to the visitor" in text and "no em dashes" in text
+    assert "Never invent a fact" in text and "SPEC.md is a reference, not a conversation" in text
     # F5 finding: the one remaining miss called a path the spec does not have.
     assert "must be the `url_template` of an operation get_endpoint returned" in text
     # Questions about the API get an answer from the spec; anything off-topic is declined.
