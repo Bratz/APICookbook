@@ -339,7 +339,7 @@ async def files_zip(run_id: str, authorization: str = Header(""), x_run_key: str
 # to it comes through here with the run's key, goes to the runner, and is made inside the container.
 # The answer goes back as JSON (never as a page from this origin), and the page shows it in a sandboxed frame.
 PREVIEW_START_TIMEOUT_S = 40.0  # the runner waits up to 20 s for the app to answer on its port
-PREVIEW_CALL_TIMEOUT_S = 35.0
+PREVIEW_CALL_TIMEOUT_S = 60.0  # above the runner's 45 s for one request to the app
 
 
 class PreviewCall(BaseModel):

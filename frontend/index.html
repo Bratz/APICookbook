@@ -3877,7 +3877,7 @@
        // request goes through cookbook-api with this run's key. The page is shown in a sandboxed frame (its own
        // origin, so it cannot read this site's storage or token), with no network of its own: its fetch calls
        // are handed to this page, which relays them.
-       const PREVIEW_HEAD = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src data:">
+       const PREVIEW_HEAD = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src data:; form-action 'none'">
 <scr` + `ipt>(() => {
   const waiting = new Map(); let n = 0;
   const b64 = (bytes) => { let s = ''; bytes.forEach(b => s += String.fromCharCode(b)); return btoa(s); };
@@ -3924,14 +3924,21 @@
            const first = await call('GET', '/');
            const html = new TextDecoder().decode(Uint8Array.from(atob(first.body_b64 || ''), c => c.charCodeAt(0)));
            pane.innerHTML = `<div class="run-files-head"><strong>Preview</strong>
-               <span class="text-small text-muted">the app is running in the sandbox · only this page can reach it · the bank is read-only · <span data-left></span></span>
+               <span class="text-small text-muted">the app is running in the sandbox · only this page can reach it · the bank is read-only · <span data-left></span><span data-busy hidden> · waiting for the app…</span></span>
                <button type="button" class="btn btn-secondary btn-sm" data-stop>Close preview</button></div>
-               <iframe class="run-preview-frame" sandbox="allow-scripts" title="Preview of the built page"></iframe>`;
+               <iframe class="run-preview-frame" sandbox="allow-scripts allow-forms" title="Preview of the built page"></iframe>`;
            const frame = pane.querySelector('iframe');
+           let pending = 0;
            const onMessage = async (e) => {
                const d = e.data;
                if (e.source !== frame.contentWindow || !d || !d.previewCall) return;
+               // A slow bank makes a slow app: say that a request is on its way, so it does not look stuck.
+               const busy = pane.querySelector('[data-busy]');
+               pending += 1;
+               if (busy) busy.hidden = false;
                const answer = await call(String(d.method), String(d.path), String(d.contentType || ''), String(d.bodyB64 || ''));
+               pending -= 1;
+               if (busy) busy.hidden = pending > 0 ? false : true;
                frame.contentWindow?.postMessage({ previewReply: d.previewCall, status: answer.status,
                    contentType: answer.content_type, bodyB64: answer.body_b64 }, '*');
            };
