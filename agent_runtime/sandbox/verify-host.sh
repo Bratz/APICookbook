@@ -46,6 +46,13 @@ if docker run --rm --runtime runsc --cap-drop ALL --read-only --user "$RUN_UID" 
 else
   echo "FAIL  worker cannot write its Workspace (uid $RUN_UID)"; failures=$((failures + 1))
 fi
+# The packages the agent's prompt promises import in a hardened worker (read-only root, no network).
+if docker run --rm --runtime runsc --cap-drop ALL --read-only --user "$RUN_UID" -v "$ws:/workspace" -w /workspace \
+     decode-session:latest python -c 'import requests, httpx, flask, fastapi, uvicorn, pytest, pandas' >/dev/null 2>&1; then
+  echo "PASS  worker has the baked-in Python packages"
+else
+  echo "FAIL  a baked-in Python package does not import"; failures=$((failures + 1))
+fi
 rm -rf "$ws"
 echo "== runner health: $(curl -s --max-time 5 "http://$HOST_IP:7700/health" || echo unreachable)"
 

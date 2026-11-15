@@ -75,6 +75,9 @@ def test_the_prompt_names_the_proxy_base_and_the_approval_rule(monkeypatch):
     assert "at most 300 bank calls" in text and "estimate its calls" in text
     assert "Never add sleeps or" in text and "RUN_CALL_LIMIT" in text
     assert "more bank calls than" in text  # an over-budget task is a reason to ask
+    # The worker cannot install: the prompt names what the image has (sandbox/Dockerfile).
+    assert "nothing can be installed" in text
+    assert "flask, fastapi, uvicorn, pytest and pandas" in text
     assert "exactly TWO" in text and "`detail`" in text  # two plans, each with its trade-off
     # F5 finding: the one remaining miss called a path the spec does not have.
     assert "must be the `url_template` of an operation get_endpoint returned" in text

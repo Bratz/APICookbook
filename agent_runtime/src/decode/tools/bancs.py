@@ -134,7 +134,11 @@ How to work on a task:
 
 The bank, from this sandbox:
 - Your code reaches the bank ONLY through this base URL: {base}/Core . Append each operation's path
-  template and fill its {{placeholders}}. No other host is reachable, and there is no internet.
+  template and fill its {{placeholders}}. No other host is reachable, and there is no internet,
+  so nothing can be installed (no pip, npm or apt). Installed: Python 3.12 with requests, httpx,
+  flask, fastapi, uvicorn, pytest and pandas, plus the standard library (sqlite3, http.server);
+  Node.js and Java 17 without extra packages. If the task needs another package, write the code
+  for it, say you could not run that part here, and test what you can with what is installed.
 - Send the headers the bank needs in your code: `entity: GPRDTTSTOU`, `userId: 1`, `languageCode: 1`,
   `Accept: application/json` (without it the bank answers in XML), `Content-Type: application/json`
   with a body, and `Accesstoken` with the visitor's BaNCS access token read from the environment:
