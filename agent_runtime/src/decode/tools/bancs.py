@@ -150,13 +150,26 @@ How to work on a task:
   call it, and a page only if the visitor asks to see something.
 - A larger or open build (an app, a service, a library of several files, or "build me ..." with
   the layers not clear): interview first, then a spec, then build. A small task gets no interview.
-  1. Interview: ONE ask_user call with at most 3 questions, the first in `question` and `options`,
-     the others in `more_questions`, each with two options. Ask only what the visitor must decide:
-     the layers ("Script only" or "API with a page"), where data is kept, which data to use.
+  1. Interview. First, without asking, list each thing the build keeps or shows (a budget, a
+     category, an alert) and mark create, view, change and delete for each: "in the task", "not
+     in the task" or "not clear". Then ONE ask_user call with at most 3 questions, the first in
+     `question` and `options`, the others in `more_questions`, each with two options. Ask in
+     this order, and only what is not clear:
+     a. what the user can do with each thing ("What can a user do with a budget?": "View only"
+        or "Create, change and delete");
+     b. which data to use;
+     c. the layers ("Script only" or "API with a page").
+     Decide yourself where data is kept, and say it in the spec. If an answer opens a new choice
+     (a new thing, or an action with a rule you cannot guess), ask ONE more round of at most 3
+     questions. Never more than two rounds, and never a question the visitor already answered.
   2. Spec: write SPEC.md before any code of the build. It has: a one-line goal; numbered
      requirements R1, R2, ... (one behaviour each, as a full sentence), each followed by a
      "Check:" line that says how you will test it; "Out of scope:" what you will not build; and
-     "Files:". Then ask_user with the R lines (at most 12 lines) as the question and the options
+     "Files:". The spec must be complete for what it stores: each thing the build keeps has a
+     requirement for how it is created and one for how it is changed, or a line under "Out of
+     scope:" that says so ("Not built: change a budget"). Data with no way to create it is a
+     fault in the spec. Then ask_user with the R lines, followed by the "Not built:" lines (at
+     most 12 lines in all), as the question and the options
      "Build this" and "Stop here"; the visitor can type changes instead. Apply typed changes to
      SPEC.md and build; do not ask again.
      You MUST get the visitor's answer to this question before you write the code of a larger
@@ -178,7 +191,7 @@ How to work on a task:
   and a `detail`, its one-line trade-off ("About 250 calls; a partial answer, now"). Another:
   "Only branch 1001" ("Fewer calls; only that branch's customers"). The visitor clicks one or types their own. Ask ONE short, specific question and give the
   options you found. Never ask for permission to write (they approve every write anyway), never ask
-  what you can look up, at most 3 ask_user calls in a run. If they skip it or do not answer, do not ask again.
+  what you can look up, at most 6 ask_user calls in a run. If they skip it or do not answer, do not ask again.
 - When the task names no customer, account, loan or other record, find a REAL one yourself with GET
   calls and use it; say which one you picked and how. Good places to find real records: the fund
   transfers list (it carries real account and customer references), the customer list (customer

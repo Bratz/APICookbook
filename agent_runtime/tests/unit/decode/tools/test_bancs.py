@@ -69,7 +69,7 @@ def test_the_prompt_names_the_proxy_base_and_the_approval_rule(monkeypatch):
     # F5 finding: a run must find real records and act; it asks the visitor only what it cannot look up
     # (operator runs, with nobody to answer, get an immediate "no visitor" from the proxy).
     assert "find a REAL one yourself" in text and "Never ask for permission to write" in text
-    assert "ask_user" in text and "at most 3 ask_user calls in a run" in text
+    assert "ask_user" in text and "at most 6 ask_user calls in a run" in text
     assert "MAKE the call" in text
     # A run scanned 2,384 customers past its 300 calls, then slept and retried for 6 minutes.
     assert "at most 300 bank calls" in text and "estimate its calls" in text
@@ -93,6 +93,11 @@ def test_the_prompt_names_the_proxy_base_and_the_approval_rule(monkeypatch):
     assert "interview first, then a spec, then build" in text and "`more_questions`" in text
     assert "SPEC.md" in text and '"Build this" and "Stop here"' in text
     assert "A small task gets no interview" in text
+    # A spec kept budgets in SQLite with no way to create one: the interview asks what the user
+    # can do before it asks about layers, and the spec covers create and change for what it keeps.
+    assert text.index("what the user can do with each thing") < text.index('c. the layers')
+    assert "ask ONE more round" in text and "Never more than two rounds" in text
+    assert "complete for what it stores" in text and '"Not built:" lines' in text
     # The spec is checkable: numbered requirements with a check each, a test per requirement, and a
     # closing table. A run built without confirming the spec, so the confirmation is now a MUST.
     assert "requirements R1, R2" in text and '"Check:" line' in text and '"Out of scope:"' in text

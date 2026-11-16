@@ -45,7 +45,7 @@ MAX_CALLS_PER_RUN = 300
 CALL_LIMIT = (f"Not sent: this run has used its {MAX_CALLS_PER_RUN} bank calls. Do not retry or sleep, this limit does "
               "not reset. Report what you found so far, or ask the visitor with ask_user how to narrow the task.")
 QUESTION_TIMEOUT_S = 300.0  # a question the visitor doesn't answer in 5 minutes goes back unanswered
-MAX_QUESTIONS_PER_RUN = 3
+MAX_QUESTIONS_PER_RUN = 6  # two interview rounds, the spec approval, and three more while it builds
 MAX_QUESTIONS_PER_CARD = 3  # an interview asks its questions on one card: one wait, not three
 MAX_FAILED_WRITES_IN_A_ROW = 3  # then the run must ask or stop: it is guessing values against a shared bank
 MAX_WRITES_PER_RUN = 12
