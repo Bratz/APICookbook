@@ -81,7 +81,8 @@ _TERM_KEEP = 200_000  # bytes of terminal output kept for a reader that fell beh
 _TERM_MAX_INPUT = 10_000
 _TERM_MAX_WAIT_S = 25.0
 # The shell gets its terminal inside the container, so the runner talks to it over plain pipes.
-_TERM_SHELL = "import pty; pty.spawn(['bash', '-c', 'stty rows 24 cols 80; exec bash --norc -i'])"
+# The prompt comes in as TERM_PS1: a non-interactive bash, such as the one that sets the size, unsets PS1.
+_TERM_SHELL = "import pty; pty.spawn(['bash', '-c', 'stty rows 24 cols 80; PS1=$TERM_PS1 exec bash --norc -i'])"
 _MAX_PREVIEW_BODY = 1_000_000  # one request or one response
 _PREVIEW_METHODS = {"GET", "POST", "PUT", "PATCH", "DELETE"}
 _PREVIEW_URL_PATH = re.compile(r"/[\x21-\x7e]{0,2000}")  # starts with "/", printable, no spaces
@@ -485,7 +486,7 @@ def _docker(
 
 def _open_shell(container: str) -> subprocess.Popen[bytes]:
     return subprocess.Popen(
-        ["docker", "exec", "-i", "-e", "TERM=xterm-256color", "-e", "PS1=\\w\\$ ", "-w", "/workspace", container,
+        ["docker", "exec", "-i", "-e", "TERM=xterm-256color", "-e", "TERM_PS1=\\w\\$ ", "-w", "/workspace", container,
          "python3", "-c", _TERM_SHELL],
         stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, bufsize=0,
     )  # fmt: skip
