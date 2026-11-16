@@ -3857,12 +3857,12 @@
            let current = 0;
            const show = i => {
                current = i;
-               box.querySelectorAll('.file-tab').forEach((t, j) => { t.classList.toggle('active', j === i); t.setAttribute('aria-selected', j === i); });
+               box.querySelectorAll('.file-tab[data-i]').forEach((t, j) => { t.classList.toggle('active', j === i); t.setAttribute('aria-selected', j === i); });
                code.className = 'language-' + (LANGS[files[i].path.split('.').pop()] || 'none');
                code.textContent = files[i].content;
                window.Prism?.highlightElement?.(code);
            };
-           box.querySelectorAll('.file-tab').forEach(t => { t.onclick = () => show(+t.dataset.i); });
+           box.querySelectorAll('.file-tab[data-i]').forEach(t => { t.onclick = () => show(+t.dataset.i); });
            box.querySelector('[data-copy]').onclick = async (e) => {
                try { await navigator.clipboard.writeText(files[current].content); e.target.textContent = 'Copied'; } catch (err) {}
                setTimeout(() => { e.target.textContent = 'Copy'; }, 1500);
