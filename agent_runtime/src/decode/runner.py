@@ -13,6 +13,7 @@ log and Workspace are separate), because decode keeps per-process state (the bas
     DELETE /runs/<id>     → stop it (process group killed, its worker container removed)
     POST   /previews      {"files", "command", "port"}  → 201 {"id", "expires_in"} · 429 · 422
            (a built web app, started in a worker with the same isolation as a run's; it lives 10 minutes)
+    POST   /previews/<id>/term  {"input_b64"?, "seen", "wait_ms"} → {"from", "data_b64", "alive"}
     POST   /previews/<id>/http  {"method", "path", "content_type"?, "body_b64"?}
            → {"status", "content_type", "body_b64"}  (one request to the app, made INSIDE its container
            with ``docker exec``: no port is published and nothing new can reach the sandbox)
@@ -72,7 +73,15 @@ _PREVIEW_HTTP_PATH = re.compile(r"^/previews/([0-9a-f]{32})/http$")
 MAX_PREVIEWS = 2
 PREVIEW_TTL_S = 600.0
 _PREVIEW_START_WAIT_S = 20.0
-_PREVIEW_REQUEST_S = 45  # one request to the app; the app may make several slow bank calls for it
+# One request to the app. The app may make several slow bank calls for it, and a bank write it makes
+# waits up to 120 s at the proxy for the visitor's approval.
+_PREVIEW_REQUEST_S = 150
+_PREVIEW_TERM_PATH = re.compile(r"^/previews/([0-9a-f]{32})/term$")
+_TERM_KEEP = 200_000  # bytes of terminal output kept for a reader that fell behind
+_TERM_MAX_INPUT = 10_000
+_TERM_MAX_WAIT_S = 25.0
+# The shell gets its terminal inside the container, so the runner talks to it over plain pipes.
+_TERM_SHELL = "import pty; pty.spawn(['bash', '-c', 'stty rows 24 cols 80; exec bash --norc -i'])"
 _MAX_PREVIEW_BODY = 1_000_000  # one request or one response
 _PREVIEW_METHODS = {"GET", "POST", "PUT", "PATCH", "DELETE"}
 _PREVIEW_URL_PATH = re.compile(r"/[\x21-\x7e]{0,2000}")  # starts with "/", printable, no spaces
@@ -89,12 +98,42 @@ class Run:
 
 
 @dataclass
+class Terminal:
+    """A shell in a preview's container. Output is one byte stream with absolute offsets, so a reader
+    says how much it has seen and gets the rest."""
+
+    process: subprocess.Popen[bytes] | None = None
+    output: bytearray = field(default_factory=bytearray)
+    start: int = 0  # the offset of output[0]: older bytes were dropped
+    changed: threading.Condition = field(default_factory=threading.Condition)
+
+    def alive(self) -> bool:
+        return self.process is not None and self.process.poll() is None
+
+    def pump(self, process: subprocess.Popen[bytes]) -> None:
+        while chunk := process.stdout.read(4096):  # type: ignore[union-attr]
+            with self.changed:
+                self.output += chunk
+                extra = len(self.output) - _TERM_KEEP
+                if extra > 0:
+                    del self.output[:extra]
+                    self.start += extra
+                self.changed.notify_all()
+        process.wait()
+        for pipe in (process.stdin, process.stdout):
+            pipe.close()  # type: ignore[union-attr]
+        with self.changed:
+            self.changed.notify_all()
+
+
+@dataclass
 class Preview:
     id: str
     directory: Path
     container: str
-    port: int
+    port: int | None  # None: no server, only the terminal
     expires: float
+    terminal: Terminal = field(default_factory=Terminal)
 
 
 class Runner:
@@ -111,9 +150,10 @@ class Runner:
 
     # ------------------------------------------------------------------ previews
     def start_preview(
-        self, files: list[dict[str, str]], command: str, port: int
+        self, files: list[dict[str, str]], command: str | None, port: int | None
     ) -> Preview | str | None:
-        """Start the built app in a worker of its own. ``None``: every preview slot is busy.
+        """Start the built app in a worker of its own; with no command, only the worker (a build with
+        no server still gets a terminal). ``None``: every preview slot is busy.
         A string: the app did not start, and this is why (the end of its log)."""
         with self._lock:
             for old in [p for p in self._previews.values() if p.expires <= time.time()]:
@@ -140,6 +180,12 @@ class Runner:
                 expires=time.time() + PREVIEW_TTL_S,
             )
             self._previews[preview_id] = preview
+        timer = threading.Timer(PREVIEW_TTL_S, self.stop_preview, [preview_id])
+        timer.daemon = True
+        timer.start()
+        if not command:
+            logger.info("[runner] preview %s is up with no server", preview_id)
+            return preview
         # The app: the visitor's own command, inside the same sandbox their run used.
         _docker(
             "exec", "-d", container, "bash", "-c",
@@ -152,9 +198,6 @@ class Runner:
                 f"http://127.0.0.1:{port}/",
             )  # fmt: skip
             if probe.returncode == 0:
-                timer = threading.Timer(PREVIEW_TTL_S, self.stop_preview, [preview_id])
-                timer.daemon = True
-                timer.start()
                 logger.info("[runner] preview %s is up on port %s", preview_id, port)
                 return preview
             time.sleep(0.5)
@@ -169,6 +212,9 @@ class Runner:
         preview = self._previews.get(preview_id)
         if preview is None or preview.expires <= time.time():
             return None
+        if preview.port is None:
+            return {"status": 502, "content_type": "text/plain", "body_b64": base64.b64encode(
+                b"This preview has no server.").decode()}  # fmt: skip
         # Every value is its own argv element: nothing here is read by a shell.
         argv = [
             "exec", "-i", preview.container, "curl", "-s", "-o", "-", "-X", method,
@@ -195,6 +241,38 @@ class Runner:
             "body_b64": base64.b64encode(payload[:_MAX_PREVIEW_BODY]).decode(),
         }
 
+    def terminal(
+        self, preview_id: str, data: bytes, seen: int, wait_s: float
+    ) -> dict[str, object] | None:
+        """Type ``data`` into the preview's shell, then give its output from offset ``seen`` on, waiting
+        up to ``wait_s`` for some. The shell starts on first use, and again after it exits."""
+        preview = self._previews.get(preview_id)
+        if preview is None or preview.expires <= time.time():
+            return None
+        term = preview.terminal
+        with self._lock:
+            if not term.alive():
+                term.process = _open_shell(preview.container)
+                threading.Thread(target=term.pump, args=[term.process], daemon=True).start()
+        process = term.process
+        if data and process is not None:
+            try:
+                process.stdin.write(data)  # type: ignore[union-attr]
+                process.stdin.flush()  # type: ignore[union-attr]
+            except (OSError, ValueError):
+                pass  # the shell just exited (its pipe is broken or closed); the reader sees alive=False
+        with term.changed:
+            term.changed.wait_for(
+                lambda: term.start + len(term.output) > seen or not term.alive(), timeout=wait_s
+            )
+            first = min(max(seen, term.start), term.start + len(term.output))
+            chunk = bytes(term.output[first - term.start :])
+        return {
+            "from": first,
+            "data_b64": base64.b64encode(chunk).decode(),
+            "alive": term.alive(),
+        }
+
     def stop_preview(self, preview_id: str) -> bool:
         with self._lock:
             preview = self._previews.get(preview_id)
@@ -205,6 +283,8 @@ class Runner:
 
     def _drop_preview(self, preview: Preview) -> None:
         self._previews.pop(preview.id, None)
+        if preview.terminal.process is not None:
+            preview.terminal.process.kill()
         _docker("rm", "-f", preview.container)
         shutil.rmtree(preview.directory, ignore_errors=True)
         logger.info("[runner] preview %s stopped", preview.id)
@@ -403,6 +483,14 @@ def _docker(
         return subprocess.CompletedProcess(["docker", *args], 1, b"", b"")
 
 
+def _open_shell(container: str) -> subprocess.Popen[bytes]:
+    return subprocess.Popen(
+        ["docker", "exec", "-i", "-e", "TERM=xterm-256color", "-e", "PS1=\\w\\$ ", "-w", "/workspace", container,
+         "python3", "-c", _TERM_SHELL],
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, bufsize=0,
+    )  # fmt: skip
+
+
 def _preview_run_args(workspace: Path) -> list[str]:
     """``docker run`` for a preview worker: exactly the argv a run's worker gets (gVisor, the locked
     network, read-only root, no capabilities), so a preview is never less isolated than a run."""
@@ -505,7 +593,8 @@ def make_handler(runner: Runner, token: str) -> type[BaseHTTPRequestHandler]:
             if not self._authorized():
                 return
             relay = _PREVIEW_HTTP_PATH.match(self.path)
-            if self.path not in ("/runs", "/previews") and not relay:
+            term = _PREVIEW_TERM_PATH.match(self.path)
+            if self.path not in ("/runs", "/previews") and not relay and not term:
                 self._send(404, {"error": "not found"})
                 return
             try:
@@ -520,6 +609,9 @@ def make_handler(runner: Runner, token: str) -> type[BaseHTTPRequestHandler]:
                 return
             if relay:
                 self._preview_http(relay.group(1), payload)
+                return
+            if term:
+                self._preview_term(term.group(1), payload)
                 return
             if self.path == "/previews":
                 self._preview_start(payload)
@@ -550,18 +642,28 @@ def make_handler(runner: Runner, token: str) -> type[BaseHTTPRequestHandler]:
 
         def _preview_start(self, payload: dict[str, object]) -> None:
             files, command, port = payload.get("files"), payload.get("command"), payload.get("port")
-            if not (
-                _valid_seed(files)
-                and files
-                and isinstance(command, str)
+            server = (
+                isinstance(command, str)
                 and 0 < len(command.strip()) <= 300
                 and len(command.splitlines()) == 1
                 and isinstance(port, int)
                 and 1024 <= port <= 65535
+            )
+            if not (
+                _valid_seed(files) and files and (server or (command is None and port is None))
             ):
-                self._send(400, {"error": "a preview needs files, a one-line command and a port"})
+                self._send(
+                    400,
+                    {
+                        "error": "a preview needs files, and a one-line command with a port or neither"
+                    },
+                )
                 return
-            preview = runner.start_preview(files, command.strip(), port)  # type: ignore[arg-type]
+            preview = runner.start_preview(
+                files,  # type: ignore[arg-type]
+                command.strip() if server else None,  # type: ignore[union-attr]
+                port if server else None,  # type: ignore[arg-type]
+            )
             if preview is None:
                 self._send(429, {"error": "all preview slots are busy", "max": MAX_PREVIEWS})
             elif isinstance(preview, str):
@@ -588,6 +690,25 @@ def make_handler(runner: Runner, token: str) -> type[BaseHTTPRequestHandler]:
             if not re.fullmatch(r"[\w!#$&^.+*/; =-]*", kind):
                 kind = ""
             answer = runner.preview_http(preview_id, method, path, kind, body)
+            self._send(200, answer) if answer else self._send(404, {"error": "no such preview"})
+
+        def _preview_term(self, preview_id: str, payload: dict[str, object]) -> None:
+            seen, wait_ms = payload.get("seen", 0), payload.get("wait_ms", 0)
+            try:
+                data = base64.b64decode(str(payload.get("input_b64") or ""), validate=True)
+            except ValueError:
+                data = None
+            if (
+                data is None
+                or len(data) > _TERM_MAX_INPUT
+                or not isinstance(seen, int)
+                or seen < 0
+                or not isinstance(wait_ms, int)
+                or wait_ms < 0
+            ):
+                self._send(400, {"error": "bad terminal request"})
+                return
+            answer = runner.terminal(preview_id, data, seen, min(wait_ms / 1000, _TERM_MAX_WAIT_S))
             self._send(200, answer) if answer else self._send(404, {"error": "no such preview"})
 
         def do_DELETE(self) -> None:

@@ -127,15 +127,24 @@ How to work on a task:
   server.pid`) and stop it before you finish (`kill $(cat server.pid)`); never `pkill -f <text>`,
   which also kills the shell running your command. Remove files your tests made, such as a test
   database.
-- When you build a web app with a page, also write preview.json in the workspace root:
-  {{"command": "python app.py", "port": 5000}}. The visitor can then open the page in a preview:
-  that command is run in /workspace, in a sandbox like this one, and must serve on 127.0.0.1 at
-  that port. For the preview to work, make it ONE page with its CSS and JavaScript inline, which
-  calls its own API with fetch and relative URLs ("/api/..."): no other hosts, no
-  XMLHttpRequest, no links to other pages. A form must handle its own submit in JavaScript
-  (preventDefault, then fetch); a form that posts to a URL does nothing in the preview. Show
-  "Loading..." while a request is out: the bank can take several seconds for a customer with many
-  accounts. The bank is read-only in a preview.
+- The visitor can open what you built in a preview: your files in a sandbox like this one, with a
+  terminal in /workspace. When you build something that serves HTTP, also write preview.json in
+  the workspace root, so the preview starts it. Its command is run in /workspace and must serve
+  on 127.0.0.1 at its port.
+  - A web app with a page: {{"kind": "page", "command": "python app.py", "port": 5000}}. Make it
+    ONE page with its CSS and JavaScript inline, which calls its own API with fetch and relative
+    URLs ("/api/..."): no other hosts, no XMLHttpRequest, no links to other pages. A form must
+    handle its own submit in JavaScript (preventDefault, then fetch); a form that posts to a URL
+    does nothing in the preview. Show "Loading..." while a request is out: the bank can take
+    several seconds for a customer with many accounts.
+  - An API with no page: {{"kind": "api", "command": "python api.py", "port": 8000, "routes":
+    [{{"method": "GET", "path": "/customers/146020", "label": "One customer"}}]}}. List up to 12
+    routes with real example values (and a "body" string for a POST); the visitor sends each
+    with one click.
+  - A script needs no preview.json: the visitor runs it in the terminal. Make it take its inputs
+    as command-line arguments with working defaults, and say the command in your answer (for
+    example `python report.py 146020`).
+  A bank write made in a preview waits for the visitor's approval, as in a run.
 - Build only the layers the task asks for. A task that only reads or changes bank data is a script.
   Add a database only if the task must keep data between runs, an API only if something else will
   call it, and a page only if the visitor asks to see something.

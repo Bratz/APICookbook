@@ -19,7 +19,11 @@ Who may do what (F4, decided 2026-11-09: every visitor, with caps):
     DELETE /api/build/runs/{id}                   stop it
     GET    /api/build/runs/{id}/files             the files the agent wrote, pointed at the real bank
     GET    /api/build/runs/{id}/files.zip         the same, as a zip with a README
-    POST   /api/build/runs/{id}/preview           start the run's built web app in a sandbox worker (10 minutes)
+    POST   /api/build/runs/{id}/preview           start the run's files in a sandbox worker (10 minutes): the app
+                                                  that preview.json names, when there is one, and a terminal
+    POST   /api/build/runs/{id}/preview/term      type into that terminal and read its output
+    GET    /api/build/runs/{id}/preview/writes    the bank writes the preview is holding for approval
+    POST   /api/build/runs/{id}/preview/writes/{write}   {"approve": true|false}
     POST   /api/build/runs/{id}/preview/http      one request to that app: {"method", "path", ...} in, the app's
                                                   status, content type and body (base64) out, as JSON
     DELETE /api/build/runs/{id}/preview           stop it
@@ -28,6 +32,7 @@ Who may do what (F4, decided 2026-11-09: every visitor, with caps):
 from __future__ import annotations
 
 import asyncio
+import base64
 import hmac
 import io
 import json
@@ -339,7 +344,11 @@ async def files_zip(run_id: str, authorization: str = Header(""), x_run_key: str
 # to it comes through here with the run's key, goes to the runner, and is made inside the container.
 # The answer goes back as JSON (never as a page from this origin), and the page shows it in a sandboxed frame.
 PREVIEW_START_TIMEOUT_S = 40.0  # the runner waits up to 20 s for the app to answer on its port
-PREVIEW_CALL_TIMEOUT_S = 60.0  # above the runner's 45 s for one request to the app
+PREVIEW_CALL_TIMEOUT_S = 165.0  # above the runner's 150 s for one request, which may hold a write 120 s
+PREVIEW_QUICK_S = 10.0  # an answer within this goes back as plain JSON
+PREVIEW_PING_S = 15.0  # a slower one: a space this often, so no hop between here and the browser gives up
+PREVIEW_TERM_TIMEOUT_S = 35.0  # above the runner's 25 s wait for terminal output
+PREVIEW_KINDS = ("page", "api", "script")
 
 
 class PreviewCall(BaseModel):
@@ -347,6 +356,56 @@ class PreviewCall(BaseModel):
     path: str = Field(max_length=2000)
     content_type: str = Field(default="", max_length=100)
     body_b64: str = Field(default="", max_length=1_400_000)
+
+
+class PreviewTerm(BaseModel):
+    input_b64: str = Field(default="", max_length=14_000)
+    seen: int = Field(default=0, ge=0)
+    wait_ms: int = Field(default=0, ge=0, le=25_000)
+
+
+def _preview_plan(listing: dict[str, Any]) -> dict[str, Any]:
+    """What preview.json asks for: {"kind", "command", "port", "routes"}. With no usable server in it
+    (or no preview.json at all) the preview is a terminal on the run's files."""
+    wanted = next((f["content"] for f in listing["files"] if f["path"] == "preview.json"), "")
+    try:
+        described = json.loads(wanted)
+        described = described if isinstance(described, dict) else {}
+    except ValueError:
+        described = {}
+    try:
+        command, port = str(described["command"]).strip(), int(described["port"])
+    except (ValueError, KeyError, TypeError):
+        command, port = None, None
+    kind = described.get("kind") if described.get("kind") in PREVIEW_KINDS else "page"
+    routes = []
+    for route in (described.get("routes") if isinstance(described.get("routes"), list) else [])[:12]:
+        if isinstance(route, dict) and isinstance(route.get("path"), str) and route["path"].startswith("/"):
+            routes.append({"method": str(route.get("method", "GET")).upper()[:10], "path": route["path"][:500],
+                           "label": str(route.get("label", ""))[:80], "body": str(route.get("body", ""))[:4000]})
+    return {"kind": kind if command else "script", "command": command or None, "port": port, "routes": routes}
+
+
+async def _slow_json(work: Any) -> Response:
+    """The answer of ``work`` as JSON. One that takes long (a bank write waits up to 120 s for the
+    visitor) goes out as a stream that starts with spaces, which JSON allows, so the connection never
+    sits silent. It is labelled as an event stream because Caddy flushes those and buffers the rest."""
+    task = asyncio.ensure_future(work)
+    done, _ = await asyncio.wait({task}, timeout=PREVIEW_QUICK_S)
+    if done:
+        return JSONResponse(task.result())
+
+    async def body() -> AsyncIterator[str]:
+        while not (await asyncio.wait({task}, timeout=PREVIEW_PING_S))[0]:
+            yield " "
+        try:
+            yield json.dumps(task.result())
+        except HTTPException as exc:  # the status line has gone out: say it in the app-answer shape
+            yield json.dumps({"status": 410 if exc.status_code == 404 else 502, "content_type": "text/plain",
+                              "body_b64": base64.b64encode(str(exc.detail).encode()).decode()})
+
+    return StreamingResponse(body(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
 async def _stop_preview(run: BuildRun) -> None:
@@ -366,21 +425,19 @@ async def preview_start(run_id: str, authorization: str = Header(""), x_run_key:
     listing = await _run_files(run_id, authorization, x_run_key)
     if listing.get("status") == "running":
         raise HTTPException(status_code=409, detail="the run has not finished")
-    wanted = next((f["content"] for f in listing["files"] if f["path"] == "preview.json"), "")
-    try:
-        described = json.loads(wanted)
-        command, port = str(described["command"]).strip(), int(described["port"])
-    except (ValueError, KeyError, TypeError):
-        raise HTTPException(status_code=422, detail="this run has no preview.json with a command and a port")
+    if not listing["files"]:
+        raise HTTPException(status_code=422, detail="this run left no files to preview")
+    plan = _preview_plan(listing)
     token = build_proxy.visitor_token(accesstoken)
     if not _is_operator(authorization):
         build_proxy.require_token(token)
     await _stop_preview(run)  # one preview for a run
     proxy = build_proxy.new_run()
-    proxy.bank_token, proxy.visitor, proxy.read_only = token, False, True
+    proxy.bank_token, proxy.visitor = token, False  # a write from the preview waits for approval, as in a run
     bank_root, base = api_lookup.BASE_URL.removesuffix("/Core"), build_proxy.public_base(proxy.token)
     files = [{"path": f["path"], "content": f["content"].replace(bank_root, base)} for f in listing["files"]]
-    response = await _call_runner("POST", "/previews", {"files": files, "command": command, "port": port},
+    response = await _call_runner("POST", "/previews", {"files": files, "command": plan["command"],
+                                                         "port": plan["port"] if plan["command"] else None},
                                   timeout=PREVIEW_START_TIMEOUT_S)
     if response.status_code != 201:
         build_proxy.end_run(proxy.token)
@@ -395,7 +452,7 @@ async def preview_start(run_id: str, authorization: str = Header(""), x_run_key:
             "error": "runner_refused", "message": "The sandbox could not start the preview."})
     made = response.json()
     run.preview = {"id": made["id"], "token": proxy.token}
-    return {"expires_in": made["expires_in"]}
+    return {"expires_in": made["expires_in"], "kind": plan["kind"], "routes": plan["routes"]}
 
 
 @router.post("/runs/{run_id}/preview/http")
@@ -404,14 +461,44 @@ async def preview_http(run_id: str, call: PreviewCall, authorization: str = Head
     run = _run_for(run_id, authorization, x_run_key)
     if not run.preview:
         raise HTTPException(status_code=404, detail="no preview is open for this run")
-    response = await _call_runner("POST", f"/previews/{run.preview['id']}/http", call.model_dump(),
-                                  timeout=PREVIEW_CALL_TIMEOUT_S)
+    return await _slow_json(_preview_relay(run, "http", call.model_dump(), PREVIEW_CALL_TIMEOUT_S))
+
+
+async def _preview_relay(run: BuildRun, what: str, payload: dict[str, Any], timeout: float) -> Any:
+    response = await _call_runner("POST", f"/previews/{run.preview['id']}/{what}", payload, timeout=timeout)
     if response.status_code == 404:  # its 10 minutes are over
         await _stop_preview(run)
         raise HTTPException(status_code=404, detail="the preview has ended")
     if response.status_code != 200:
         raise HTTPException(status_code=502, detail="the sandbox refused the preview request")
     return response.json()
+
+
+@router.post("/runs/{run_id}/preview/term")
+async def preview_term(run_id: str, body: PreviewTerm, authorization: str = Header(""),
+                       x_run_key: str = Header("")) -> Any:
+    run = _run_for(run_id, authorization, x_run_key)
+    if not run.preview:
+        raise HTTPException(status_code=404, detail="no preview is open for this run")
+    return await _preview_relay(run, "term", body.model_dump(), PREVIEW_TERM_TIMEOUT_S)
+
+
+@router.get("/runs/{run_id}/preview/writes")
+async def preview_writes(run_id: str, authorization: str = Header(""), x_run_key: str = Header("")) -> dict[str, Any]:
+    run = _run_for(run_id, authorization, x_run_key)
+    if not run.preview:
+        raise HTTPException(status_code=404, detail="no preview is open for this run")
+    return {"writes": build_proxy.writes(run.preview["token"])}
+
+
+@router.post("/runs/{run_id}/preview/writes/{write_id}")
+async def preview_decide(run_id: str, write_id: str, body: Decision, authorization: str = Header(""),
+                         x_run_key: str = Header("")) -> dict[str, Any]:
+    run = _run_for(run_id, authorization, x_run_key)
+    write = build_proxy.decide(run.preview["token"], write_id, body.approve) if run.preview else None
+    if write is None:
+        raise HTTPException(status_code=404, detail="no such pending write (decided, timed out or unknown)")
+    return write.public()
 
 
 @router.delete("/runs/{run_id}/preview")

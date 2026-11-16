@@ -336,6 +336,83 @@ def test_previews_over_http_need_the_token_and_a_well_formed_request(server, run
     assert _call(relay, "POST", {"method": "GET", "path": "/"})[0] == 404
 
 
+def test_a_build_with_no_server_gets_a_worker_and_no_app(runner, docker):
+    preview = runner.start_preview(APP, None, None)
+
+    assert preview.port is None and preview.id in runner._previews
+    assert not any(args[:2] == ("exec", "-d") for args, _ in docker.calls)  # nothing to start
+    answer = runner.preview_http(preview.id, "GET", "/", "", b"")
+    assert answer["status"] == 502  # there is no app to ask
+
+
+ECHO_SHELL = "import sys; [sys.stdout.write('got ' + line.strip() + chr(10)) for line in sys.stdin]"
+
+
+@pytest.fixture
+def shell(monkeypatch):
+    """A stand-in for the shell in the container: it answers each line typed into it."""
+    import subprocess
+
+    opened = []
+
+    def open_shell(container):
+        opened.append(container)
+        return subprocess.Popen(
+            [sys.executable, "-u", "-c", ECHO_SHELL],
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, bufsize=0,
+        )  # fmt: skip
+
+    monkeypatch.setattr(runner_mod, "_open_shell", open_shell)
+    return opened
+
+
+def _text(answer):
+    return __import__("base64").b64decode(answer["data_b64"]).decode()
+
+
+def test_a_preview_terminal_takes_input_and_gives_output_by_offset(runner, docker, shell):
+    preview = runner.start_preview(APP, None, None)
+
+    first = runner.terminal(preview.id, b"hello" + NL, 0, 10)
+    assert shell == ["c0ffee"]  # the shell runs in the preview's own container
+    assert first["from"] == 0 and "got hello" in _text(first) and first["alive"]
+    seen = len(_text(first).encode())
+
+    quiet = runner.terminal(preview.id, b"", seen, 0.05)  # nothing new: an empty read, not a repeat
+    assert quiet == {"from": seen, "data_b64": "", "alive": True}
+    more = runner.terminal(preview.id, b"again" + NL, seen, 10)
+    assert more["from"] == seen and _text(more).strip() == "got again"
+    assert "got hello" in _text(runner.terminal(preview.id, b"", 0, 0))  # a reader that starts over
+
+    old = preview.terminal.process
+    old.stdin.close()  # the shell exits (the visitor typed "exit")
+    old.wait(timeout=10)
+    assert runner.terminal(preview.id, b"new" + NL, 0, 0)["alive"]  # the next use opens a new one
+    assert len(shell) == 2
+
+    process = preview.terminal.process
+    runner.stop_preview(preview.id)
+    assert process.wait(timeout=10) is not None  # stopped with the preview
+    assert runner.terminal(preview.id, b"", 0, 0) is None
+    deadline = time.time() + 10
+    while not (old.stdout.closed and process.stdout.closed) and time.time() < deadline:
+        time.sleep(0.02)
+    assert old.stdout.closed and process.stdout.closed  # no pipe is left open
+
+
+def test_the_terminal_over_http_needs_a_well_formed_request(server, runner, docker, shell):
+    _, made = _call(f"{server}/previews", "POST", {"files": APP})  # no command, no port: a terminal
+    term = f"{server}/previews/{made['id']}/term"
+
+    code, answer = _call(term, "POST", {"input_b64": "aGkK", "seen": 0, "wait_ms": 10_000})
+    assert code == 200 and "got hi" in _text(answer)
+    for bad in ({"input_b64": "!!"}, {"seen": -1}, {"seen": "0"}, {"wait_ms": "1"}):
+        assert _call(term, "POST", bad)[0] == 400
+    assert _call(term, "POST", {}, token=None)[0] == 401
+    assert _call(f"{server}/previews/{'0' * 32}/term", "POST", {})[0] == 404
+    assert _call(f"{server}/previews", "POST", {"files": APP, "command": "python app.py"})[0] == 400
+
+
 @pytest.mark.skipif(sys.platform == "win32", reason="the docker backend is POSIX-only")
 def test_a_preview_worker_gets_the_same_isolation_as_a_runs_worker(tmp_path, monkeypatch):
     monkeypatch.setattr(runner_mod.settings, "sandbox_docker_runtime", "runsc")

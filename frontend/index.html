@@ -769,6 +769,15 @@
         .run-preview > p { margin: 0; padding: var(--space-xs) var(--space-sm); }
         .run-preview-frame { display: block; width: 100%; height: 30rem; border: 0; background: #fff; }
         .run-preview-log { margin: 0; max-height: 12lh; overflow: auto; border-radius: 0; }
+        .run-preview-writes { padding: 0 var(--space-sm); }
+        .run-api { padding: var(--space-sm); display: grid; gap: var(--space-xs); }
+        .run-api[hidden] { display: none; }
+        .run-api-form { display: flex; gap: var(--space-xs); }
+        .run-api-form input { flex: 1; min-width: 0; font-family: var(--font-outlier); font-size: var(--text-sm); }
+        .run-api textarea { width: 100%; font-family: var(--font-outlier); font-size: var(--text-xs); }
+        .run-api p { margin: 0; }
+        .run-api pre { margin: 0; max-height: 24lh; overflow: auto; font-size: var(--text-xs); }
+        .run-term { padding: var(--space-xs); background: #000; color: #ddd; overflow-x: auto; font-family: var(--font-outlier); font-size: var(--text-xs); }
         .run-file pre { margin: 0; max-height: 28lh; overflow: auto; border-radius: 0; }
         .run-file [data-copy] { position: absolute; top: var(--space-xs); right: var(--space-xs); z-index: 1; color: var(--color-graphite-ink); }
         .run-file [data-copy]:hover:not(:disabled) { background: var(--color-graphite-2); color: var(--color-graphite-ink); }
@@ -3839,7 +3848,7 @@
                + (listing.skipped ? ` · ${listing.skipped} not shown (binary, hidden or too large)` : '')
                + ' · they call the bank directly · available while this page is open';
            box.innerHTML = `<div class="run-files-head"><strong>Files</strong><span class="text-small text-muted">${note}</span>
-               ${files.some(f => f.path === 'preview.json') ? '<button type="button" class="btn btn-primary btn-sm" data-preview>Open preview</button>' : ''}
+               <button type="button" class="btn btn-primary btn-sm" data-preview>Open preview</button>
                <button type="button" class="btn btn-secondary btn-sm" data-zip>Download all (.zip)</button></div>
                <div class="run-files-tabs" role="tablist">${files.map((f, i) =>
                    `<button type="button" role="tab" class="file-tab" data-i="${i}">${escapeHtml(f.path)}</button>`).join('')}</div>
@@ -3897,11 +3906,35 @@
   };
 })();</scr` + `ipt>`;
 
+       // The terminal display (xterm.js), loaded when a terminal is first opened.
+       const XTERM = 'https://cdnjs.cloudflare.com/ajax/libs/xterm/5.5.0/xterm';
+       let xtermLoading = null;
+       function loadXterm() {
+           if (window.Terminal) return Promise.resolve();
+           xtermLoading = xtermLoading || new Promise((ok, fail) => {
+               document.head.appendChild(Object.assign(document.createElement('link'), { rel: 'stylesheet', href: XTERM + '.min.css' }));
+               // With an AMD loader on the page, xterm registers as a module and sets no global: hide the
+               // loader while this one script runs.
+               const amd = window.define;
+               window.define = undefined;
+               const done = (then) => () => { window.define = amd; then(); };
+               document.head.appendChild(Object.assign(document.createElement('script'), { src: XTERM + '.js',
+                   onload: done(() => window.Terminal ? ok() : fail(new Error('no terminal'))),
+                   onerror: done(() => { xtermLoading = null; fail(new Error('blocked')); }) }));
+           });
+           return xtermLoading;
+       }
+
+       const b64Text = (text) => { let s = ''; new TextEncoder().encode(text).forEach(b => s += String.fromCharCode(b)); return btoa(s); };
+       const b64Bytes = (b64) => Uint8Array.from(atob(b64 || ''), c => c.charCodeAt(0));
+
+       // The pane has up to two views: the build's page or an API tester (what preview.json names), and a
+       // terminal in the same sandbox container. A bank write from any of them waits for an approval card here.
        async function openPreview(box, runId, runKey, button) {
            let pane = box.querySelector('.run-preview');
            if (!pane) { pane = document.createElement('div'); pane.className = 'run-preview'; box.appendChild(pane); }
            button.disabled = true;
-           pane.innerHTML = '<p class="text-small text-muted">Starting the app in the sandbox…</p>';
+           pane.innerHTML = '<p class="text-small text-muted">Starting the sandbox…</p>';
            let started = null, info = {};
            try {
                started = await buildFetch(`/runs/${runId}/preview`, { method: 'POST' }, runKey);
@@ -3913,55 +3946,170 @@
                pane.innerHTML = `<p class="write-answer fail">${escapeHtml(why)}</p>${info.log ? `<pre class="run-preview-log">${escapeHtml(info.log)}</pre>` : ''}`;
                return;
            }
+           const kind = ['page', 'api'].includes(info.kind) ? info.kind : 'script';
            const ended = { status: 410, content_type: 'text/plain', body_b64: btoa('The preview has ended.') };
+           let open = true, pending = 0;
+           // One request to the app. A slow bank makes a slow app: say that a request is on its way.
            const call = async (method, path, contentType = '', bodyB64 = '') => {
+               const busy = pane.querySelector('[data-busy]');
+               pending += 1;
+               if (busy) busy.hidden = false;
                try {
                    const r = await buildFetch(`/runs/${runId}/preview/http`, { method: 'POST',
                        body: JSON.stringify({ method, path, content_type: contentType, body_b64: bodyB64 }) }, runKey);
                    return r.ok ? await r.json() : ended;
                } catch (e) { return ended; }
+               finally { pending -= 1; if (busy) busy.hidden = pending <= 0; }
            };
-           const first = await call('GET', '/');
-           const html = new TextDecoder().decode(Uint8Array.from(atob(first.body_b64 || ''), c => c.charCodeAt(0)));
+           const first = kind === 'page' ? await call('GET', '/') : null;
+           const tabs = [...(kind === 'script' ? [] : [[kind, kind === 'page' ? 'Page' : 'API']]), ['term', 'Terminal']];
+           const routes = (info.routes || []).map((r, i) =>
+               `<button type="button" class="btn btn-secondary btn-sm" data-route="${i}"><span class="method-badge method-${escapeHtml(r.method.toLowerCase())}">${escapeHtml(r.method)}</span> ${escapeHtml(r.label || r.path)}</button>`).join('');
            pane.innerHTML = `<div class="run-files-head"><strong>Preview</strong>
-               <span class="text-small text-muted">the app is running in the sandbox · only this page can reach it · the bank is read-only · <span data-left></span><span data-busy hidden> · waiting for the app…</span></span>
+               <span class="text-small text-muted">runs in the sandbox · only this page can reach it · a bank write waits for your Approve · <span data-left></span><span data-busy hidden> · waiting for the app…</span></span>
                <button type="button" class="btn btn-secondary btn-sm" data-stop>Close preview</button></div>
-               <iframe class="run-preview-frame" sandbox="allow-scripts allow-forms" title="Preview of the built page"></iframe>`;
+               <div class="run-files-tabs" role="tablist">${tabs.map(([id, label]) =>
+                   `<button type="button" role="tab" class="file-tab" data-tab="${id}">${label}</button>`).join('')}</div>
+               <div class="run-preview-writes" data-writes></div>
+               <div data-view="page" hidden><iframe class="run-preview-frame" sandbox="allow-scripts allow-forms" title="Preview of the built page"></iframe></div>
+               <div data-view="api" class="run-api" hidden>
+                   ${routes ? `<div class="choice-row">${routes}</div>` : ''}
+                   <form class="run-api-form"><select data-method aria-label="Method">${['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].map(m => `<option>${m}</option>`).join('')}</select>
+                       <input type="text" data-path value="/" aria-label="Path" spellcheck="false">
+                       <button type="submit" class="btn btn-primary btn-sm">Send</button></form>
+                   <textarea data-body rows="3" placeholder="JSON body, for POST, PUT and PATCH" aria-label="Request body" spellcheck="false"></textarea>
+                   <p class="text-small text-muted" data-status>Send a request to the API that this run built.</p>
+                   <pre data-out hidden></pre>
+               </div>
+               <div data-view="term" hidden><div class="run-term"></div></div>`;
+
+           // ---- page: the app's HTML in a sandboxed frame, its fetch calls relayed from here
            const frame = pane.querySelector('iframe');
-           let pending = 0;
            const onMessage = async (e) => {
                const d = e.data;
                if (e.source !== frame.contentWindow || !d || !d.previewCall) return;
-               // A slow bank makes a slow app: say that a request is on its way, so it does not look stuck.
-               const busy = pane.querySelector('[data-busy]');
-               pending += 1;
-               if (busy) busy.hidden = false;
                const answer = await call(String(d.method), String(d.path), String(d.contentType || ''), String(d.bodyB64 || ''));
-               pending -= 1;
-               if (busy) busy.hidden = pending > 0 ? false : true;
                frame.contentWindow?.postMessage({ previewReply: d.previewCall, status: answer.status,
                    contentType: answer.content_type, bodyB64: answer.body_b64 }, '*');
            };
            window.addEventListener('message', onMessage);
+           if (first) {
+               const html = new TextDecoder().decode(b64Bytes(first.body_b64));
+               // The relay and the lock-down go in before the app's own markup, inside its <head> when it has one.
+               frame.srcdoc = /<head[^>]*>/i.test(html) ? html.replace(/<head[^>]*>/i, (head) => head + PREVIEW_HEAD) : PREVIEW_HEAD + html;
+           }
+
+           // ---- API tester: one request, its status and its body as text
+           const api = pane.querySelector('[data-view="api"]');
+           const send = async () => {
+               const method = api.querySelector('[data-method]').value, body = api.querySelector('[data-body]').value.trim();
+               let path = encodeURI(api.querySelector('[data-path]').value.trim());
+               if (!path.startsWith('/')) path = '/' + path;
+               const status = api.querySelector('[data-status]'), out = api.querySelector('[data-out]');
+               status.textContent = `${method} ${path} …`;
+               const began = Date.now();
+               const answer = await call(method, path, body ? 'application/json' : '', method === 'GET' ? '' : b64Text(body));
+               let text = new TextDecoder().decode(b64Bytes(answer.body_b64));
+               try { text = JSON.stringify(JSON.parse(text), null, 2); } catch (e) {}
+               status.textContent = `${method} ${path} · ${answer.status} · ${answer.content_type || ''} · ${((Date.now() - began) / 1000).toFixed(1)} s`;
+               out.hidden = false;
+               out.textContent = text || '(empty answer)';
+           };
+           api.querySelector('form').onsubmit = (e) => { e.preventDefault(); send(); };
+           api.querySelectorAll('[data-route]').forEach(b => { b.onclick = () => {
+               const r = info.routes[+b.dataset.route];
+               api.querySelector('[data-method]').value = r.method;
+               api.querySelector('[data-path]').value = r.path;
+               api.querySelector('[data-body]').value = r.body || '';
+               send();
+           }; });
+
+           // ---- terminal: a shell in the container. Keys go up as they are typed; output is one byte stream,
+           // read by offset, so an answer that arrives twice or late is never shown twice.
+           let termStarted = false;
+           const startTerm = async () => {
+               if (termStarted) return;
+               termStarted = true;
+               const host = pane.querySelector('.run-term');
+               try { await loadXterm(); } catch (e) {
+                   host.textContent = 'The terminal display did not load (cdnjs.cloudflare.com may be blocked on this network).';
+                   termStarted = false;
+                   return;
+               }
+               const term = new window.Terminal({ cols: 80, rows: 24, fontSize: 13, cursorBlink: true });
+               term.open(host);
+               let seen = 0, queue = '', sending = false;
+               const take = (a) => {
+                   const bytes = b64Bytes(a.data_b64), end = a.from + bytes.length;
+                   if (end > seen) { term.write(bytes.subarray(Math.max(0, seen - a.from))); seen = end; }
+               };
+               const post = async (input, wait) => {
+                   const r = await buildFetch(`/runs/${runId}/preview/term`, { method: 'POST',
+                       body: JSON.stringify({ input_b64: b64Text(input), seen, wait_ms: wait }) }, runKey);
+                   if (r.status === 404) open = false;
+                   if (!r.ok) throw new Error('terminal');
+                   return r.json();
+               };
+               const flush = async () => {
+                   if (sending) return;
+                   sending = true;
+                   while (queue && open) {
+                       const input = queue.slice(0, 4000);
+                       queue = queue.slice(4000);
+                       try { take(await post(input, 80)); } catch (e) { break; }
+                   }
+                   sending = false;
+               };
+               term.onData((data) => { queue += data; flush(); });
+               while (open) {
+                   try { take(await post('', 20000)); }
+                   catch (e) { await new Promise(r => setTimeout(r, 2000)); }
+               }
+               term.write('\r\n[the preview has ended]\r\n');
+           };
+
+           // ---- bank writes the preview is holding: a card each, the same card a run shows
+           const writesBox = pane.querySelector('[data-writes]');
+           const pollWrites = async () => {
+               try {
+                   const r = await buildFetch(`/runs/${runId}/preview/writes`, {}, runKey);
+                   if (r.status === 404) open = false;
+                   for (const write of (r.ok ? (await r.json()).writes : [])) {
+                       let card = writesBox.querySelector(`[data-write="${write.id}"]`);
+                       if (!card && !write.decision) card = writesBox.appendChild(renderHeldWrite(runId, runKey, write, '/preview'));
+                       if (card && write.decision) settleWriteCard(card, write.decision);
+                   }
+               } catch (e) {}
+           };
+           const writesTimer = setInterval(pollWrites, 2000);
+
+           const show = (id) => {
+               pane.querySelectorAll('[data-tab]').forEach(t => { t.classList.toggle('active', t.dataset.tab === id); t.setAttribute('aria-selected', t.dataset.tab === id); });
+               pane.querySelectorAll('[data-view]').forEach(v => { v.hidden = v.dataset.view !== id; });
+               if (id === 'term') startTerm();
+           };
+           pane.querySelectorAll('[data-tab]').forEach(t => { t.onclick = () => show(t.dataset.tab); });
+
            const deadline = Date.now() + (info.expires_in || 600) * 1000;
            const left = pane.querySelector('[data-left]');
            const close = (note) => {
+               open = false;
                window.removeEventListener('message', onMessage);
                clearInterval(timer);
+               clearInterval(writesTimer);
                pane.innerHTML = note ? `<p class="text-small text-muted">${escapeHtml(note)}</p>` : '';
                buildFetch(`/runs/${runId}/preview`, { method: 'DELETE' }, runKey).catch(() => {});
            };
            const timer = setInterval(() => {
                const sec = Math.max(0, Math.round((deadline - Date.now()) / 1000));
                left.textContent = `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')} left`;
-               if (!sec) close('The preview has ended. Open it again to restart the app.');
+               if (!sec || !open) close('The preview has ended. Open it again to restart it.');
            }, 1000);
            pane.querySelector('[data-stop]').onclick = () => close('');
-           // The relay and the lock-down go in before the app's own markup, inside its <head> when it has one.
-           frame.srcdoc = /<head[^>]*>/i.test(html) ? html.replace(/<head[^>]*>/i, (head) => head + PREVIEW_HEAD) : PREVIEW_HEAD + html;
+           show(tabs[0][0]);
        }
 
-       function renderHeldWrite(runId, runKey, write) {
+       function renderHeldWrite(runId, runKey, write, from = '') {
            const card = document.createElement('div');
            card.className = 'write-card';
            card.dataset.write = write.id;
@@ -3987,7 +4135,7 @@
            const decide = async (approve) => {
                card.querySelectorAll('button').forEach(b => b.disabled = true);
                try {
-                   const r = await buildFetch(`/runs/${runId}/writes/${write.id}`, { method: 'POST', body: JSON.stringify({ approve }) }, runKey);
+                   const r = await buildFetch(`/runs/${runId}${from}/writes/${write.id}`, { method: 'POST', body: JSON.stringify({ approve }) }, runKey);
                    settleWriteCard(card, r.ok ? (await r.json()).decision : 'rejected');
                } catch (e) { left.textContent = e.message; }
            };
