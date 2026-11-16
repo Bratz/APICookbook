@@ -318,6 +318,7 @@
         .guide-step-links .linkish { font-size: var(--text-sm); }
         .guide-build { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-md); margin-top: var(--space-md); padding: var(--space-lg); border-radius: var(--radius-card); background: var(--color-paper-2); }
         .guide-build p { max-width: 36em; line-height: 1.55; }
+        .guide-build .guide-build-after { flex-basis: 100%; max-width: none; margin: 0; }
 
         /* ---------- Playground with its History drawer ---------- */
         .pg-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-sm); margin-bottom: var(--space-md); }
@@ -3396,7 +3397,7 @@
                ['POST', '/accountManagement/account', 'Open an account for that customer ID.'],
                ['GET', '/accountManagement/account/details/{accountReference}', 'Read the new account back.']],
              task: 'Create an individual customer with a unique name: "Ada Test" followed by the current date and time, so the bank does not refuse it as a duplicate. Open a savings account for that customer, then fetch the new account details. If it is not clear which savings product to use, ask me.',
-             run: 'Run the whole flow: Build & run creates a customer under a unique name and opens an account. Each run adds a customer to the shared demo bank, and a customer cannot be deleted. Every change to bank data waits for your approval.' },
+             run: 'Run the whole flow: Build & run creates a customer under a unique name and opens an account. Each run adds a customer to the shared demo bank, and so does each time you run the script again in the preview. A customer cannot be deleted. Every change to bank data waits for your approval.' },
            { title: 'Customer 360', steps: [
                ['GET', '/customerManagement/customer/detail', 'The customer record (JSON; /details fails when a customer has no postal address).'],
                ['GET', '/accountManagement/account/CASABalanceList', 'Every current and savings account, with its balance.'],
@@ -3414,7 +3415,8 @@
                ['POST', '/payments/fundTransfer/create', 'Create it; it waits for authorisation.'],
                ['POST', '/payments/transfers/authorize/{transactionId}/{transactionType}', 'A second user authorises it (or rejects it).'],
                ['GET', '/payments/transfers/view', 'Read the final record.']],
-             task: 'Validate and create a fund transfer of 1 between two real accounts of the same customer, authorise it, then show the transfer record' },
+             task: 'Validate and create a fund transfer of 1 between two real accounts of the same customer, authorise it, then show the transfer record',
+             run: 'Run the whole flow: Build & run validates, creates and authorises a transfer of 1 between two accounts of one customer. A transfer cannot be undone, and each run makes one in the shared demo bank; so does each time you run the script again in the preview. Every change to bank data waits for your approval.' },
            { title: 'Update contact details', steps: [
                ['GET', '/customerManagement/customer/detail', 'What the bank holds now: the phone is contact.nationalNumber (communicationDetails leaves it empty).'],
                ['PUT', '/customerManagement/customer/contact', 'Amend the phone number, with the same contact type and country code. There is no delete.'],
@@ -3506,7 +3508,8 @@
                    </div></li>`).join('')}</ol>
                ${state.buildAvailable ? `<div class="guide-build">
                    <p>${escapeHtml(g.run || 'Run the whole flow: Build & run writes the code for these steps and runs it. Every change to bank data waits for your approval.')}</p>
-                   <button type="button" class="btn btn-primary" data-act="build">Build &amp; run this guide</button></div>` : ''}`;
+                   <button type="button" class="btn btn-primary" data-act="build">Build &amp; run this guide</button>
+                   <p class="text-small text-muted guide-build-after">When the run ends, "Open preview" opens a terminal on the files it wrote. You can run the script again there, for example with another customer or account. A change to bank data from the terminal also waits for your approval.</p></div>` : ''}`;
            document.getElementById('guidesHead').hidden = true;
            document.getElementById('guideList').hidden = true;
            view.hidden = false;
