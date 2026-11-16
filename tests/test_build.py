@@ -745,3 +745,19 @@ async def test_a_slow_preview_answer_goes_out_as_a_stream_that_is_still_json(mon
         return {"status": 200}
 
     assert json.loads((await build_routes._slow_json(quick())).body) == {"status": 200}
+
+
+def test_the_hourly_limit_counts_the_visitor_not_the_vercel_server(client, open_build):
+    def start(visitor, server):
+        headers = {"x-vercel-forwarded-for": visitor, "x-forwarded-for": server}
+        return client.post("/api/build/runs", json={"task": "list customers"}, headers=headers)
+
+    assert start("203.0.113.7", "76.76.21.1").status_code == 202
+    again = start("203.0.113.7", "76.76.21.2")  # the same visitor, through another Vercel server
+    assert again.status_code == 429 and "1 runs in the last hour" in again.json()["message"]
+    assert start("203.0.113.8", "76.76.21.1").status_code == 202  # another visitor, through the first server
+
+    # not through Vercel: the address Caddy reports
+    direct = {"x-forwarded-for": "198.51.100.9"}
+    assert client.post("/api/build/runs", json={"task": "x"}, headers=direct).status_code == 202
+    assert client.post("/api/build/runs", json={"task": "x"}, headers=direct).status_code == 429

@@ -124,7 +124,12 @@ async def _call_runner(method: str, path: str, json: Any = None, timeout: float 
 
 
 def _client_ip(request: Request) -> str:
-    forwarded = request.headers.get("x-forwarded-for", "")  # Vercel and Caddy put the visitor first
+    # Through the site, Caddy sets X-Forwarded-For to the Vercel server that connected to it (it does not
+    # trust the incoming header), so that header names one of many Vercel servers, not the visitor.
+    # Vercel's own header has the visitor, and Caddy passes it on.
+    # ponytail: a caller that skips the site can send any value here and dodge the hourly limit; the
+    # USD caps still hold. Check a shared secret from Vercel if that is ever abused.
+    forwarded = request.headers.get("x-vercel-forwarded-for") or request.headers.get("x-forwarded-for", "")
     return forwarded.split(",")[0].strip() or (request.client.host if request.client else "unknown")
 
 
