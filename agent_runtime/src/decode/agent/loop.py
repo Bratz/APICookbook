@@ -36,7 +36,6 @@ from pydantic_ai.messages import (
 from pydantic_ai.tools import DeferredToolResults
 from pydantic_ai.usage import RunUsage
 
-from decode import observability
 from decode.agent.deps import AgentDeps
 from decode.config.settings import settings
 from decode.context.compaction import (
@@ -85,12 +84,11 @@ class AgentTurnHandler:
 
     One instance per REPL session: it owns the cross-turn ``message_history``; calling it with
     a :class:`~decode.harness.runner.TurnContext` returns the async generator the runner drives.
-    Three optional seams, each ``None``-off so a headless/test run is unchanged: ``session_log=``
+    Two optional seams, each ``None``-off so a headless/test run is unchanged: ``session_log=``
     appends each turn's new messages as JSONL for ``--resume`` (ADR-0002 §9); ``compaction_model=``
     enables the two-tier compaction cascade at would-stop (ADR-0006 §3-7; :meth:`compact` is also
     the body of ``/compact``) — it is the ACTIVE provider's built model so the summarizer rides the
-    Provider Seam (ADR-0018 §5), and ``None`` disables the cascade; ``session_id=`` makes each turn
-    one Opik ``chat_turn`` root span grouped into a per-session Thread (ADR-0014 §4).
+    Provider Seam (ADR-0018 §5), and ``None`` disables the cascade.
     """
 
     def __init__(
@@ -102,14 +100,11 @@ class AgentTurnHandler:
         *,
         deps: AgentDeps,
         session_log: SessionLog | None = None,
-        session_id: str | None = None,
         message_history: list[ModelMessage] | None = None,
         compaction_model: Model | None = None,
     ) -> None:
         self._agent = agent
         self._deps = deps
-        # Opik Thread id for this session's turns; ``None`` makes the root span a nullcontext.
-        self._session_id = session_id
         # The running conversation, carried across turns; ``--resume`` seeds the replayed history.
         self.message_history: list[ModelMessage] = list(message_history or [])
         # Append-only JSONL session log (ADR-0002 §9); ``None`` disables persistence.
@@ -147,66 +142,54 @@ class AgentTurnHandler:
 
         Each model request is preceded by a ``MODEL_REQUEST`` boundary where the runner drains
         steering; a deferred-tool leg routes through the gate and resumes; a follow-up drained at
-        ``WOULD_STOP`` runs one more prompt leg. The whole loop runs inside ONE ``chat_turn`` root
-        span (ADR-0014 §4) so resume legs and follow-ups stay in the same trace; a ``nullcontext``
-        when tracing is off. Abort-safe: the runner's ``agen.aclose()`` throws ``GeneratorExit``
-        into the suspended ``yield``, unwinding the ``with`` and closing the span exactly once.
+        ``WOULD_STOP`` runs one more prompt leg. Abort-safe: the runner's ``agen.aclose()`` throws
+        ``GeneratorExit`` into the suspended ``yield``, and the ``finally`` persists the turn.
         """
         next_prompt: str | None = ctx.prompt
         pending_results: DeferredToolResults | None = None
 
-        with observability.root_span(
-            "chat_turn",
-            thread_id=self._session_id,
-            input=ctx.prompt,
-            # The same join/filter fields a headless run's root span carries (ADR-0022 §10), so a
-            # mined REPL trace and a benchmark trial slice on one vocabulary.
-            metadata=observability.trace_metadata(),
-        ) as span:
-            try:
-                while True:
-                    # --- model-request boundary: drain steering, then make the request (§4) ---
-                    steering = yield Boundary.MODEL_REQUEST
+        try:
+            while True:
+                # --- model-request boundary: drain steering, then make the request (§4) ---
+                steering = yield Boundary.MODEL_REQUEST
 
-                    if pending_results is not None:
-                        # Deferred resume leg: no new prompt, so steering rides the history instead.
-                        self._append_steering(steering)
-                        output = await self._run_turn(ctx, deferred_results=pending_results)
-                        pending_results = None
-                    else:
-                        prompt = self._compose_prompt(next_prompt, steering)
-                        next_prompt = None
-                        if prompt is None:
-                            # Nothing to ask the model: stop cleanly (drain follow-up below).
-                            output = ""
-                            self._persist_turn()
-                            follow_ups = yield Boundary.WOULD_STOP
-                            if not follow_ups:
-                                return
-                            next_prompt = "\n".join(follow_ups)
-                            continue
-                        self._heal_dangling_tool_calls()
-                        output = await self._run_turn(ctx, prompt=prompt)
-
-                    if isinstance(output, DeferredToolRequests):
-                        # A gated tool paused the run: resolve approvals and loop back to resume.
-                        pending_results = await self._resolve_deferred(ctx, output)
+                if pending_results is not None:
+                    # Deferred resume leg: no new prompt, so steering rides the history instead.
+                    self._append_steering(steering)
+                    output = await self._run_turn(ctx, deferred_results=pending_results)
+                    pending_results = None
+                else:
+                    prompt = self._compose_prompt(next_prompt, steering)
+                    next_prompt = None
+                    if prompt is None:
+                        # Nothing to ask the model: stop cleanly (drain follow-up below).
+                        output = ""
+                        self._persist_turn()
+                        follow_ups = yield Boundary.WOULD_STOP
+                        if not follow_ups:
+                            return
+                        next_prompt = "\n".join(follow_ups)
                         continue
+                    self._heal_dangling_tool_calls()
+                    output = await self._run_turn(ctx, prompt=prompt)
 
-                    # --- would-stop boundary: persist, compaction cascade, drain follow-up ---
-                    self._persist_turn()
-                    await self._maybe_auto_compact()
-                    # Final assistant text = the root span's output; a follow-up leg overwrites it.
-                    observability.record_output(span, output)
-                    follow_ups = yield Boundary.WOULD_STOP
-                    if not follow_ups:
-                        return
-                    next_prompt = "\n".join(follow_ups)
-            finally:
-                # Crash/abort-safe (sync — a GeneratorExit context forbids awaits): a leg that
-                # raised out of the loop still lands its captured messages in the session log;
-                # a no-op after a normal would-stop already persisted them.
+                if isinstance(output, DeferredToolRequests):
+                    # A gated tool paused the run: resolve approvals and loop back to resume.
+                    pending_results = await self._resolve_deferred(ctx, output)
+                    continue
+
+                # --- would-stop boundary: persist, compaction cascade, drain follow-up ---
                 self._persist_turn()
+                await self._maybe_auto_compact()
+                follow_ups = yield Boundary.WOULD_STOP
+                if not follow_ups:
+                    return
+                next_prompt = "\n".join(follow_ups)
+        finally:
+            # Crash/abort-safe (sync — a GeneratorExit context forbids awaits): a leg that
+            # raised out of the loop still lands its captured messages in the session log;
+            # a no-op after a normal would-stop already persisted them.
+            self._persist_turn()
 
     @staticmethod
     def _compose_prompt(base: str | None, steering: list[str]) -> str | None:

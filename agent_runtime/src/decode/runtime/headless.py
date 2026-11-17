@@ -12,8 +12,6 @@ primitives — so a headless run is now a plain async agent run:
 * **Hand-back**: a completed ``decode run --repo`` ships the Workspace as a ``decode/<session-id>``
   Session Branch from THIS host-side process (ADR-0012 §8) — the "runs inside the flow" constraint
   died with the flow.
-* **Tracing**: :func:`decode.observability.init_tracing` runs before the agent is built, exactly
-  like the TUI, and the run opens one root span keyed on the run's session id (ADR-0014 §4-5).
 * **Recording**: the Recording Seam (:mod:`decode.runtime.recording`) decides wrapped-vs-bare; when
   it degrades, this runner echoes its ONE notice line on stderr — stdout stays the answer alone
   (ADR-0019 §3).
@@ -38,7 +36,6 @@ from pydantic_ai import Agent, DeferredToolRequests, UsageLimits, capture_run_me
 from pydantic_ai.exceptions import UsageLimitExceeded
 from pydantic_ai.messages import ModelMessage
 
-from decode import observability
 from decode.agent.context_window import resolve_context_window
 from decode.agent.deps import AgentDeps
 from decode.agent.factory import build_agent
@@ -63,9 +60,6 @@ if TYPE_CHECKING:
     from decode.sandbox.handback import ShipResult
 
 logger = logging.getLogger(__name__)
-
-# The root span a headless run opens; its ``thread_id`` is the run's session id (ADR-0014 §4).
-RUN_SPAN_NAME = "decode_run"
 
 
 def _headless_emit(event: events.Event) -> None:
@@ -224,7 +218,6 @@ async def _run_task(
     model: str | None,
     repo: str | None,
     local: bool,
-    session_id: str,
     max_requests: int | None = None,
     state: _RunState | None = None,
     events_jsonl: Path | None = None,
@@ -240,27 +233,16 @@ async def _run_task(
     # The Kitaru Recording Seam was removed in the APICookbook fork: the agent runs bare.
     agent = _build_headless_agent(model)
     deps = _build_headless_deps(tool_scope, model)
-    # One root span per run, keyed on the run's session id (a nullcontext when tracing is off), plus
-    # the metadata an eval filters and joins traces on (ADR-0022 §10).
-    with observability.root_span(
-        RUN_SPAN_NAME,
-        thread_id=session_id,
-        input=task,
-        metadata=observability.trace_metadata(model),
-    ) as span:
-        # ``capture_run_messages`` is the only source that survives a raising run: the result object
-        # does not exist when the request ceiling fires or the provider errors, but the messages the
-        # run DID exchange are already in this list, so the summary reports what was really spent
-        # (ADR-0022 §1). Bound immediately — the list is mutated in place, and a copy taken after
-        # the ``with`` would only ever run on the completed path.
-        with capture_run_messages() as messages:
-            state.messages = messages
-            # APICookbook fork F2b: the step log the website streams; without it the call is upstream's.
-            extra = {"event_stream_handler": event_writer(events_jsonl)} if events_jsonl else {}
-            result = await agent.run(
-                task, deps=deps, usage_limits=_usage_limits(max_requests), **extra
-            )
-        observability.record_output(span, result.output)
+    # ``capture_run_messages`` is the only source that survives a raising run: the result object
+    # does not exist when the request ceiling fires or the provider errors, but the messages the
+    # run DID exchange are already in this list, so the summary reports what was really spent
+    # (ADR-0022 §1). Bound immediately — the list is mutated in place, and a copy taken after
+    # the ``with`` would only ever run on the completed path.
+    with capture_run_messages() as messages:
+        state.messages = messages
+        # APICookbook fork F2b: the step log the website streams; without it the call is upstream's.
+        extra = {"event_stream_handler": event_writer(events_jsonl)} if events_jsonl else {}
+        result = await agent.run(task, deps=deps, usage_limits=_usage_limits(max_requests), **extra)
     output = result.output
     if not isinstance(output, str):
         # Defensive: under BYPASS every tool runs inline, so a deferred request here is a bug.
@@ -284,9 +266,8 @@ def run_headless_task(
     """Run ``task`` headlessly and return the agent's final text — the whole runtime (ADR-0019 §1).
 
     Sync by design: ``decode run`` is a Click command, and one ``asyncio.run`` is the entire
-    concurrency story. Tracing is initialized first (idempotent, a silent no-op without a key), the
-    run gets a fresh session id that names BOTH its trace thread and its Hand-back Session Branch,
-    and the ``finally`` reaps the sandbox executor and then hands the Workspace back — in that
+    concurrency story. The run gets a fresh session id that names its Hand-back Session Branch, and
+    the ``finally`` reaps the sandbox executor and then hands the Workspace back — in that
     order, because the reap is what sweeps the sandbox filesystem into the Workspace the hand-back
     ships. Both run on error too: a crashed run still ships its work — and so does a run that hit
     its ``max_requests`` ceiling (``--max-requests``, else ``RUNTIME_MAX_REQUESTS``), which raises
@@ -299,9 +280,6 @@ def run_headless_task(
     """
     session_id = str(uuid4())
     max_requests = resolve_max_requests(max_requests)
-    # A silent no-op without a key (ADR-0014 §4-5). An Environment-Bucket-hydrated OPIK_API_KEY is
-    # already in ``settings`` — hydration is process-scoped, at singleton construction (ADR-0015 §5).
-    observability.init_tracing()
     logger.debug(
         "headless run starting (session_id=%s, model=%r, repo=%r, local=%s, max_requests=%r)",
         session_id,
@@ -318,7 +296,6 @@ def run_headless_task(
                 model=model,
                 repo=repo,
                 local=local,
-                session_id=session_id,
                 max_requests=max_requests,
                 state=state,
                 events_jsonl=events_jsonl,

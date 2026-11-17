@@ -5,7 +5,7 @@ Import the module-level ``settings`` singleton where you need configuration; nev
 
 ``Settings`` is the SINGLE config surface, with ONE source chain at every environment (ADR-0021):
 ``init > process env > .env > defaults``. ``DECODE_ENV`` names the environment and nothing else —
-it suffixes the Modal Secret / app names, the nested sandbox app and the Opik project, and never
+it suffixes the Modal Secret / app names and the nested sandbox app, and never
 changes where a value is read from. The store that feeds the chain is the platform's own: a
 developer's ``.env`` on a laptop, the ``decode-<app>-<env>`` Modal Secret in a container.
 """
@@ -37,7 +37,6 @@ _SCRUBBED_SECRET_FIELDS = (
     "openrouter_api_key",
     "modal_proxy_token_id",
     "modal_proxy_token_secret",
-    "opik_api_key",
     "sandbox_git_token",
 )
 
@@ -92,7 +91,7 @@ class Settings(BaseSettings):
 
     # --- Environments: the NAMING suffix, and nothing else (ADR-0021 §1) ---
     # Read from the same chain as every other field (process env > ``.env`` > default). It suffixes
-    # names — the nested sandbox app ``decode-sandbox-<env>``, the Opik project ``decode-<env>``, and
+    # names — the nested sandbox app ``decode-sandbox-<env>`` and
     # (deploy-side) the Modal app + Secret — and changes NOTHING about where config is read from, nor
     # session dirs, log paths or ``MEMORY.md``. A new environment is a code change, deliberately.
     decode_env: DecodeEnv = "local"
@@ -131,20 +130,7 @@ class Settings(BaseSettings):
     # --- Logging ---
     log_level: str = "INFO"
 
-    # --- Observability: Opik (ADR-0014) ---
-    # Presence-based: a set ``opik_api_key`` (also the OTLP Authorization header) turns tracing on;
-    # empty → silent no-op, byte-identical (no spans, no network). Export is configured
-    # PROGRAMMATICALLY from these fields — never via global OTEL_* env vars — so kitaru→zenml's own
-    # OpenTelemetry SDK is untouched (ADR-0014 §2).
-    opik_api_key: SecretStr = SecretStr("")
-    opik_workspace: str = "default"  # the ``Comet-Workspace`` OTLP header
-    # The ``projectName`` OTLP header (Opik groups traces by it). DERIVED: ``decode-<DECODE_ENV>``
-    # unless explicitly set, so a trace always names the environment that produced it (ADR-0015 §8) —
-    # the declared default below is cosmetic; :meth:`_derive_opik_project_name` supplies the real one.
-    opik_project_name: str = "decode-local"
-    # The OTLP **base** URL: ``None`` → Comet cloud base; set to a self-hosted Opik base. The
-    # exporter appends ``/v1/traces``.
-    opik_url_override: str | None = None
+    # --- Run cost (reported by ``decode run --summary-json``) ---
     # USD per MILLION tokens, for a PER-TOKEN model the genai-prices catalog does not know — an
     # OpenRouter slug missing from it is the case these exist for. Deliberately NOT the answer for
     # ``modal``: a self-hosted endpoint bills GPU-seconds, so a per-token rate there would report a
@@ -322,24 +308,6 @@ class Settings(BaseSettings):
                 object.__setattr__(self, name, SecretStr(""))
         return self
 
-    @model_validator(mode="after")
-    def _derive_opik_project_name(self) -> Settings:
-        """Default the Opik project to ``decode-<DECODE_ENV>``; an explicit value always wins (ADR-0015 §8).
-
-        "Explicit" is decided by pydantic's ``model_fields_set``, **never** by comparing against the
-        declared default: a value supplied by ANY settings source (process env, ``.env``, ``init``)
-        lands in ``model_fields_set``, while a default-applied one does not. A sentinel/value
-        comparison would misfire on the operator who deliberately sets ``OPIK_PROJECT_NAME`` to the
-        same literal the default derives to.
-
-        ``object.__setattr__`` writes the derived value straight into ``__dict__``: it neither
-        re-enters validation nor forges an "explicit" mark in ``model_fields_set``, so the field keeps
-        reading as derived.
-        """
-        if "opik_project_name" not in self.model_fields_set:
-            object.__setattr__(self, "opik_project_name", f"decode-{self.decode_env}")
-        return self
-
     @property
     def active_model(self) -> str:
         """The model id of the ACTIVE provider — the one :func:`decode.agent.factory` will build.
@@ -372,7 +340,7 @@ class Settings(BaseSettings):
     def _derive_compaction_context_window(self) -> Settings:
         """Default the compaction window to the active model's, or the conservative fallback.
 
-        Same "explicit wins" gate as :meth:`_derive_opik_project_name`: any settings source that
+        "Explicit wins", decided by pydantic's ``model_fields_set``: any settings source that
         supplied ``COMPACTION_CONTEXT_WINDOW_TOKENS`` marks the field in ``model_fields_set`` and is
         left untouched, so an operator who knows their endpoint can always override the table.
 

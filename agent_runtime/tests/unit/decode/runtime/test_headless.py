@@ -4,13 +4,12 @@ Drives the REAL :func:`decode.runtime.headless.run_headless_task` with only the 
 swapped (a scripted ``FunctionModel`` agent through the ``_build_headless_agent`` seam), so every
 property the deleted Durable Flow used to own is proved on the plain path: bypass permissions,
 ``ask_user`` as a headless no-op, the Workspace warm-up, the sandbox executor reap on a dedicated
-loop, the host-side Hand-back, and Opik tracing init. No kitaru, no local stack, no network.
+loop, and the host-side Hand-back. No kitaru, no local stack, no network.
 """
 
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import json
 import logging
 from pathlib import Path
@@ -249,51 +248,6 @@ def test_ask_user_feeds_the_no_interactive_user_message_back_to_the_model(monkey
     assert any("No interactive user is attached" in message for message in captured)
 
 
-# --- tracing -----------------------------------------------------------------------------------
-
-
-def test_tracing_is_initialized_before_the_agent_is_built(monkeypatch):
-    """Same order as the TUI: instrument first, then build — otherwise the run exports no spans."""
-    order: list[str] = []
-    monkeypatch.setattr(hl.observability, "init_tracing", lambda: order.append("init_tracing"))
-
-    def _build(model=None):
-        order.append("build_agent")
-        agent, _ = make_scripted_agent([_text("done")])
-        return agent
-
-    monkeypatch.setattr(hl, "_build_headless_agent", _build)
-
-    hl.run_headless_task("do it")
-
-    assert order == ["init_tracing", "build_agent"]
-
-
-def test_the_run_opens_one_root_span_whose_thread_id_is_the_hand_back_session_id(
-    monkeypatch, mocker
-):
-    """ONE run id names both the Opik trace thread and the ``decode/<session-id>`` Session Branch."""
-    spans: list[dict] = []
-    real_root_span = hl.observability.root_span
-
-    def _root_span(name, *, thread_id=None, input=None, **kwargs):
-        spans.append({"name": name, "thread_id": thread_id, "input": input})
-        return real_root_span(name, thread_id=thread_id, input=input, **kwargs)
-
-    monkeypatch.setattr(hl.observability, "root_span", _root_span)
-    monkeypatch.setattr(hl.settings, "sandbox_mode", "docker")
-    monkeypatch.setattr(hl, "_prepare_headless_tool_scope", AsyncMock(return_value=Path.cwd()))
-    ship = mocker.patch("decode.sandbox.handback.ship_workspace")
-    _patch_agent(monkeypatch, [_text("done")])
-
-    hl.run_headless_task("trace me", repo="/some/repo")
-
-    assert len(spans) == 1
-    assert spans[0]["name"] == hl.RUN_SPAN_NAME
-    assert spans[0]["input"] == "trace me"
-    assert ship.call_args.kwargs["session_id"] == spans[0]["thread_id"]
-
-
 # --- sandbox executor reap ---------------------------------------------------------------------
 
 
@@ -527,7 +481,7 @@ def test_a_completed_run_writes_its_summary_after_the_hand_back(monkeypatch, moc
     assert summary["handback"] == {"branch": "decode/abc12345", "pushed": True}
     assert summary["requests"] == 1
     assert summary["input_tokens"] > 0
-    assert UUID(summary["session_id"])  # the run's session id — the Opik thread + branch id
+    assert UUID(summary["session_id"])  # the run's session id — the Session Branch id
 
 
 def test_the_summary_session_id_is_the_hand_back_session_id(monkeypatch, mocker, tmp_path):
@@ -612,21 +566,3 @@ def test_a_summary_write_failure_never_changes_the_runs_outcome(monkeypatch, tmp
         assert hl.run_headless_task("do it", summary_json=blocked / "summary.json") == "done"
 
     assert caplog.records
-
-
-def test_the_root_span_carries_the_eval_join_metadata(monkeypatch, mocker):
-    """ADR-0022 §10: git_sha / model / sandbox_mode / decode_env ride on the run's root span."""
-    captured: dict[str, object] = {}
-
-    def _root_span(name, **kwargs):
-        captured.update(kwargs)
-        return contextlib.nullcontext()
-
-    monkeypatch.setattr(hl.observability, "root_span", _root_span)
-    _patch_agent(monkeypatch, [_text("done")])
-
-    hl.run_headless_task("do it", model="gemini-2.5-pro")
-
-    metadata = captured["metadata"]
-    assert set(metadata) >= {"git_sha", "model", "sandbox_mode", "decode_env"}
-    assert metadata["model"] == "gemini-2.5-pro"

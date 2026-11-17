@@ -22,6 +22,8 @@ Removed
   APICookbook's own eval is backend/agent_eval.py.
 - 2026-11-17: the Modal sandbox backend (src/decode/sandbox/modal_backend.py, SANDBOX_MODE=modal);
   modal. The Modal LLM provider stays selectable.
+- 2026-11-17: Opik tracing (src/decode/observability/tracing.py and metadata.py, the OPIK_* settings);
+  logfire. The run cost calculation (observability/cost.py) stays.
 - Course material not copied: assets/, tasks/, index.html, running_the_code/, .decode/skills/,
   importers/, evaluators/, scripts/, Makefile, uv.lock (regenerated).
 
