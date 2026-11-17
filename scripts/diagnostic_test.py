@@ -236,7 +236,6 @@ async def check_file_structure():
         "backend/main.py",
         "backend/config.py",
         "backend/knowledge_base.py",
-        "backend/response_generator.py",
         "backend/apiweaver.py",
         "frontend/index.html",
         ".env"

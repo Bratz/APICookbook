@@ -279,34 +279,6 @@ class SimpleKnowledgeBase:
         
         return spec
 
-class SimpleResponseGenerator:
-    """Minimal response generator for fallback"""
-    def __init__(self, kb):
-        self.kb = kb
-        self.default_responses = {
-            "authentication": "Use headers: entity=GPRDTTSTOU, userId=1, languageCode=1",
-            "endpoints": "Available endpoints: GetAccountBalance, GetCustomerDetails",
-            "help": "I can help you with API endpoints, authentication, and code examples."
-        }
-    
-    async def generate_response(self, message, context=None):
-        """Generate a basic response"""
-        message_lower = message.lower()
-        
-        # Check for keyword matches
-        if "auth" in message_lower or "header" in message_lower:
-            response = self.default_responses["authentication"]
-        elif "endpoint" in message_lower or "api" in message_lower:
-            response = self.default_responses["endpoints"]
-        else:
-            response = self.default_responses["help"]
-        
-        return {
-            "response": response,
-            "code_examples": [],
-            "metadata": {"fallback_mode": True}
-        }
-
 class SimpleAPIWeaver:
     """Minimal API weaver for fallback"""
     def __init__(self):
@@ -333,7 +305,6 @@ def check_required_components():
     components = {
         'config': False,
         'knowledge_base': False,
-        'response_generator': False,
         'apiweaver': False,
         'models': False
     }
@@ -395,15 +366,6 @@ def check_required_components():
         logger.warning("Could not import knowledge_base, using fallback")
         imports['UnifiedAPIKnowledgeBase'] = SimpleKnowledgeBase
     
-    # Check response generator
-    try:
-        from backend.response_generator import UnifiedResponseGenerator
-        components['response_generator'] = True
-        imports['UnifiedResponseGenerator'] = UnifiedResponseGenerator
-    except ImportError:
-        logger.warning("Could not import response_generator, using fallback")
-        imports['UnifiedResponseGenerator'] = SimpleResponseGenerator
-    
     # Check APIWeaver
     try:
         from backend.apiweaver import BaNCSAPIWeaver
@@ -427,7 +389,6 @@ ChatMessage = imports['ChatMessage']
 ChatResponse = imports['ChatResponse']
 CookbookRecipe = imports['CookbookRecipe']
 UnifiedAPIKnowledgeBase = imports['UnifiedAPIKnowledgeBase']
-UnifiedResponseGenerator = imports['UnifiedResponseGenerator']
 BaNCSAPIWeaver = imports['BaNCSAPIWeaver']
 
 # The MCP endpoint (decided 2026-11-09): APIWeaver's four tools over streamable HTTP at /api/mcp/, for any
@@ -519,7 +480,6 @@ async def lifespan(app: FastAPI):
     
     # Initialize with defaults even if components fail
     app.state.kb = None
-    app.state.response_generator = None
     app.state.apiweaver = None
     app.state.playground_sessions = {}
     app.state.is_fallback_mode = False
@@ -559,14 +519,6 @@ async def lifespan(app: FastAPI):
             logger.info("RAG is disabled in configuration")
         # ============= END RAG ENGINE SECTION =============
 
-        # Initialize response generator
-        try:
-            app.state.response_generator = UnifiedResponseGenerator(app.state.kb)
-            logger.info("Response generator initialized successfully")
-        except Exception as e:
-            logger.warning(f"Failed to initialize response generator: {e}, using fallback")
-            app.state.response_generator = SimpleResponseGenerator(app.state.kb)
-
         # MCP: the weaver was built at import (it is mounted at /api/mcp); register the APIs it loaded.
         app.state.apiweaver = MCP_WEAVER
         if hasattr(MCP_WEAVER, 'process_pending_registrations'):
@@ -582,12 +534,6 @@ async def lifespan(app: FastAPI):
         logger.error(f"Critical error during initialization: {e}", exc_info=True)
         # Continue with degraded functionality rather than failing
         app.state.is_fallback_mode = True
-        
-        # Ensure we have at least fallback components
-        if app.state.response_generator is None:
-            app.state.response_generator = SimpleResponseGenerator(
-                app.state.kb if app.state.kb else SimpleKnowledgeBase()
-            )
     
     # Build & run's BaNCS proxy (docs/decode-fork-plan.md, F2a): a second server in this process, so it
     # shares the knowledge base and the approvals the /api/build routes record. Off unless a port is set.
@@ -805,7 +751,6 @@ async def health_check():
             ),
             "hoppscotch": "enabled" if settings.hoppscotch_enabled else "disabled",
             "knowledge_base": "fallback" if isinstance(app.state.kb, SimpleKnowledgeBase) else "running",
-            "response_generator": "fallback" if isinstance(app.state.response_generator, SimpleResponseGenerator) else "running",
             "rag": "enabled" if app.state.rag_engine else "disabled"
         },
         "components": components_loaded,
