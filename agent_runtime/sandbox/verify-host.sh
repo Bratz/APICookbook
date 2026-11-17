@@ -53,6 +53,19 @@ if docker run --rm --runtime runsc --cap-drop ALL --read-only --user "$RUN_UID" 
 else
   echo "FAIL  a baked-in Python package does not import"; failures=$((failures + 1))
 fi
+# The agent's Language Server runs in the worker: it must find a type error and resolve a baked-in package
+# under the hardened flags (read-only root, HOME on the small /tmp).
+if docker run --rm --runtime runsc --cap-drop ALL --read-only --tmpfs /tmp:rw,nosuid,size=256m -e HOME=/tmp \
+     --user "$RUN_UID" -v "$ws:/workspace" -w /workspace decode-session:latest bash -c '
+       printf "import requests\nx: int = \"a\"\n" > lsp_probe.py
+       out=$(ty check lsp_probe.py 2>&1); rc=$?
+       rm -f lsp_probe.py
+       [ "$rc" -ne 0 ] && ! grep -q "unresolved-import" <<<"$out"
+     ' >/dev/null 2>&1; then
+  echo "PASS  worker's language server (ty) finds a type error and resolves the baked-in packages"
+else
+  echo "FAIL  worker's language server (ty) does not work in a hardened worker"; failures=$((failures + 1))
+fi
 # A run that starts a server must be able to stop it: by its saved PID (what the prompt teaches), and
 # procps is there for ps and pkill. Not `pkill -f <text>`: that also matches the shell running the command.
 if docker run --rm --runtime runsc --cap-drop ALL --read-only --user "$RUN_UID" -v "$ws:/workspace" -w /workspace \

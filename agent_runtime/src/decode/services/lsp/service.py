@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import anyio
 
@@ -34,11 +34,29 @@ _BROKEN = _Broken()
 _CLIENTS: dict[Path, LspClient | _Broken] = {}
 
 
+# The Workspace as the worker container sees it (``docker_backend._WORKSPACE``).
+_CONTAINER_ROOT = PurePosixPath("/workspace")
+
+
+def _server_root() -> PurePosixPath | None:
+    """Where the server sees the project root: the container's Workspace in docker mode, else None.
+
+    APICookbook fork: in docker mode the code's packages are in the worker image, not on the host,
+    so a host server would report every import as unresolved. The server runs in the worker.
+    """
+    return _CONTAINER_ROOT if settings.sandbox_mode == "docker" else None
+
+
 async def _spawn_process(root: Path) -> asyncio.subprocess.Process:
     """The patchable spawn seam: launch the configured stdio Language Server under ``root``.
 
     The single real-subprocess boundary — unit tests patch this to inject a fake process.
     """
+    if _server_root() is not None:
+        from decode.tools.bash import active_executor  # lazy: tools.files imports this package
+
+        backend = await active_executor().file_backend(root)  # type: ignore[attr-defined]
+        return await backend.spawn(settings.lsp_server_command, *settings.lsp_server_args)
     return await asyncio.create_subprocess_exec(
         settings.lsp_server_command,
         *settings.lsp_server_args,
@@ -77,7 +95,7 @@ async def _start_client(root: Path) -> LspClient | None:
     except Exception as exc:
         logger.warning("lsp: could not spawn %r in %s: %s", settings.lsp_server_command, root, exc)
         return None
-    client = LspClient(process, root)
+    client = LspClient(process, root, _server_root())
     try:
         await client.initialize()
     except Exception as exc:

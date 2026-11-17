@@ -16,7 +16,7 @@ import itertools
 import json
 import logging
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 from urllib.parse import unquote, urlparse
 
@@ -39,9 +39,12 @@ class LspClient:
     Not safe for concurrent requests on one instance — the service drives it one at a time.
     """
 
-    def __init__(self, process: Any, root: Path) -> None:
+    def __init__(self, process: Any, root: Path, uri_root: PurePosixPath | None = None) -> None:
         self._process = process
         self._root = root.resolve()
+        # Where the SERVER sees ``root``. Set when the server runs in the worker container, which
+        # mounts the Workspace at another path; ``None`` = the server shares this filesystem.
+        self._uri_root = uri_root
         self._ids = itertools.count(1)
         # Per-URI document version: first touch is a didOpen (v1), later touches are didChange (v2+).
         self._versions: dict[str, int] = {}
@@ -58,8 +61,9 @@ class LspClient:
         await self._request(
             "initialize",
             {
-                "processId": os.getpid(),
-                "rootUri": self._root.as_uri(),
+                # A server in a container cannot see this pid; null = "no parent to watch".
+                "processId": None if self._uri_root else os.getpid(),
+                "rootUri": (self._uri_root or self._root).as_uri(),
                 "clientInfo": {"name": "decode"},
                 "capabilities": {
                     "textDocument": {
@@ -79,7 +83,7 @@ class LspClient:
         """``textDocument/definition`` — the first target location, or ``None`` if undefined."""
         uri = await self._sync(path)
         result = await self._request("textDocument/definition", _position_params(uri, line, column))
-        locations = _parse_locations(result, self._root)
+        locations = _parse_locations(result, self._uri_root or self._root)
         return locations[0] if locations else None
 
     async def references(self, path: str, line: int, column: int) -> list[Location]:
@@ -88,7 +92,7 @@ class LspClient:
         params = _position_params(uri, line, column)
         params["context"] = {"includeDeclaration": True}
         result = await self._request("textDocument/references", params)
-        return _parse_locations(result, self._root)
+        return _parse_locations(result, self._uri_root or self._root)
 
     async def hover(self, path: str, line: int, column: int) -> str | None:
         """``textDocument/hover`` — the hover text, or ``None`` when the server offers none."""
@@ -107,7 +111,10 @@ class LspClient:
     async def _sync(self, path: str) -> str:
         """Push ``path``'s current on-disk content (didOpen, then didChange) and return its URI."""
         file_path = (self._root / path).resolve()
-        uri = file_path.as_uri()
+        if self._uri_root is None:
+            uri = file_path.as_uri()
+        else:
+            uri = (self._uri_root / file_path.relative_to(self._root).as_posix()).as_uri()
         text = file_path.read_text(encoding="utf-8")
         version = self._versions.get(uri, 0) + 1
         self._versions[uri] = version
@@ -229,7 +236,7 @@ def _position_params(uri: str, line: int, column: int) -> dict[str, Any]:
     }
 
 
-def _parse_locations(result: Any, root: Path) -> list[Location]:
+def _parse_locations(result: Any, root: Path | PurePosixPath) -> list[Location]:
     """Map an LSP ``Location`` / ``LocationLink`` (or array, or ``null``) into 1-based locations."""
     if result is None:
         return []
@@ -294,9 +301,9 @@ def _parse_diagnostics(result: Any) -> list[Diagnostic]:
     return diagnostics
 
 
-def _uri_to_path(uri: str, root: Path) -> str:
+def _uri_to_path(uri: str, root: Path | PurePosixPath) -> str:
     """Convert a ``file://`` URI to a path — relative to ``root`` when under it, absolute otherwise."""
-    path = Path(unquote(urlparse(uri).path))
+    path = type(root)(unquote(urlparse(uri).path))  # the server's kind of path, on any host OS
     try:
         return path.relative_to(root).as_posix()
     except ValueError:

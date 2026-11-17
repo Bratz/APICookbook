@@ -552,3 +552,26 @@ async def test_a_hardened_worker_skips_the_apt_install(mocker, monkeypatch, tmp_
     await DockerBackend().create(tmp_path)
 
     assert spawn.await_count == 1  # docker run only
+
+
+async def test_the_backend_spawns_with_docker_exec_and_piped_stdio(mocker):
+    backend = DockerBackend()  # the Language Server's process (the lsp tool) runs in the worker
+    with pytest.raises(RuntimeError):  # no container yet
+        await backend.spawn("ty", "server")
+    backend._container_id = "abc123"
+    spawn = mocker.patch.object(asyncio, "create_subprocess_exec", return_value="process")
+
+    assert await backend.spawn("ty", "server") == "process"
+
+    assert spawn.call_args.args == (
+        "docker",
+        "exec",
+        "-i",
+        "-w",
+        "/workspace",
+        "abc123",
+        "ty",
+        "server",
+    )
+    assert spawn.call_args.kwargs["stdin"] == asyncio.subprocess.PIPE
+    assert spawn.call_args.kwargs["stderr"] == asyncio.subprocess.DEVNULL  # nothing reads it

@@ -215,6 +215,28 @@ class DockerBackend:
         return ExecResult(_decode(stdout), _decode(stderr), exit_code, timed_out=False, note="")
 
     @staticmethod
+    async def spawn(self, *args: str) -> asyncio.subprocess.Process:
+        """Start a long-lived process in the session container with piped stdin/stdout.
+
+        ``docker exec -i``: for a stdio server (the Language Server), which must see the worker's
+        Python packages and so cannot run on the host. stderr is dropped: nothing reads it, and a
+        full pipe would block the server. ``ponytail:`` nobody stops it; it dies with the container.
+        """
+        if self._container_id is None:
+            raise RuntimeError("the docker sandbox container is not running")
+        return await asyncio.create_subprocess_exec(
+            "docker",
+            "exec",
+            "-i",
+            "-w",
+            _WORKSPACE,
+            self._container_id,
+            *args,
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+
     async def _terminate(
         proc: asyncio.subprocess.Process, comm: asyncio.Future[tuple[bytes, bytes]]
     ) -> tuple[bytes, bytes]:
