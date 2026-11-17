@@ -1,10 +1,10 @@
 """Unit tests for the executor selection seam (``decode.sandbox.select_executor``, ADR-0011 §1,4).
 
 ``select_executor(mode)`` is the single mapping ``SANDBOX_MODE`` → :class:`CommandExecutor` that
-``bash.py``'s ``_get_executor()`` calls on the ``docker`` / ``modal`` branch. These prove the mapping
+``bash.py``'s ``_get_executor()`` calls on the ``docker`` branch. These prove the mapping
 returns the right type per mode and — critically — that construction is **inert**: no container is
 started and no remote sandbox is created (the backend spins up lazily on the executor's first
-``run()``), so the seam is safe to build with no Docker daemon and no Modal credentials.
+``run()``), so the seam is safe to build with no Docker daemon.
 """
 
 from __future__ import annotations
@@ -33,16 +33,3 @@ def test_select_docker_returns_an_inert_sandbox_executor_over_a_docker_backend()
     # Inert construction: the keeper container spins up lazily on the first run() (ADR-0012 §2).
     assert executor._created is False
     assert executor._backend._container_id is None
-
-
-def test_select_modal_returns_an_inert_sandbox_executor_over_a_modal_backend():
-    from decode.sandbox.executor import SandboxExecutor
-    from decode.sandbox.modal_backend import ModalBackend
-
-    executor = select_executor("modal")
-
-    assert isinstance(executor, SandboxExecutor)
-    assert isinstance(executor._backend, ModalBackend)
-    # Inert construction: the remote sandbox is created (and modal imported) lazily on first run().
-    assert executor._created is False
-    assert executor._backend._sandbox is None

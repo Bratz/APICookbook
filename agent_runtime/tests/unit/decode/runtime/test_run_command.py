@@ -252,38 +252,25 @@ def test_a_remote_env_runs_the_task_like_local_does(monkeypatch, _provider_ok, e
 
 
 # The sandbox backend guard shares the `decode run` pre-flight (ADR-0011 §1). The probes are PATCHED
-# (no real docker daemon / modal creds); ``sandbox_mode`` is pinned ``none`` suite-wide (rootdir
+# (no real docker daemon); ``sandbox_mode`` is pinned ``none`` suite-wide (rootdir
 # conftest), overridden per test here.
 
 
-def test_run_sandbox_modal_missing_creds_is_a_friendly_line_no_agent(monkeypatch, _provider_ok):
-    monkeypatch.setattr(cli_mod.settings, "sandbox_mode", "modal")
-    monkeypatch.setattr(cli_mod, "_modal_credentials_present", lambda: False)
-    _no_runner_tripwire(monkeypatch)
-
-    result = CliRunner().invoke(cli, ["run", "list the files"])
-
-    assert result.exit_code != 0
-    assert "SANDBOX_MODE=modal" in result.stderr
-    assert "modal token set" in result.stderr
-    assert "Traceback" not in result.stderr
-
-
 def test_run_sandbox_none_default_runs_no_probe_and_runs_the_task(monkeypatch, _provider_ok):
-    calls = {"modal": 0}
+    calls = {"docker": 0}
 
-    def _modal() -> bool:
-        calls["modal"] += 1
+    def _docker() -> bool:
+        calls["docker"] += 1
         return False
 
-    monkeypatch.setattr(cli_mod, "_modal_credentials_present", _modal)
+    monkeypatch.setattr(cli_mod, "_docker_daemon_reachable", _docker)
     _recording_runner(monkeypatch, "the headless answer")
 
     result = CliRunner().invoke(cli, ["run", "summarize the module"])
 
     assert result.exit_code == 0
     assert "the headless answer" in result.stdout
-    assert calls == {"modal": 0}  # none mode probes nothing
+    assert calls == {"docker": 0}  # none mode probes nothing
 
 
 # --- the Workspace repo: threaded into the runner, guarded in none mode (ADR-0012 §3) ------------
@@ -298,8 +285,8 @@ def test_run_help_documents_the_repo_and_local_flags():
 
 
 def test_run_repo_and_local_threaded_into_the_runner(monkeypatch, _provider_ok):
-    monkeypatch.setattr(cli_mod.settings, "sandbox_mode", "modal")
-    monkeypatch.setattr(cli_mod, "_modal_credentials_present", lambda: True)
+    monkeypatch.setattr(cli_mod.settings, "sandbox_mode", "docker")
+    monkeypatch.setattr(cli_mod, "_docker_daemon_reachable", lambda: True)
     captured = _recording_runner(monkeypatch, "the sandbox answer")
 
     result = CliRunner().invoke(cli, ["run", "--repo", "/some/repo", "--local", "build it"])
@@ -311,9 +298,9 @@ def test_run_repo_and_local_threaded_into_the_runner(monkeypatch, _provider_ok):
 
 
 def test_run_repo_falls_back_to_sandbox_repo_setting(monkeypatch, _provider_ok):
-    monkeypatch.setattr(cli_mod.settings, "sandbox_mode", "modal")
+    monkeypatch.setattr(cli_mod.settings, "sandbox_mode", "docker")
     monkeypatch.setattr(cli_mod.settings, "sandbox_repo", "https://from.env/repo.git")
-    monkeypatch.setattr(cli_mod, "_modal_credentials_present", lambda: True)
+    monkeypatch.setattr(cli_mod, "_docker_daemon_reachable", lambda: True)
     captured = _recording_runner(monkeypatch, "answer")
 
     result = CliRunner().invoke(cli, ["run", "build it"])
@@ -329,7 +316,7 @@ def test_run_repo_in_none_mode_is_a_friendly_line_no_agent(monkeypatch, _provide
 
     assert result.exit_code != 0
     assert "--repo/SANDBOX_REPO" in result.stderr
-    assert "SANDBOX_MODE=modal" in result.stderr  # names the fix
+    assert "SANDBOX_MODE=docker" in result.stderr  # names the fix
     assert "Traceback" not in result.stderr
 
 

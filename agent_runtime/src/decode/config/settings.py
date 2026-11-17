@@ -247,10 +247,10 @@ class Settings(BaseSettings):
     # ``sandbox_mode`` selects the ``CommandExecutor`` for the whole process (chosen once at
     # startup); ``none`` (default) keeps the host ``LocalExecutor``, byte-unchanged. An unavailable
     # backend is a friendly startup / pre-flight error (presence, not correctness).
-    sandbox_mode: Literal["none", "docker", "modal"] = "none"
-    # The worker image (docker pulls it; modal maps it via ``Image.from_registry``). Must include
-    # ``bash``. The uv variant of python-slim means both sandboxes run python via ``uv`` out of the
-    # box (skill payloads say ``uv run …``). git is NOT in the slim base, so each backend adds it.
+    sandbox_mode: Literal["none", "docker"] = "none"
+    # The worker image docker pulls. Must include ``bash``. The uv variant of python-slim means the
+    # sandbox runs python via ``uv`` out of the box (skill payloads say ``uv run …``). git is NOT in
+    # the slim base, so the backend adds it.
     sandbox_image: str = "ghcr.io/astral-sh/uv:python3.12-bookworm-slim"
     # --- APICookbook fork (F1): the docker worker on the public sandbox host ---
     # The OCI runtime for the worker container: "runsc" (gVisor) on the sandbox host; empty keeps
@@ -297,22 +297,6 @@ class Settings(BaseSettings):
     # The repo cloned host-side into the Workspace at launch (URL or local path, ambient git creds);
     # empty → an empty Workspace. ``--repo`` overrides it; consumed only in a sandbox mode (ADR-0012 §3).
     sandbox_repo: str = ""
-    # Max lifetime (seconds) of a REMOTE (modal) sandbox before Modal reaps it; docker's session
-    # container has no lifetime cap (``sleep infinity``).
-    sandbox_timeout_s: float = Field(600.0, gt=0)
-
-    # --- Evals (ADR-0017) — the eval suite is NOT shipped in the wheel, but its judges + Opik
-    # project are read from this SAME Settings surface so the harness needs no config of its own. ---
-    # The provider the eval JUDGE runs on, independent of the agent's ``llm_provider``; empty (the
-    # default) follows it, so today's behaviour is unchanged. Judging a modal-served agent with a
-    # gemini judge — or the reverse — is one env var, not a code change (ADR-0022 §7).
-    eval_judge_provider: Literal["", "gemini", "openrouter", "modal"] = ""
-    # The LiteLLM model string G-Eval judges run on; empty derives it from the judge provider above
-    # (``eval_judge_provider`` or ``llm_provider``) — task 104.
-    eval_judge_model: str = ""
-    # The Opik project eval runs log under — kept distinct from the live-REPL project (ADR-0014) so
-    # eval traces never mix into ``decode-<env>``.
-    eval_project_name: str = "decode-evals"
 
     @model_validator(mode="after")
     def _scrub_placeholder_secrets(self) -> Settings:

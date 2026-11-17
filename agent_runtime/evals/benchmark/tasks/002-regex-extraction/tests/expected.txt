@@ -1,5 +1,0 @@
-alice@example.com
-billing@corp.net
-bob@work.io
-carol@example.com
-dave@example.com

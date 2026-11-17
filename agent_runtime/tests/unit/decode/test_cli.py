@@ -75,7 +75,7 @@ def test_importing_the_cli_does_not_import_a_sandbox_backend():
     """The default (``none``) REPL pulls in no sandbox backend module at all (ADR-0011 §4).
 
     The backends are imported **lazily**, only when ``SANDBOX_MODE`` selects one — so importing
-    ``decode.cli`` (the REPL path, ``none`` by default) must never pull docker/modal wiring in. A
+    ``decode.cli`` (the REPL path, ``none`` by default) must never pull docker wiring in. A
     fresh interpreter keeps the check honest regardless of the rest of the suite.
     """
 
@@ -83,7 +83,7 @@ def test_importing_the_cli_does_not_import_a_sandbox_backend():
         [
             sys.executable,
             "-c",
-            "import decode.cli, sys; assert 'decode.sandbox.modal_backend' not in sys.modules",
+            "import decode.cli, sys; assert 'decode.sandbox.docker_backend' not in sys.modules",
         ],
         capture_output=True,
         text=True,
@@ -247,88 +247,18 @@ def test_provider_config_error_modal_only_token_secret_is_both_or_neither(mocker
 # ``_sandbox_config_error()`` returns ONE friendly line (or ``None``) for the selected Sandbox Mode
 # when its backend is unavailable. Presence/reachability only, like the provider-key guards — a
 # present-but-wrong value is NOT rejected here. The probes are PATCHED: no real docker daemon is
-# contacted and no modal credentials/import/network are touched.
+# contacted.
 
 
 def test_sandbox_config_error_none_returns_none_and_runs_no_probe(mocker):
     mocker.patch.object(cli_mod.settings, "sandbox_mode", "none")
-    modal_probe = mocker.patch("decode.cli._modal_credentials_present")
+    docker_probe = mocker.patch("decode.cli._docker_daemon_reachable")
 
     assert cli_mod._sandbox_config_error() is None
-    modal_probe.assert_not_called()
-
-
-def test_sandbox_config_error_modal_missing_creds_returns_the_modal_line(mocker):
-    mocker.patch.object(cli_mod.settings, "sandbox_mode", "modal")
-    mocker.patch("decode.cli._modal_credentials_present", return_value=False)
-
-    msg = cli_mod._sandbox_config_error()
-
-    assert msg is not None
-    assert "SANDBOX_MODE=modal" in msg
-    assert "modal token set" in msg
-    assert ".env.example" in msg
-
-
-def test_sandbox_config_error_modal_present_creds_returns_none(mocker):
-    """Presence, not correctness: present-but-fake modal creds pass the guard (AC)."""
-    mocker.patch.object(cli_mod.settings, "sandbox_mode", "modal")
-    mocker.patch("decode.cli._modal_credentials_present", return_value=True)
-
-    assert cli_mod._sandbox_config_error() is None
+    docker_probe.assert_not_called()
 
 
 # task 071: the docker daemon-reachability probe (missing binary / non-zero / timeout)
-
-
-# task 071: the modal credential-presence probe (no network, no modal import)
-
-
-def test_modal_credentials_present_true_with_env_token_pair(monkeypatch, mocker, tmp_path):
-    """Both MODAL_TOKEN_ID + MODAL_TOKEN_SECRET in env → present (the modal CLI's own contract)."""
-    monkeypatch.setenv("MODAL_TOKEN_ID", "ak-1")
-    monkeypatch.setenv("MODAL_TOKEN_SECRET", "as-1")
-    mocker.patch("decode.cli.Path.home", return_value=tmp_path)  # ~/.modal.toml absent regardless
-
-    assert cli_mod._modal_credentials_present() is True
-
-
-def test_modal_credentials_present_true_with_modal_toml(monkeypatch, mocker, tmp_path):
-    monkeypatch.delenv("MODAL_TOKEN_ID", raising=False)
-    monkeypatch.delenv("MODAL_TOKEN_SECRET", raising=False)
-    (tmp_path / ".modal.toml").write_text("[default]\n")
-    mocker.patch("decode.cli.Path.home", return_value=tmp_path)
-
-    assert cli_mod._modal_credentials_present() is True
-
-
-def test_modal_credentials_present_inside_a_modal_container(monkeypatch, mocker, tmp_path):
-    """task 142 / ADR-0020 §3: a Modal container has neither the token pair nor ~/.modal.toml — it
-    carries an ambient identity, marked by modal's own MODAL_IS_REMOTE. Without this branch a
-    nested-sandbox run on the Modal Headless App is rejected by its own guard."""
-    monkeypatch.delenv("MODAL_TOKEN_ID", raising=False)
-    monkeypatch.delenv("MODAL_TOKEN_SECRET", raising=False)
-    monkeypatch.setenv("MODAL_IS_REMOTE", "1")
-    mocker.patch("decode.cli.Path.home", return_value=tmp_path)
-
-    assert cli_mod._modal_credentials_present() is True
-
-
-def test_modal_credentials_absent_with_no_env_and_no_toml(monkeypatch, mocker, tmp_path):
-    monkeypatch.delenv("MODAL_TOKEN_ID", raising=False)
-    monkeypatch.delenv("MODAL_TOKEN_SECRET", raising=False)
-    monkeypatch.delenv("MODAL_IS_REMOTE", raising=False)
-    mocker.patch("decode.cli.Path.home", return_value=tmp_path)  # empty tmp dir → no ~/.modal.toml
-
-    assert cli_mod._modal_credentials_present() is False
-
-
-def test_modal_credentials_absent_with_only_one_env_token(monkeypatch, mocker, tmp_path):
-    monkeypatch.setenv("MODAL_TOKEN_ID", "ak-1")
-    monkeypatch.delenv("MODAL_TOKEN_SECRET", raising=False)
-    mocker.patch("decode.cli.Path.home", return_value=tmp_path)
-
-    assert cli_mod._modal_credentials_present() is False
 
 
 # task 071: the sandbox guard in the REPL startup chain (friendly line, no traceback)
@@ -366,12 +296,12 @@ def test_sandbox_repo_config_error_repo_in_none_mode_returns_the_message(mocker)
 
     assert msg is not None
     assert "--repo/SANDBOX_REPO" in msg
-    assert "SANDBOX_MODE=modal" in msg
+    assert "SANDBOX_MODE=docker" in msg
     assert ".env.example" in msg
 
 
 def test_sandbox_repo_config_error_repo_in_a_sandbox_mode_returns_none(mocker):
-    mocker.patch.object(cli_mod.settings, "sandbox_mode", "modal")
+    mocker.patch.object(cli_mod.settings, "sandbox_mode", "docker")
 
     assert cli_mod._sandbox_repo_config_error("/some/repo") is None
 

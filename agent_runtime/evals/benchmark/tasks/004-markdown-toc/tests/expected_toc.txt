@@ -1,5 +1,0 @@
-- [Introduction](#introduction)
-- [Setup](#setup)
-  - [Prerequisites](#prerequisites)
-  - [Installation](#installation)
-- [Usage](#usage)

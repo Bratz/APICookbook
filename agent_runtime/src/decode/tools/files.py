@@ -642,13 +642,10 @@ def _enrich(base: str, cwd: Path, path: str) -> str:
     ``base`` (the exact ``Wrote …`` / ``Edited …`` string) is returned **unchanged** unless the
     just-written file has LSP *errors* (severity ``1``), in which case the block is appended as
     ``f"{base}\\n\\n{summary}"``. Best-effort and silent — it **swallows every exception**, so it
-    can never change or break the write/edit return; no extra permission gate. In ``modal`` it is
-    best-effort-disabled: host ``ty`` cannot reach the remote Workspace filesystem (ADR-0012 §7);
-    ``none`` + ``docker`` run it against a real host path.
+    can never change or break the write/edit return; no extra permission gate. ``none`` + ``docker``
+    both run it against a real host path (ADR-0012 §7).
     """
     if not (settings.lsp_enabled and settings.lsp_diagnostics_on_edit):
-        return base
-    if settings.sandbox_mode == "modal":
         return base
     if not path.lower().endswith(".py"):
         return base

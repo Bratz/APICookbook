@@ -445,7 +445,6 @@ def test_git_runs_host_side_never_through_the_sandbox_seam(mocker, tmp_path):
         "SandboxExecutor",
         "SandboxBackend",
         "DockerBackend",
-        "ModalBackend",
         "select_executor",
         "active_backend",
     ):

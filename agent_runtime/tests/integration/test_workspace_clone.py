@@ -2,8 +2,8 @@
 
 Task 082's living proof that a user-supplied repo, cloned host-side into ``.decode/sandbox`` by
 :func:`decode.sandbox.workspace.prepare_workspace`, is the isolated ``/workspace`` a sandbox's ``bash``
-and file tools operate on. Two ``skipif``-guarded real-infra smokes (docker + modal), using the SAME
-predicates as the executors' own integration tests, plus a host-side check that the clone is a real repo
+and file tools operate on. A ``skipif``-guarded real-infra docker smoke, using the SAME
+predicate as the executor's own integration tests, plus a host-side check that the clone is a real repo
 with a recoverable origin (the substrate task 083's git hand-back ships from).
 
 Hermetic ``--repo`` source: a throwaway **local** git repo under ``tmp_path`` — no network, no remote.
@@ -14,7 +14,6 @@ keeper alone).
 
 from __future__ import annotations
 
-import os
 import subprocess
 import time
 from pathlib import Path
@@ -23,11 +22,7 @@ import pytest
 
 from decode.sandbox.docker_backend import DockerBackend
 from decode.sandbox.executor import SandboxExecutor
-from decode.sandbox.modal_backend import ModalBackend
 from decode.sandbox.workspace import prepare_workspace
-
-# A real remote-sandbox cold start (image pull + spawn + upload) can take a while.
-_MODAL_TIMEOUT_S = 120.0
 
 
 def _docker_available() -> bool:
@@ -39,15 +34,7 @@ def _docker_available() -> bool:
     return result.returncode == 0
 
 
-def _modal_credentials_present() -> bool:
-    """True if modal account credentials are present (else the modal smoke SKIPS) — presence only."""
-    if os.environ.get("MODAL_TOKEN_ID") and os.environ.get("MODAL_TOKEN_SECRET"):
-        return True
-    return (Path.home() / ".modal.toml").exists()
-
-
 _DOCKER_AVAILABLE = _docker_available()
-_MODAL_AVAILABLE = _modal_credentials_present()
 
 
 def _git(cwd: Path, *args: str) -> None:
@@ -145,30 +132,3 @@ async def test_real_docker_repo_clone_is_visible_in_workspace(tmp_path: Path) ->
         assert _container_gone(container_id), "aclose must stop + remove the session container"
     finally:
         await executor.aclose()  # idempotent safety net — no leaked keeper
-
-
-@pytest.mark.skipif(not _MODAL_AVAILABLE, reason="modal account credentials are not present")
-async def test_real_modal_repo_clone_is_uploaded_into_workspace(tmp_path: Path) -> None:
-    """modal: a ``--repo`` clone is bootstrap-uploaded into the remote ``/workspace`` — else SKIP (§3,5).
-
-    Clone a local repo host-side, start a real remote sandbox (which bootstrap-uploads the cloned
-    Workspace), and prove ``bash`` sees the cloned file remotely. Reaps the remote sandbox in a
-    ``finally`` (``aclose`` = export + terminate) and asserts it was cleared (no leaked remote sandbox).
-    """
-    source = _make_local_git_repo(tmp_path / "source")
-    workspace = prepare_workspace(tmp_path, repo=str(source))
-    executor = SandboxExecutor(ModalBackend())
-    try:
-        await executor.start(workspace)  # spawn + bootstrap-upload the cloned Workspace
-        seen = await executor.run(
-            "cat /workspace/README.md", cwd=workspace, timeout_s=_MODAL_TIMEOUT_S
-        )
-        assert seen.stdout.strip() == "cloned-into-workspace"
-        # The file backend reads the same cloned file back directly (no mirror).
-        assert (
-            await executor._backend.read_bytes("README.md")
-        ).decode() == "cloned-into-workspace\n"
-    finally:
-        await executor.aclose()  # export + terminate the remote sandbox (no leak)
-
-    assert executor._backend._sandbox is None  # aclose cleared it — a later run creates a fresh one

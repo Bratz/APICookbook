@@ -1,7 +1,7 @@
 """Unit tests for the active ``lsp`` Code Intelligence tool (``decode.tools.lsp``) — ADR-0007.
 
 Covers the four-op surface (definition/references/hover/diagnostics), 1-based rendering, the
-sandbox postures (docker operates on the workspace, modal is disabled), and error mapping:
+sandbox postures (docker operates on the workspace), and error mapping:
 ``UNAVAILABLE`` ("no answer at all") → ``ModelRetry``, while ``None``/empty ("answered, found
 nothing") → the plain "no X" string, not a retry. No real ``ty``: the four async ops on the
 ``decode.services.lsp`` seam are patched; one run through a real agent proves auto-allow.
@@ -100,26 +100,12 @@ async def test_lsp_requires_approval_when_not_approved(tmp_path: Path, mocker):
     sentinel.assert_not_called()
 
 
-# sandbox postures: none+docker operate on the workspace, modal is disabled
+# the workspace path: lsp runs against ``deps.cwd``
 
 
-async def test_lsp_disabled_in_the_modal_sandbox_with_a_friendly_note(tmp_path: Path, mocker):
-    # modal: ty is host-side and cannot reach the remote Workspace fs, so lsp is best-effort-disabled
-    # with a friendly ModelRetry — BEFORE the service is reached (deps.cwd is the empty host workspace).
-    mocker.patch.object(lsp_module.settings, "sandbox_mode", "modal")
-    sentinel = mocker.Mock(side_effect=AssertionError("must not reach the service in modal"))
-    mocker.patch.object(lsp_service, "definition", sentinel)
-    path = _source_file(tmp_path)
-
-    with pytest.raises(ModelRetry, match="modal sandbox"):
-        await lsp_module.lsp(_ctx(tmp_path), op="definition", path=path, line=1, column=1)
-    sentinel.assert_not_called()
-
-
-async def test_lsp_operates_on_the_workspace_path_in_docker(tmp_path: Path, mocker):
-    # docker: the Workspace is a real host bind mount, so ty runs against ``deps.cwd`` normally — the mode
-    # is NOT short-circuited; the op reaches the service pointed at the workspace path (ADR-0012 §7).
-    mocker.patch.object(lsp_module.settings, "sandbox_mode", "docker")
+async def test_lsp_operates_on_the_workspace_path(tmp_path: Path, mocker):
+    # The Workspace is a real host path in every mode (docker = a bind mount), so ty runs against
+    # ``deps.cwd``: the op reaches the service pointed at the workspace path (ADR-0012 §7).
     path = _source_file(tmp_path)
     captured: dict[str, object] = {}
 

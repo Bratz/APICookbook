@@ -2,9 +2,9 @@
 
 Covers lazy ``_get_executor()`` selection + memoization, ``reset``/``close``/``warm``/``export``
 lifecycle hooks, the ``active_backend`` file-tool seam, ``bash_description()`` + registry
-``prepare`` composition (none byte-identical; docker == modal), end-to-end routing through the
+``prepare`` composition (none byte-identical; docker adds one paragraph), end-to-end routing through the
 selected executor, and import-laziness (no sandbox/kitaru/modal modules leak). Hermetic: the
-sandbox executors are faked at the ``select_executor`` seam — no Docker daemon, no Modal creds.
+sandbox executors are faked at the ``select_executor`` seam — no Docker daemon.
 """
 
 from __future__ import annotations
@@ -126,20 +126,6 @@ def test_get_executor_docker_returns_a_real_sandbox_executor(monkeypatch):
     bash_mod.reset_executor()
 
     assert isinstance(bash_mod._get_executor(), SandboxExecutor)
-
-
-def test_get_executor_modal_returns_a_real_sandbox_executor(monkeypatch):
-    # Through the REAL select_executor: modal mode yields a SandboxExecutor over a ModalBackend (inert —
-    # no creds needed; the remote sandbox + modal import are lazy on first run, ADR-0012 §2).
-    from decode.sandbox.executor import SandboxExecutor
-    from decode.sandbox.modal_backend import ModalBackend
-
-    monkeypatch.setattr(bash_mod.settings, "sandbox_mode", "modal")
-    bash_mod.reset_executor()
-
-    executor = bash_mod._get_executor()
-    assert isinstance(executor, SandboxExecutor)
-    assert isinstance(executor._backend, ModalBackend)
 
 
 def test_reset_executor_rearms_selection(monkeypatch):
@@ -358,18 +344,6 @@ def test_bash_description_docker_appends_the_unified_sandbox_paragraph(monkeypat
     assert "separate streams" in out  # stdout/stderr kept split
 
 
-def test_bash_description_modal_appends_the_same_unified_paragraph(monkeypatch):
-    """ADR-0012 §2: modal gets the SAME unified paragraph as docker (one fresh-exec shape)."""
-    monkeypatch.setattr(bash_mod.settings, "sandbox_mode", "modal")
-    modal_out = bash_mod.bash_description("BASE")
-
-    monkeypatch.setattr(bash_mod.settings, "sandbox_mode", "docker")
-    docker_out = bash_mod.bash_description("BASE")
-
-    # The whole point of the task: docker == modal == base + the ONE unified paragraph.
-    assert modal_out == docker_out == f"BASE\n\n{bash_mod._SANDBOX_DESCRIPTION_SUFFIX}"
-
-
 # registry prepare
 
 
@@ -463,15 +437,6 @@ async def test_agent_bash_description_docker_is_none_plus_the_paragraph(monkeypa
     assert docker_desc == f"{none_desc}\n\n{bash_mod._SANDBOX_DESCRIPTION_SUFFIX}"
 
 
-async def test_agent_bash_description_modal_equals_docker(monkeypatch, tmp_path):
-    """ADR-0012 §2: the description the model sees is IDENTICAL for docker and modal (one paragraph)."""
-    none_desc = await _bash_description_via_agent("none", monkeypatch, tmp_path)
-    docker_desc = await _bash_description_via_agent("docker", monkeypatch, tmp_path)
-    modal_desc = await _bash_description_via_agent("modal", monkeypatch, tmp_path)
-
-    assert modal_desc == docker_desc == f"{none_desc}\n\n{bash_mod._SANDBOX_DESCRIPTION_SUFFIX}"
-
-
 # end to end: a bash call routes through the SELECTED executor
 
 
@@ -552,7 +517,7 @@ def _run_isolated(code: str, *, mode: str) -> subprocess.CompletedProcess[str]:
 
 
 def test_none_mode_agent_imports_no_sandbox_executor_module():
-    """Building + selecting on the ``none`` path pulls in NEITHER docker nor modal executor module."""
+    """Building + selecting on the ``none`` path pulls in no sandbox executor module."""
     code = (
         "import sys; "
         "import decode.tools.bash as b; "
@@ -560,8 +525,8 @@ def test_none_mode_agent_imports_no_sandbox_executor_module():
         "build_agent(); "
         "b._get_executor(); "  # selects the none-mode executor (must not import the sandbox pkg)
         "leaked = [m for m in "
-        "('decode.sandbox.docker_backend', 'decode.sandbox.executor', "
-        "'decode.sandbox.modal_backend') if m in sys.modules]; "
+        "('decode.sandbox.docker_backend', 'decode.sandbox.executor') "
+        "if m in sys.modules]; "
         "assert not leaked, leaked; "
         "print('OK')"
     )

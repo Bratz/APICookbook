@@ -18,6 +18,10 @@ Removed
 - Skills (src/decode/skills/, src/decode/tools/skills.py).
 - Learning memory on exit (src/decode/memory/extract.py).
 - The Modal headless app and the `decode remote` commands (src/decode/remote/).
+- 2026-11-17: the eval harness (evals/, tests/unit/evals/, the eval test helpers); opik and litellm.
+  APICookbook's own eval is backend/agent_eval.py.
+- 2026-11-17: the Modal sandbox backend (src/decode/sandbox/modal_backend.py, SANDBOX_MODE=modal);
+  modal. The Modal LLM provider stays selectable.
 - Course material not copied: assets/, tasks/, index.html, running_the_code/, .decode/skills/,
   importers/, evaluators/, scripts/, Makefile, uv.lock (regenerated).
 

@@ -807,21 +807,9 @@ def test_lsp_diagnostics_on_edit_disabled_never_invokes_enricher_seam(tmp_path: 
     seam.assert_not_called()  # feature setting off → the enricher short-circuits before the seam
 
 
-def test_enricher_disabled_in_the_modal_sandbox(tmp_path: Path, mocker):
-    # ADR-0012 §7: in modal, ty is host-side and cannot reach the remote Workspace fs, so the enricher is
-    # best-effort-disabled — it short-circuits before the seam and returns the write result unchanged.
-    mocker.patch.object(files.settings, "sandbox_mode", "modal")
-    seam = mocker.patch.object(lsp_service, "diagnostics_on_edit")
-
-    out = files._enrich("Wrote 'calc.py' (8 characters).", tmp_path, "calc.py")
-
-    assert out == "Wrote 'calc.py' (8 characters)."
-    seam.assert_not_called()  # modal → the enricher never reaches the ty seam
-
-
 def test_enricher_runs_in_the_docker_sandbox(tmp_path: Path, mocker):
     # ADR-0012 §7: docker's Workspace is a real host bind mount, so ty runs against it — the enricher is
-    # NOT disabled (unlike modal); the seam is reached and its errors are appended.
+    # NOT disabled; the seam is reached and its errors are appended.
     mocker.patch.object(files.settings, "sandbox_mode", "docker")
     mocker.patch.object(lsp_service, "diagnostics_on_edit", return_value=[_diag()])
 

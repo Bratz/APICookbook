@@ -11,7 +11,6 @@ from decode.logging import init_logger
 init_logger()
 
 import logging  # noqa: E402
-import os  # noqa: E402
 import subprocess  # noqa: E402
 from pathlib import Path  # noqa: E402
 
@@ -49,17 +48,11 @@ _SANDBOX_DOCKER_UNREACHABLE_MESSAGE = (
     "(see .env.example)."
 )
 
-# Modal credential presence guard — no network call, no ``modal`` import (ADR-0011 §1).
-_SANDBOX_MODAL_NO_CREDENTIALS_MESSAGE = (
-    "Decode: SANDBOX_MODE=modal but Modal credentials are missing — run `modal token set …` "
-    "(see .env.example)."
-)
-
 # A --repo/SANDBOX_REPO with SANDBOX_MODE=none is a config error — the isolated Workspace only
 # exists in a sandbox mode (ADR-0012 §3).
 _SANDBOX_REPO_NONE_MODE_MESSAGE = (
     "Decode: --repo/SANDBOX_REPO clones a repo into the isolated sandbox Workspace, which only exists "
-    "in a sandbox mode — set SANDBOX_MODE=docker or SANDBOX_MODE=modal, or drop --repo/SANDBOX_REPO "
+    "in a sandbox mode — set SANDBOX_MODE=docker, or drop --repo/SANDBOX_REPO "
     "(see .env.example)."
 )
 
@@ -169,27 +162,6 @@ def _docker_daemon_reachable() -> bool:
     return result.returncode == 0
 
 
-def _modal_credentials_present() -> bool:
-    """True if Modal account credentials are present — no network call, no ``modal`` import (ADR-0011 §1).
-
-    Checks auth the way the modal CLI resolves it: the MODAL_TOKEN_ID/MODAL_TOKEN_SECRET env pair
-    (read from ``os.environ`` — they belong to the modal CLI, not decode config) or ``~/.modal.toml``.
-    Presence only — a bad token fails at the first sandbox call.
-
-    Third case, ADR-0020 §3: decode itself runs INSIDE a Modal container (the Modal Headless App),
-    where neither of those exists — the container authenticates with an
-    ambient identity, and ``modal`` marks that container with its own ``MODAL_IS_REMOTE`` (see
-    ``modal.config._is_remote``). Without this branch a nested-sandbox run is rejected by its own
-    guard on a machine that is, in fact, authenticated. Still env-presence-only, still no ``modal``
-    import (ADR-0011 §1).
-    """
-    if os.environ.get("MODAL_TOKEN_ID") and os.environ.get("MODAL_TOKEN_SECRET"):
-        return True
-    if os.environ.get("MODAL_IS_REMOTE") == "1":
-        return True
-    return (Path.home() / ".modal.toml").exists()
-
-
 def _sandbox_config_error() -> str | None:
     """One friendly line if the selected Sandbox Mode's backend is unavailable, else None (ADR-0011 §1).
 
@@ -200,10 +172,6 @@ def _sandbox_config_error() -> str | None:
     if mode == "docker":
         if not _docker_daemon_reachable():
             return _SANDBOX_DOCKER_UNREACHABLE_MESSAGE
-        return None
-    if mode == "modal":
-        if not _modal_credentials_present():
-            return _SANDBOX_MODAL_NO_CREDENTIALS_MESSAGE
         return None
     return None  # ``none``: no probe, byte-identical to the LocalExecutor path.
 
@@ -288,7 +256,7 @@ def cli(ctx: click.Context) -> None:
     default=None,
     metavar="URL-OR-PATH",
     help="Clone this repo (a URL or a local path) into the isolated sandbox Workspace; overrides "
-    "SANDBOX_REPO. Requires a sandbox mode (SANDBOX_MODE=docker|modal).",
+    "SANDBOX_REPO. Requires a sandbox mode (SANDBOX_MODE=docker).",
 )
 @click.option(
     "--local",

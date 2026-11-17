@@ -49,7 +49,6 @@ _RUNTIME_ENV_VARS = ("RUNTIME_ENABLED",)
 _SANDBOX_ENV_VARS = (
     "SANDBOX_MODE",
     "SANDBOX_IMAGE",
-    "SANDBOX_TIMEOUT_S",
 )
 
 # Subagent tuning vars (ADR-0013).
@@ -66,14 +65,6 @@ _OPIK_ENV_VARS = (
     "OPIK_PROJECT_NAME",
     "OPIK_URL_OVERRIDE",
 )
-
-# Evals vars (ADR-0017). The eval suite is not shipped in the wheel, but its judges + Opik project
-# read off this same Settings surface.
-_EVAL_ENV_VARS = (
-    "EVAL_JUDGE_MODEL",
-    "EVAL_PROJECT_NAME",
-)
-
 
 def test_defaults(monkeypatch):
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
@@ -468,28 +459,24 @@ def test_sandbox_defaults(monkeypatch):
     s = Settings(_env_file=None)
     assert s.sandbox_mode == "none"
     assert s.sandbox_image == "ghcr.io/astral-sh/uv:python3.12-bookworm-slim"
-    assert s.sandbox_timeout_s == 600.0
 
 
 def test_reads_sandbox_vars_from_process_env(monkeypatch):
-    monkeypatch.setenv("SANDBOX_MODE", "modal")
+    monkeypatch.setenv("SANDBOX_MODE", "docker")
     monkeypatch.setenv("SANDBOX_IMAGE", "python:3.13-slim")
-    monkeypatch.setenv("SANDBOX_TIMEOUT_S", "120.0")
     s = Settings(_env_file=None)
-    assert s.sandbox_mode == "modal"
+    assert s.sandbox_mode == "docker"
     assert s.sandbox_image == "python:3.13-slim"
-    assert s.sandbox_timeout_s == 120.0
 
 
 def test_loads_sandbox_vars_from_a_dotenv_file(tmp_path, monkeypatch):
     for var in _SANDBOX_ENV_VARS:
         monkeypatch.delenv(var, raising=False)
     env = tmp_path / ".env"
-    env.write_text("SANDBOX_MODE=modal\nSANDBOX_IMAGE=python:3.11-slim\nSANDBOX_TIMEOUT_S=300.0\n")
+    env.write_text("SANDBOX_MODE=docker\nSANDBOX_IMAGE=python:3.11-slim\n")
     s = Settings(_env_file=str(env))
-    assert s.sandbox_mode == "modal"
+    assert s.sandbox_mode == "docker"
     assert s.sandbox_image == "python:3.11-slim"
-    assert s.sandbox_timeout_s == 300.0
 
 
 def test_a_retired_credential_proxy_key_in_a_dotenv_is_ignored(tmp_path, monkeypatch):
@@ -502,19 +489,19 @@ def test_a_retired_credential_proxy_key_in_a_dotenv_is_ignored(tmp_path, monkeyp
         monkeypatch.delenv(var, raising=False)
     env = tmp_path / ".env"
     env.write_text(
-        "SANDBOX_MODE=modal\n"
+        "SANDBOX_MODE=docker\n"
         "SANDBOX_CREDENTIAL_PROXY_ENABLED=true\n"
         "SANDBOX_PROXY_IMAGE=mitmproxy/mitmproxy\n"
     )
 
     s = Settings(_env_file=str(env))
 
-    assert s.sandbox_mode == "modal"
+    assert s.sandbox_mode == "docker"
     assert not hasattr(s, "sandbox_credential_proxy_enabled")
     assert not hasattr(s, "sandbox_proxy_image")
 
 
-@pytest.mark.parametrize("mode", ["none", "docker", "modal"])
+@pytest.mark.parametrize("mode", ["none", "docker"])
 def test_sandbox_mode_accepts_each_valid_literal(monkeypatch, mode):
     monkeypatch.setenv("SANDBOX_MODE", mode)
     s = Settings(_env_file=None)
@@ -522,20 +509,10 @@ def test_sandbox_mode_accepts_each_valid_literal(monkeypatch, mode):
 
 
 def test_sandbox_mode_rejects_unknown_value(monkeypatch):
-    """A value outside {none, docker, modal} fails fast at load, not inside the seam (Literal)."""
+    """A value outside {none, docker} fails fast at load, not inside the seam (Literal)."""
     for var in _SANDBOX_ENV_VARS:
         monkeypatch.delenv(var, raising=False)
     monkeypatch.setenv("SANDBOX_MODE", "firecracker")
-    with pytest.raises(ValidationError):
-        Settings(_env_file=None)
-
-
-@pytest.mark.parametrize("bad", ["0", "-1.0"])
-def test_rejects_a_non_positive_sandbox_timeout(monkeypatch, bad):
-    """A sandbox timeout <= 0 fails fast at load, not deep in a remote sandbox (Field(gt=0))."""
-    for var in _SANDBOX_ENV_VARS:
-        monkeypatch.delenv(var, raising=False)
-    monkeypatch.setenv("SANDBOX_TIMEOUT_S", bad)
     with pytest.raises(ValidationError):
         Settings(_env_file=None)
 
@@ -664,34 +641,6 @@ def test_opik_api_key_not_in_repr():
 
 
 # Evals (ADR-0017)
-
-
-def test_eval_defaults(monkeypatch):
-    for var in _EVAL_ENV_VARS:
-        monkeypatch.delenv(var, raising=False)
-    s = Settings(_env_file=None)
-    # Empty judge model = derive from the active provider (task 104); the project keeps eval traces
-    # out of the live-REPL project (ADR-0014).
-    assert s.eval_judge_model == ""
-    assert s.eval_project_name == "decode-evals"
-
-
-def test_reads_eval_vars_from_process_env(monkeypatch):
-    monkeypatch.setenv("EVAL_JUDGE_MODEL", "gemini/gemini-2.5-flash")
-    monkeypatch.setenv("EVAL_PROJECT_NAME", "decode-evals-ci")
-    s = Settings(_env_file=None)
-    assert s.eval_judge_model == "gemini/gemini-2.5-flash"
-    assert s.eval_project_name == "decode-evals-ci"
-
-
-def test_loads_eval_vars_from_a_dotenv_file(tmp_path, monkeypatch):
-    for var in _EVAL_ENV_VARS:
-        monkeypatch.delenv(var, raising=False)
-    env = tmp_path / ".env"
-    env.write_text("EVAL_JUDGE_MODEL=openrouter/some-model\nEVAL_PROJECT_NAME=proj-evals\n")
-    s = Settings(_env_file=str(env))
-    assert s.eval_judge_model == "openrouter/some-model"
-    assert s.eval_project_name == "proj-evals"
 
 
 def test_copying_env_example_to_dotenv_does_not_activate_opik(monkeypatch):
