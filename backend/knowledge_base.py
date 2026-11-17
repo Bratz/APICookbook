@@ -9,7 +9,7 @@ import yaml
 from typing import Dict, List, Optional, Any, Tuple
 from pathlib import Path
 import httpx
-from fuzzywuzzy import fuzz, process
+from difflib import SequenceMatcher
 import logging
 import re
 
@@ -386,15 +386,15 @@ class UnifiedAPIKnowledgeBase:
         if not query:
             return []
         
-        results = process.extract(
-            query,
-            self.endpoints.keys(),
-            scorer=fuzz.token_sort_ratio,
-            limit=5
-        )
-        
-        return [(name, score) for name, score in results if score > settings.search_threshold]
-    
+        # Word order does not matter: compare the sorted words (what fuzzywuzzy's token_sort_ratio did).
+        def key(words: str) -> str:
+            return " ".join(sorted(words.lower().split()))
+
+        wanted = key(query)
+        scored = [(name, round(100 * SequenceMatcher(None, wanted, key(name)).ratio())) for name in self.endpoints]
+        scored.sort(key=lambda pair: -pair[1])
+        return [(name, score) for name, score in scored[:5] if score > settings.search_threshold]
+
     def get_endpoint_by_mcp_name(self, mcp_name: str) -> Optional[Dict[str, Any]]:
         """Get endpoint by MCP tool name"""
         for endpoint in self.endpoints.values():

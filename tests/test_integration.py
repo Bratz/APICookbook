@@ -65,31 +65,6 @@ def test_knowledge_search_requires_query(client):
     assert client.post("/api/knowledge/search", json={}).status_code == 400
 
 
-def test_knowledge_add_and_delete(client, monkeypatch):
-    monkeypatch.setenv("RUNNER_TOKEN", "op-token-0123456789abcdef0123456789abcdef")
-    op = {"Authorization": "Bearer op-token-0123456789abcdef0123456789abcdef"}
-    body = {"endpoint_name": "PytestEP", "data": {"method": "GET", "url": "/pytest", "description": "tmp"}}
-    assert client.post("/api/knowledge/add", json=body, headers=op).status_code == 200
-    assert any(e["name"] == "PytestEP" for e in client.get("/api/endpoints").json())
-    assert client.delete("/api/knowledge/PytestEP", headers=op).status_code == 200
-    assert client.delete("/api/knowledge/PytestEP", headers=op).status_code == 404
-
-
-SHARED_STATE_ROUTES = [("POST", "/api/knowledge/add"), ("DELETE", "/api/knowledge/GetAccountBalance"),
-                       ("POST", "/api/developer/reload-knowledge"), ("POST", "/api/developer/test-endpoint?endpoint_name=GetAccountBalance"),
-                       ("POST", "/api/hoppscotch/import")]
-
-
-@pytest.mark.parametrize("token", ["", "op-token-0123456789abcdef0123456789abcdef"])
-def test_routes_that_change_shared_state_are_operator_only(client, monkeypatch, token):
-    # No token configured (""): even a bare "Bearer " must not pass. Token configured: a wrong one must not.
-    monkeypatch.setenv("RUNNER_TOKEN", token)
-    for method, path in SHARED_STATE_ROUTES:
-        for auth in ({}, {"Authorization": "Bearer "}, {"Authorization": "Bearer wrong"}):
-            assert client.request(method, path, headers=auth).status_code == 403, (method, path, auth)
-    assert any(e["name"] == "GetAccountBalance" for e in client.get("/api/endpoints").json())
-
-
 def test_semantic_search_finds_by_meaning(client):
     if not app.state.rag_engine:
         pytest.skip("RAG_ENABLED is off or sentence-transformers is not installed")
@@ -263,11 +238,6 @@ def test_playground_validation(client):
     assert client.post("/api/playground/execute", json={"type": "api", "url": ""}).status_code == 422
 
 
-def test_dev_logs_require_debug(client):
-    expected = 200 if settings.debug else 403
-    assert client.get("/api/developer/logs").status_code == expected
-
-
 def test_cors_rejects_foreign_origin(client):
     r = client.options("/api/chat", headers={"Origin": "https://evil.example.com",
                                              "Access-Control-Request-Method": "POST"})
@@ -286,7 +256,10 @@ def test_chat_code_example_uses_core_base_path_and_schema_fields(client):
 
 @pytest.mark.parametrize("path", ["/api/cookbook", "/api/knowledge/endpoints", "/api/knowledge/search/balance",
                                   "/api/hoppscotch/collections", "/api/playground/history",
-                                  "/api/developer/bert-status", "/api/bert-chat/intents"])
+                                  "/api/developer/bert-status", "/api/bert-chat/intents",
+                                  "/api/knowledge/add", "/api/hoppscotch/import",
+                                  "/api/developer/reload-knowledge", "/api/developer/logs",
+                                  "/api/developer/test-endpoint"])
 def test_removed_routes_stay_gone(client, path):
     assert client.get(path).status_code in (404, 405)
 

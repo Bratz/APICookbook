@@ -3,16 +3,15 @@ TCS BaNCS API Cookbook - Complete Main Application with Hoppscotch Integration
 Enhanced with improved error handling, validation, and fallback mechanisms
 """
 
-from fastapi import Depends, FastAPI, Header, HTTPException, UploadFile, File, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, HTMLResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 import asyncio
 import contextlib
 import logging
 import json
-import hmac
 import os
 import re
 import sys
@@ -23,8 +22,6 @@ from typing import Dict, Any, List, Optional, Union, TYPE_CHECKING
 from datetime import datetime, timezone
 from pydantic import BaseModel, Field, validator
 import httpx
-import yaml
-import traceback
 
 from dotenv import load_dotenv
 import os
@@ -618,14 +615,6 @@ async def mcp_rate_limit(request: Request, call_next):
     return await call_next(request)
 
 
-def operator_only(authorization: str = Header("")):
-    """Routes that change the shared knowledge base, or call the bank on the server's behalf: RUNNER_TOKEN only.
-    (Caddy also blocks the two knowledge-base writes; this covers every route, behind any proxy.)"""
-    token = os.getenv("RUNNER_TOKEN", "")
-    if len(token) < 32 or not hmac.compare_digest(authorization.encode(), f"Bearer {token}".encode()):
-        raise HTTPException(status_code=403, detail="Operator only.")
-
-
 class WriteDecision(BaseModel):
     approve: bool
 
@@ -924,80 +913,6 @@ async def search_knowledge(request: Request):
         return JSONResponse(
             status_code=500,
             content={"error": f"Knowledge search failed: {str(e)}"}
-        )
-
-@app.post("/api/knowledge/add", dependencies=[Depends(operator_only)])
-async def add_to_knowledge(request: Request):
-    """Add new information to the knowledge base"""
-    request_id = str(uuid.uuid4())[:8]
-    logger.info(f"[{request_id}] Add to knowledge base request")
-    
-    try:
-        data = await request.json()
-        endpoint_name = data.get('endpoint_name')
-        endpoint_data = data.get('data', {})
-        
-        if not endpoint_name:
-            return JSONResponse(
-                status_code=400,
-                content={"error": "endpoint_name is required"}
-            )
-        
-        # Add to knowledge base
-        if hasattr(app.state, 'kb') and app.state.kb:
-            app.state.kb.endpoints[endpoint_name] = endpoint_data
-            logger.info(f"[{request_id}] Added {endpoint_name} to knowledge base")
-            
-            return JSONResponse(content={
-                "status": "success",
-                "message": f"Added {endpoint_name} to knowledge base",
-                "endpoint": endpoint_name
-            })
-        else:
-            return JSONResponse(
-                status_code=503,
-                content={"error": "Knowledge base not available"}
-            )
-        
-    except Exception as e:
-        logger.error(f"[{request_id}] Add to knowledge error: {e}", exc_info=True)
-        return JSONResponse(
-            status_code=500,
-            content={"error": f"Failed to add to knowledge base: {str(e)}"}
-        )
-
-@app.delete("/api/knowledge/{endpoint_name}", dependencies=[Depends(operator_only)])
-async def remove_from_knowledge(endpoint_name: str):
-    """Remove an endpoint from the knowledge base"""
-    request_id = str(uuid.uuid4())[:8]
-    logger.info(f"[{request_id}] Remove from knowledge base: {endpoint_name}")
-    
-    try:
-        if hasattr(app.state, 'kb') and app.state.kb:
-            if endpoint_name in app.state.kb.endpoints:
-                del app.state.kb.endpoints[endpoint_name]
-                
-                logger.info(f"[{request_id}] Removed {endpoint_name} from knowledge base")
-                return JSONResponse(content={
-                    "status": "success",
-                    "message": f"Removed {endpoint_name} from knowledge base"
-                })
-            else:
-                return JSONResponse(
-                    status_code=404,
-                    content={"error": f"Endpoint {endpoint_name} not found"}
-                )
-        else:
-            return JSONResponse(
-                status_code=503,
-                content={"error": "Knowledge base not available"}
-            )
-            
-    except Exception as e:
-        logger.error(f"[{request_id}] Remove from knowledge error: {e}", exc_info=True)
-        return JSONResponse(
-            status_code=500,
-            content={"error": f"Failed to remove from knowledge base: {str(e)}"}
         )
 
 @app.post("/api/chat")
@@ -1600,172 +1515,6 @@ async def execute_playground_request(request: PlaygroundRequest, token: str = De
             "duration": int((time.time() - start_time) * 1000),
             "request_id": request_id
         }
-
-# ============= HOPPSCOTCH INTEGRATION ENDPOINTS =============
-@app.post("/api/hoppscotch/import", dependencies=[Depends(operator_only)])
-async def import_from_hoppscotch(file: UploadFile = File(...)):
-    """Import Hoppscotch collection and add to knowledge base"""
-    try:
-        content = await file.read()
-        data = json.loads(content)
-        
-        imported_count = 0
-        
-        # Process collection
-        if 'requests' in data:
-            for request in data['requests']:
-                endpoint_name = request.get('name', f"Endpoint_{imported_count}")
-                endpoint_data = {
-                    'method': request.get('method', 'GET'),
-                    'url': request.get('endpoint', '/'),
-                    'description': request.get('description', ''),
-                    'parameters': {},
-                    'category': 'imported'
-                }
-                
-                # Extract parameters from request
-                if 'params' in request:
-                    for param in request['params']:
-                        param_name = param.get('key')
-                        if param_name:
-                            endpoint_data['parameters'][param_name] = {
-                                'type': 'string',
-                                'required': param.get('active', False),
-                                'description': param.get('description', '')
-                            }
-                
-                # Add to knowledge base
-                if hasattr(app.state, 'kb') and app.state.kb:
-                    app.state.kb.endpoints[endpoint_name] = endpoint_data
-                    imported_count += 1
-        
-        return {
-            "success": True,
-            "imported": imported_count,
-            "message": f"Imported {imported_count} endpoints from Hoppscotch collection"
-        }
-        
-    except json.JSONDecodeError:
-        raise HTTPException(status_code=400, detail="Invalid JSON file")
-    except Exception as e:
-        logger.error(f"Hoppscotch import error: {e}")
-        raise HTTPException(status_code=500, detail="Failed to import collection")
-
-# ============= DEVELOPER TOOLS ENDPOINTS =============
-@app.post("/api/developer/reload-knowledge", dependencies=[Depends(operator_only)])
-async def reload_knowledge_base():
-    """Reload the knowledge base"""
-    try:
-        logger.info("Reloading knowledge base...")
-        
-        # Reload specifications
-        if hasattr(app.state, 'kb'):
-            await app.state.kb.load_specifications()
-            
-            logger.info("Knowledge base reloaded successfully")
-            
-            return {
-                "success": True,
-                "message": "Knowledge base reloaded",
-                "endpoints_count": len(app.state.kb.endpoints),
-            }
-        else:
-            return {
-                "success": False,
-                "message": "Knowledge base not available"
-            }
-            
-    except Exception as e:
-        logger.error(f"Failed to reload knowledge base: {e}")
-        return {
-            "success": False,
-            "error": str(e)
-        }
-
-@app.get("/api/developer/logs")
-async def get_recent_logs(level: str = "INFO", limit: int = 100):
-    """Get recent application logs (debug mode only - logs contain request data)"""
-    if not getattr(settings, 'debug', False):
-        raise HTTPException(status_code=403, detail="Log access is only available in debug mode")
-    try:
-        log_file = Path("logs/app.log")
-        
-        if not log_file.exists():
-            return {
-                "logs": [],
-                "message": "Log file not found"
-            }
-        
-        # Read last N lines from log file
-        lines = []
-        with open(log_file, 'r', encoding='utf-8', errors='replace') as f:
-            # Read file in reverse
-            lines = f.readlines()[-limit:]
-        
-        # Filter by level if specified
-        level_priority = {
-            "DEBUG": 0,
-            "INFO": 1,
-            "WARNING": 2,
-            "ERROR": 3,
-            "CRITICAL": 4
-        }
-        
-        min_priority = level_priority.get(level.upper(), 1)
-        
-        filtered_logs = []
-        for line in lines:
-            for log_level, priority in level_priority.items():
-                if log_level in line and priority >= min_priority:
-                    filtered_logs.append(line.strip())
-                    break
-        
-        return {
-            "logs": filtered_logs,
-            "total": len(filtered_logs),
-            "level": level
-        }
-        
-    except Exception as e:
-        logger.error(f"Failed to read logs: {e}")
-        return {
-            "logs": [],
-            "error": str(e)
-        }
-
-@app.post("/api/developer/test-endpoint", dependencies=[Depends(operator_only)])
-async def test_endpoint(endpoint_name: str, params: Optional[Dict[str, Any]] = None,
-                        token: str = Depends(build_proxy.visitor_token)):
-    """Test a specific endpoint with optional parameters"""
-    try:
-        if not hasattr(app.state, 'kb') or endpoint_name not in app.state.kb.endpoints:
-            raise HTTPException(status_code=404, detail=f"Endpoint '{endpoint_name}' not found")
-        
-        endpoint_data = app.state.kb.endpoints[endpoint_name]
-        
-        # Build test request
-        test_request = PlaygroundRequest(
-            type="api",
-            method=endpoint_data.get('method', 'GET'),
-            url=endpoint_data.get('url', '/'),
-            params=params,
-            use_auth=True
-        )
-        
-        # Execute test
-        result = await execute_playground_request(test_request, token)
-        
-        return {
-            "endpoint": endpoint_name,
-            "test_result": result,
-            "endpoint_data": endpoint_data
-        }
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Test endpoint error: {e}")
-        raise HTTPException(status_code=500, detail=f"Test failed: {str(e)}")
 
 # ============= ERROR HANDLERS =============
 @app.exception_handler(HTTPException)

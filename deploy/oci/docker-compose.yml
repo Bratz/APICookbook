@@ -31,7 +31,7 @@ services:
       - cookbook_data:/app/data
     environment:
       ENVIRONMENT: production
-      DEBUG: "false"  # keeps /api/developer/logs closed
+      DEBUG: "false"
       RAG_ENABLED: "true"
       BANCS_TOKEN_REQUIRED: "false"  # the demo bank checks no token; one a visitor sends is still carried. true on a bank that checks
       RAG_EMBEDDING_MODEL: BAAI/bge-small-en-v1.5
