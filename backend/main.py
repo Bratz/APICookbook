@@ -1,7 +1,6 @@
 """
 TCS BaNCS API Cookbook - Complete Main Application with Hoppscotch Integration
 Enhanced with improved error handling, validation, and fallback mechanisms
-BERT/PyTorch are now completely optional
 """
 
 from fastapi import Depends, FastAPI, Header, HTTPException, UploadFile, File, Request
@@ -26,8 +25,6 @@ from pydantic import BaseModel, Field, validator
 import httpx
 import yaml
 import traceback
-import numpy as np
-from sklearn.metrics.pairwise import cosine_similarity
 
 from dotenv import load_dotenv
 import os
@@ -37,14 +34,6 @@ load_dotenv()
 
 from backend import api_lookup, build_proxy, build_routes
 from backend.agent_guard import AgentGuard
-
-# Optional imports - PyTorch is NOT required
-try:
-    import torch
-    TORCH_AVAILABLE = True
-except ImportError:
-    TORCH_AVAILABLE = False
-    torch = None
 
 # Fix import paths
 current_dir = Path(__file__).parent
@@ -137,96 +126,6 @@ def sanitize_text(text: str) -> str:
             pass
     
     return text
-
-def compute_similarity(vec1, vec2):
-    """Compute similarity between two vectors (works with or without torch)"""
-    try:
-        if TORCH_AVAILABLE and torch is not None:
-            if hasattr(vec1, '__class__') and 'torch' in str(type(vec1)):
-                if hasattr(vec2, '__class__') and 'torch' in str(type(vec2)):
-                    return torch.cosine_similarity(vec1, vec2, dim=0).item()
-        
-        # Handle sparse matrices from TF-IDF FIRST
-        if hasattr(vec1, 'toarray'):
-            vec1_np = vec1.toarray()
-        elif hasattr(vec1, 'numpy'):
-            vec1_np = vec1.numpy()
-        else:
-            vec1_np = np.asarray(vec1)  # Use asarray instead of array
-        
-        if hasattr(vec2, 'toarray'):
-            vec2_np = vec2.toarray()
-        elif hasattr(vec2, 'numpy'):
-            vec2_np = vec2.numpy()
-        else:
-            vec2_np = np.asarray(vec2)  # Use asarray instead of array
-        
-        # Ensure proper shape
-        if vec1_np.ndim == 1:
-            vec1_np = vec1_np.reshape(1, -1)
-        if vec2_np.ndim == 1:
-            vec2_np = vec2_np.reshape(1, -1)
-        
-        # Check for dimension compatibility
-        if vec1_np.shape[1] != vec2_np.shape[1]:
-            logger.warning(f"Vector dimension mismatch: {vec1_np.shape} vs {vec2_np.shape}")
-            return 0.0
-        
-        similarity = cosine_similarity(vec1_np, vec2_np)[0][0]
-        return float(similarity)
-    except Exception as e:
-        logger.warning(f"Similarity computation fallback: {e}")
-        return 0.0
-
-# ============= BERT LOADING (OPTIONAL) =============
-BERT_AVAILABLE = False
-bert_router = None
-BERTChatbotIntegration = None
-BERTCookbookChatbot = None
-
-# Check if user wants BERT
-ENABLE_BERT = os.getenv('ENABLE_BERT', 'false').lower() == 'true'
-
-if ENABLE_BERT:
-    logger.info("BERT is enabled in configuration, attempting to load...")
-    
-    try:
-        # Try to load full BERT if torch is available
-        if TORCH_AVAILABLE:
-            from backend.bert_chatbot.integration import BERTChatbotIntegration, router as bert_router
-            from backend.bert_chatbot.model import BERTCookbookChatbot
-            BERT_AVAILABLE = True
-            logger.info("BERT components loaded successfully with PyTorch")
-        else:
-            logger.warning("PyTorch not available, trying lightweight alternative...")
-            raise ImportError("PyTorch not available")
-            
-    except ImportError as e:
-        logger.info(f"Full BERT not available: {e}")
-        
-        # Try sentence transformer alternative (no heavy dependencies)
-        try:
-            from backend.bert_chatbot.sentence_transformer_model import SentenceTransformerChatbot
-            # Create a minimal integration wrapper if needed
-            class MinimalBERTIntegration:
-                def __init__(self, kb):
-                    self.bert_chatbot = SentenceTransformerChatbot(knowledge_base=kb)
-                    self.kb = kb
-                    
-                async def process_developer_query(self, query, context=None):
-                    return await self.bert_chatbot.process_query(query, context)
-            
-            BERTChatbotIntegration = MinimalBERTIntegration
-            BERTCookbookChatbot = SentenceTransformerChatbot
-            bert_router = None  # No router for lightweight version
-            BERT_AVAILABLE = True
-            logger.info("Using Sentence Transformer alternative (lightweight, no heavy models)")
-            
-        except ImportError as e2:
-            logger.warning(f"Neither BERT nor lightweight alternative available: {e2}")
-            BERT_AVAILABLE = False
-else:
-    logger.info("BERT is disabled via configuration (ENABLE_BERT=false)")
 
 # ============= BASE MODELS (Always defined) =============
 class ChatMessageBase(BaseModel):
@@ -549,9 +448,6 @@ def check_and_log_configuration():
     config = {
         "Python Version": sys.version.split()[0],
         "Platform": sys.platform,
-        "BERT Requested": ENABLE_BERT,
-        "BERT Available": BERT_AVAILABLE,
-        "PyTorch Available": TORCH_AVAILABLE,
         "MCP Enabled": getattr(settings, 'mcp_enabled', False),
         "Debug Mode": getattr(settings, 'debug', False),
         "API Port": getattr(settings, 'api_port', 7600),
@@ -565,10 +461,6 @@ def check_and_log_configuration():
     logger.info("=" * 60)
     
     # Warnings
-    if ENABLE_BERT and not BERT_AVAILABLE:
-        logger.warning("BERT was requested but could not be loaded!")
-        logger.warning("The system will run without BERT features.")
-    
     if sys.platform == "win32":
         logger.info("Windows detected - emojis will be replaced with text")
     
@@ -631,7 +523,6 @@ async def lifespan(app: FastAPI):
     app.state.apiweaver = None
     app.state.playground_sessions = {}
     app.state.is_fallback_mode = False
-    app.state.bert_integration = None
     app.state.rag_engine = None
 
     try:
@@ -676,29 +567,6 @@ async def lifespan(app: FastAPI):
             logger.warning(f"Failed to initialize response generator: {e}, using fallback")
             app.state.response_generator = SimpleResponseGenerator(app.state.kb)
 
-        # Initialize BERT if available and enabled
-        if ENABLE_BERT and BERT_AVAILABLE:
-            try:
-                class BERTIntegrationWrapper:
-                    def __init__(self, kb):
-                        # Initialize the sentence transformer with the knowledge base
-                        self.bert_chatbot = BERTCookbookChatbot(knowledge_base=kb)
-                        self.kb = kb
-                        
-                    async def process_developer_query(self, query, context=None):
-                        return await self.bert_chatbot.process_query(query, context)
-                
-                app.state.bert_integration = BERTIntegrationWrapper(app.state.kb)
-                logger.info("BERT chatbot initialized successfully")
-            except Exception as e:
-                logger.warning(f"Failed to initialize BERT chatbot: {e}")
-                app.state.bert_integration = None
-        else:
-            if ENABLE_BERT:
-                logger.info("BERT was requested but is not available")
-            else:
-                logger.info("BERT is disabled")
-        
         # MCP: the weaver was built at import (it is mounted at /api/mcp); register the APIs it loaded.
         app.state.apiweaver = MCP_WEAVER
         if hasattr(MCP_WEAVER, 'process_pending_registrations'):
@@ -938,7 +806,6 @@ async def health_check():
             "hoppscotch": "enabled" if settings.hoppscotch_enabled else "disabled",
             "knowledge_base": "fallback" if isinstance(app.state.kb, SimpleKnowledgeBase) else "running",
             "response_generator": "fallback" if isinstance(app.state.response_generator, SimpleResponseGenerator) else "running",
-            "bert": "enabled" if BERT_AVAILABLE else "disabled",
             "rag": "enabled" if app.state.rag_engine else "disabled"
         },
         "components": components_loaded,
@@ -947,9 +814,6 @@ async def health_check():
             "mcp_tools": len(getattr(app.state.kb, 'mcp_tools', []))
         },
         "configuration": {
-            "bert_requested": ENABLE_BERT,
-            "bert_available": BERT_AVAILABLE,
-            "pytorch_available": TORCH_AVAILABLE,
             "rag_enabled": getattr(settings, 'rag_enabled', False)
         }
     }
@@ -995,7 +859,7 @@ async def search_knowledge(request: Request):
                 logger.info(f"[{request_id}] Attempting RAG search")
                 
                 # Returns only confident matches (>= LightweightRAG.MIN_SCORE);
-                # an empty result falls through to BERT/keyword search below
+                # an empty result falls through to keyword search below
                 rag_results = app.state.rag_engine.search(query, top_k=limit)
 
                 if rag_results:
@@ -1029,74 +893,6 @@ async def search_knowledge(request: Request):
                         })
             except Exception as e:
                 logger.warning(f"[{request_id}] RAG search failed: {e}")
-        
-        # Try BERT-based search if RAG is not available and BERT is properly configured
-        use_bert = (
-            BERT_AVAILABLE and 
-            hasattr(app.state, 'bert_integration') and 
-            app.state.bert_integration and
-            # os.getenv, not settings: pydantic only sees undeclared keys from the .env file, not real env vars (Docker)
-            os.getenv('DISABLE_BERT_SEARCH', 'false').lower() != 'true'
-        )
-        
-        if use_bert:
-            try:
-                logger.info(f"[{request_id}] Attempting BERT search")
-                bert_chatbot = app.state.bert_integration.bert_chatbot
-                
-                # Check if BERT is properly initialized with embeddings
-                if bert_chatbot and hasattr(bert_chatbot, 'api_embeddings') and bert_chatbot.api_embeddings:
-                    # Generate embeddings for the query
-                    query_embeddings = bert_chatbot._generate_embeddings(query)
-                    
-                    # Validate query embeddings
-                    if query_embeddings is not None:
-                        results = []
-                        for endpoint_key, api_embeddings in bert_chatbot.api_embeddings.items():
-                            # Skip if embeddings are invalid
-                            if api_embeddings is None:
-                                continue
-                            
-                            # Use utility function for similarity with error handling
-                            score = compute_similarity(query_embeddings, api_embeddings)
-                            
-                            if score > 0.3:  # Threshold for relevance
-                                metadata = bert_chatbot.api_metadata.get(endpoint_key, {})
-                                
-                                # Parse endpoint key
-                                parts = endpoint_key.split(' ', 1)
-                                method = parts[0] if len(parts) > 0 else 'GET'
-                                path = parts[1] if len(parts) > 1 else endpoint_key
-                                
-                                results.append({
-                                    'endpoint_name': endpoint_key,
-                                    'method': method,
-                                    'path': path,
-                                    'score': float(score),
-                                    'confidence': float(score),
-                                    'description': metadata.get('description', ''),
-                                    'parameters': metadata.get('parameters', []),
-                                    'title': endpoint_key,
-                                    'category': metadata.get('category', 'general')
-                                })
-                        
-                        if results:
-                            # Sort by score
-                            results.sort(key=lambda x: x['score'], reverse=True)
-                            results = results[:limit]
-                            
-                            logger.info(f"[{request_id}] Found {len(results)} results via BERT")
-                            return JSONResponse(content={
-                                "status": "success",
-                                "query": query,
-                                "results": results,
-                                "total": len(results),
-                                "source": "bert" if TORCH_AVAILABLE else "sentence_transformer"
-                            })
-                else:
-                    logger.warning(f"[{request_id}] BERT embeddings not initialized")
-            except Exception as e:
-                logger.warning(f"[{request_id}] BERT search error: {e}")
         
         # Always fall back to keyword-based search
         logger.info(f"[{request_id}] Using keyword-based search (fallback)")
@@ -1207,24 +1003,6 @@ async def add_to_knowledge(request: Request):
             app.state.kb.endpoints[endpoint_name] = endpoint_data
             logger.info(f"[{request_id}] Added {endpoint_name} to knowledge base")
             
-            # Update BERT embeddings if available
-            if BERT_AVAILABLE and hasattr(app.state, 'bert_integration') and app.state.bert_integration:
-                try:
-                    bert_chatbot = app.state.bert_integration.bert_chatbot
-                    if bert_chatbot:
-                        description = f"{endpoint_data.get('description', '')} {endpoint_name}"
-                        embeddings = bert_chatbot._generate_embeddings(description)
-                        bert_chatbot.api_embeddings[endpoint_name] = embeddings
-                        bert_chatbot.api_metadata[endpoint_name] = {
-                            'method': endpoint_data.get('method', 'GET'),
-                            'path': endpoint_data.get('url', '/'),
-                            'parameters': endpoint_data.get('parameters', {}),
-                            'description': endpoint_data.get('description', '')
-                        }
-                        logger.info(f"[{request_id}] Updated BERT embeddings for {endpoint_name}")
-                except Exception as e:
-                    logger.warning(f"[{request_id}] Failed to update BERT embeddings: {e}")
-            
             return JSONResponse(content={
                 "status": "success",
                 "message": f"Added {endpoint_name} to knowledge base",
@@ -1253,15 +1031,6 @@ async def remove_from_knowledge(endpoint_name: str):
         if hasattr(app.state, 'kb') and app.state.kb:
             if endpoint_name in app.state.kb.endpoints:
                 del app.state.kb.endpoints[endpoint_name]
-                
-                # Remove from BERT embeddings if available
-                if BERT_AVAILABLE and hasattr(app.state, 'bert_integration') and app.state.bert_integration:
-                    bert_chatbot = app.state.bert_integration.bert_chatbot
-                    if bert_chatbot:
-                        if endpoint_name in bert_chatbot.api_embeddings:
-                            del bert_chatbot.api_embeddings[endpoint_name]
-                        if endpoint_name in bert_chatbot.api_metadata:
-                            del bert_chatbot.api_metadata[endpoint_name]
                 
                 logger.info(f"[{request_id}] Removed {endpoint_name} from knowledge base")
                 return JSONResponse(content={
@@ -1948,19 +1717,12 @@ async def reload_knowledge_base():
         if hasattr(app.state, 'kb'):
             await app.state.kb.load_specifications()
             
-            # Reinitialize BERT embeddings if available
-            if BERT_AVAILABLE and hasattr(app.state, 'bert_integration'):
-                bert_chatbot = app.state.bert_integration.bert_chatbot
-                if hasattr(bert_chatbot, 'initialize_api_embeddings'):
-                    bert_chatbot.initialize_api_embeddings()
-            
             logger.info("Knowledge base reloaded successfully")
             
             return {
                 "success": True,
                 "message": "Knowledge base reloaded",
                 "endpoints_count": len(app.state.kb.endpoints),
-                "bert_updated": BERT_AVAILABLE
             }
         else:
             return {
@@ -2104,7 +1866,6 @@ if __name__ == "__main__":
     logger.info(f"Starting {settings.app_name} v{settings.app_version}")
     logger.info(f"Host: {host}:{port}")
     logger.info(f"Debug Mode: {debug}")
-    logger.info(f"BERT: {'Enabled' if BERT_AVAILABLE else 'Disabled'}")
     logger.info(f"MCP: {'Enabled' if settings.mcp_enabled else 'Disabled'}")
     logger.info("=" * 60)
     

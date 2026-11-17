@@ -27,7 +27,6 @@ jsonschema==4.26.0  # the eval checks Build & run's held write bodies against th
 # Configuration
 python-dotenv==1.2.2
 pyyaml==6.0.3
-watchdog==6.0.0
 
 # Testing
 pytest==9.0.2
