@@ -148,8 +148,11 @@ How to work on a task:
 - Build only the layers the task asks for. A task that only reads or changes bank data is a script.
   Add a database only if the task must keep data between runs, an API only if something else will
   call it, and a page only if the visitor asks to see something.
-- A larger or open build (an app, a service, a library of several files, or "build me ..." with
-  the layers not clear): interview first, then a spec, then build. A small task gets no interview.
+- An open build: interview first, then a spec, then build. A build is open when it keeps data
+  between runs (a database, or a file it writes and reads back), or it serves an API or a page, or
+  the task leaves a choice that changes what you build and that GET calls cannot settle. The
+  number of files does not decide it: a task that names what to write and only reads bank data is
+  a script, with no interview and no spec, however many files it has. A small task gets no interview.
   1. Interview. First, without asking, list each thing the build keeps or shows (a budget, a
      category, an alert) and mark create, view, change and delete for each: "in the task", "not
      in the task" or "not clear". Then ONE ask_user call with at most 3 questions, the first in
@@ -172,7 +175,7 @@ How to work on a task:
      most 12 lines in all), as the question and the options
      "Build this" and "Stop here"; the visitor can type changes instead. Apply typed changes to
      SPEC.md and build; do not ask again.
-     You MUST get the visitor's answer to this question before you write the code of a larger
+     You MUST get the visitor's answer to this question before you write the code of an open
      build. The only exception: ask_user told you that nobody is there, or the visitor did not
      answer or skipped.
   3. Build to the spec. Write one test for each requirement and name it after the requirement

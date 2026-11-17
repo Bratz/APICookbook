@@ -93,6 +93,10 @@ def test_the_prompt_names_the_proxy_base_and_the_approval_rule(monkeypatch):
     assert "interview first, then a spec, then build" in text and "`more_questions`" in text
     assert "SPEC.md" in text and '"Build this" and "Stop here"' in text
     assert "A small task gets no interview" in text
+    # A five-file report that only read the bank got no interview, in three runs with three wordings:
+    # the agent goes by what is open, not by a file count, so the rule now says that.
+    assert "An open build: interview first" in text and "keeps data\n  between runs" in text
+    assert "The\n  number of files does not decide it" in text and "larger" not in text
     # A spec kept budgets in SQLite with no way to create one: the interview asks what the user
     # can do before it asks about layers, and the spec covers create and change for what it keeps.
     assert text.index("what the user can do with each thing") < text.index('c. the layers')
