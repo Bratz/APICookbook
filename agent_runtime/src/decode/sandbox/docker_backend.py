@@ -214,7 +214,6 @@ class DockerBackend:
         logger.debug("[sandbox] exec %s → exit=%d bytes=%d", " ".join(args), exit_code, len(stdout))
         return ExecResult(_decode(stdout), _decode(stderr), exit_code, timed_out=False, note="")
 
-    @staticmethod
     async def spawn(self, *args: str) -> asyncio.subprocess.Process:
         """Start a long-lived process in the session container with piped stdin/stdout.
 
@@ -237,6 +236,7 @@ class DockerBackend:
             stderr=asyncio.subprocess.DEVNULL,
         )
 
+    @staticmethod
     async def _terminate(
         proc: asyncio.subprocess.Process, comm: asyncio.Future[tuple[bytes, bytes]]
     ) -> tuple[bytes, bytes]:
